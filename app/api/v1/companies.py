@@ -163,7 +163,7 @@ async def get_company_intelligence(
             "detail": report.title,
             "timestamp": report.created_at.isoformat() if report.created_at else None,
         })
-    timeline.sort(key=lambda x: x["timestamp"] or "", reverse=True)
+    timeline.sort(key=lambda x: x["timestamp"] or "")
 
     return {
         "risk_flags": unique_flags,
