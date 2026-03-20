@@ -62,6 +62,7 @@ async def upload_document(
 
 async def _extract_bg(doc_id: UUID, file_path: str):
     from app.services.ai.document_parser import extract_document
+    from app.services.company_intelligence import auto_fill_company
 
     async with async_session() as session:
         result = await session.execute(select(Document).where(Document.id == doc_id))
@@ -74,10 +75,13 @@ async def _extract_bg(doc_id: UUID, file_path: str):
             extracted = await extract_document(file_path)
             doc.extracted_data = extracted
             doc.extraction_status = "completed"
+            await session.commit()
+            # Auto-fill company profile from extracted data
+            await auto_fill_company(session, doc.company_id)
         except Exception as e:
             doc.extraction_status = "failed"
             doc.extraction_error = str(e)
-        await session.commit()
+            await session.commit()
 
 
 @router.get("", response_model=list[DocumentResponse])
