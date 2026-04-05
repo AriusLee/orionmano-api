@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 
-    CORS_ORIGINS: str = '["http://localhost:2040"]'
+    CORS_ORIGINS: str = '["http://localhost:3020"]'
     UPLOAD_DIR: str = "./uploads"
 
     @property
