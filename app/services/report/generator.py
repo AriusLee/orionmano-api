@@ -9,9 +9,11 @@ from app.models.company import Company
 from app.models.document import Document
 from app.models.report import Report, ReportSection
 from app.services.ai.client import generate_text
+from app.services.ai.web_search import web_search, format_search_results
 
 
 REPORT_TITLES = {
+    "gap_analysis": "Gap Analysis",
     "sales_deck": "Sales Deck",
     "kickoff_deck": "Kick-off Meeting Deck",
     "industry_report": "Industry Expert Report",
@@ -23,6 +25,35 @@ REPORT_TITLES = {
 
 # Tier-based section definitions: { report_type: { tier: [(key, title)] } }
 REPORT_SECTIONS = {
+    "gap_analysis": {
+        "essential": [
+            ("financial_highlights", "Financial Analysis — Financial Highlights"),
+            ("gaps_recommendations", "Gaps Identified & Recommendations"),
+            ("conclusion", "Conclusion & Priority Actions"),
+        ],
+        "standard": [
+            ("nasdaq_requirements", "Nasdaq Listing Requirements — Financial Standards"),
+            ("financial_highlights", "Financial Analysis — Financial Highlights"),
+            ("other_metrics", "Financial Analysis — Other Metrics"),
+            ("industry_considerations", "Industry Considerations"),
+            ("financial_gaps", "Financial Gaps & Recommendations"),
+            ("governance_gaps", "Governance Gaps & Recommendations"),
+            ("reporting_gaps", "Reporting & Disclosure Gaps"),
+            ("industry_gaps", "Industry-Specific Gaps"),
+            ("conclusion", "Conclusion & Priority Actions"),
+        ],
+        "premium": [
+            ("nasdaq_requirements", "Nasdaq Listing Requirements — Financial Standards"),
+            ("financial_highlights", "Financial Analysis — Financial Highlights"),
+            ("other_metrics", "Financial Analysis — Other Metrics"),
+            ("industry_considerations", "Industry Considerations"),
+            ("financial_gaps", "Financial Gaps & Recommendations"),
+            ("governance_gaps", "Governance Gaps & Recommendations"),
+            ("reporting_gaps", "Reporting & Disclosure Gaps"),
+            ("industry_gaps", "Industry-Specific Gaps"),
+            ("conclusion", "Conclusion & Priority Actions"),
+        ],
+    },
     "industry_report": {
         "essential": [
             ("executive_summary", "Executive Summary"),
@@ -182,6 +213,7 @@ def _get_sections(report_type: str, tier: str) -> list[tuple[str, str]]:
 
 def _load_template(report_type: str) -> str:
     template_map = {
+        "gap_analysis": "00-gap-analysis.md",
         "sales_deck": "01-sales-deck.md",
         "kickoff_deck": "02-kickoff-deck.md",
         "industry_report": "03-industry-report.md",
@@ -265,6 +297,16 @@ async def generate_report_bg(
         sections = _get_sections(report_type, tier)
         tier_instruction = TIER_INSTRUCTIONS.get(tier, TIER_INSTRUCTIONS["standard"])
 
+        # Web search enrichment for industry-related reports
+        web_context = ""
+        if report_type in ("industry_report", "gap_analysis") and company.industry:
+            try:
+                query = f"{company.industry} industry market size trends {company.country or 'global'} 2025"
+                results = await web_search(query, max_results=5)
+                web_context = format_search_results(results)
+            except Exception:
+                web_context = ""
+
         # Load supplementary knowledge for valuation reports
         extra_knowledge = ""
         if report_type == "valuation_report":
@@ -277,6 +319,18 @@ async def generate_report_bg(
             except FileNotFoundError:
                 pass
 
+        # Load gap analysis framework for gap_analysis reports
+        gap_knowledge = ""
+        if report_type == "gap_analysis":
+            gap_framework_path = os.path.join(
+                os.path.dirname(__file__), "..", "..", "..", "..", "knowledge-base", "02-due-diligence", "gap-analysis.md"
+            )
+            try:
+                with open(gap_framework_path, "r") as f:
+                    gap_knowledge = f"\n\n## Gap Analysis Framework\n{f.read()[:3000]}"
+            except FileNotFoundError:
+                pass
+
         system_prompt = f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong).
 Generate professional report content. Be concise, data-driven, and specific.
 Use markdown formatting. Reference actual company data when available.
@@ -285,7 +339,8 @@ Follow IFRS 9 and IFRS 13 standards for fair value analysis.
 Tier: {tier.upper()} — {tier_instruction}
 
 ## Report Template Reference
-{template[:2000]}{extra_knowledge}
+{template[:2000]}{extra_knowledge}{gap_knowledge}
+{web_context}
 
 ## Company Data
 {company_context}"""

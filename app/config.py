@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     ANTHROPIC_API_KEY: str = ""
     GROQ_API_KEY: str = ""
+    DEEPSEEK_API_KEY: str = ""
+    TAVILY_API_KEY: str = ""
 
     CORS_ORIGINS: str = '["http://localhost:3020"]'
     UPLOAD_DIR: str = "./uploads"

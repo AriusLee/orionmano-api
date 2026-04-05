@@ -7,6 +7,7 @@ from app.models.company import Company
 from app.models.document import Document
 from app.models.report import Report, ReportSection
 from app.services.ai.client import stream_text
+from app.services.ai.web_search import web_search, format_search_results
 
 import json
 
@@ -99,6 +100,17 @@ async def chat_stream(
     # Build context
     system_prompt = await build_system_prompt(db, company_id)
     messages = await get_conversation_messages(db, conversation_id)
+
+    # Web search enrichment for research-oriented queries
+    search_keywords = ["market", "industry", "competitor", "trend", "regulation", "listing", "ipo", "nasdaq", "news", "recent"]
+    if any(kw in user_content.lower() for kw in search_keywords):
+        try:
+            results = await web_search(user_content, max_results=3)
+            web_context = format_search_results(results)
+            if web_context:
+                system_prompt += f"\n\n{web_context}"
+        except Exception:
+            pass
 
     # Stream response
     full_response = []
