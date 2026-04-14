@@ -1,7 +1,7 @@
 import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sse_starlette.sse import EventSourceResponse
@@ -88,8 +88,46 @@ async def send_message(
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     async def event_generator():
-        async for chunk in chat_stream(db, conversation_id, company_id, req.content):
+        # Import agent router for agentic mode
+        from app.services.agent.router import route_stream
+        from app.services.chat.chat_service import (
+            build_system_prompt,
+            get_conversation_messages,
+        )
+
+        # Save user message
+        user_msg = ChatMessage(
+            conversation_id=conversation_id,
+            role="user",
+            content=req.content,
+        )
+        db.add(user_msg)
+        await db.commit()
+
+        # Get conversation history
+        messages = await get_conversation_messages(db, conversation_id)
+
+        # Use agent router (tool-use loop with skills + memory)
+        full_response = []
+        async for chunk in route_stream(
+            db=db,
+            company_id=company_id,
+            conversation_id=conversation_id,
+            messages=messages,
+            user_id=user.id,
+        ):
+            full_response.append(chunk)
             yield {"event": "message", "data": json.dumps({"content": chunk})}
+
+        # Save assistant message
+        assistant_msg = ChatMessage(
+            conversation_id=conversation_id,
+            role="assistant",
+            content="".join(full_response),
+        )
+        db.add(assistant_msg)
+        await db.commit()
+
         yield {"event": "done", "data": "{}"}
 
     return EventSourceResponse(event_generator())

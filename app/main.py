@@ -11,6 +11,9 @@ from app.api.v1.router import v1_router
 # Import all models so they register with Base
 import app.models  # noqa
 
+# Import skills to register them with the skill registry
+import app.services.agent.skills  # noqa
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

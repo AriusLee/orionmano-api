@@ -3,6 +3,7 @@ from app.models.company import Company
 from app.models.document import Document
 from app.models.report import Report, ReportSection
 from app.models.chat import ChatConversation, ChatMessage
+from app.models.memory import Memory
 
 __all__ = [
     "User",
@@ -12,4 +13,5 @@ __all__ = [
     "ReportSection",
     "ChatConversation",
     "ChatMessage",
+    "Memory",
 ]
