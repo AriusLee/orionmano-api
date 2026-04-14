@@ -52,6 +52,7 @@ class ReportListResponse(BaseModel):
     tier: str = "standard"
     language: str
     version: int
+    progress_message: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

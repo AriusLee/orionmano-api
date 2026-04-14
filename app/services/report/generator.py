@@ -1,3 +1,4 @@
+import asyncio
 import os
 import json
 from uuid import UUID
@@ -27,31 +28,49 @@ REPORT_TITLES = {
 REPORT_SECTIONS = {
     "gap_analysis": {
         "essential": [
-            ("financial_highlights", "Financial Analysis — Financial Highlights"),
-            ("gaps_recommendations", "Gaps Identified & Recommendations"),
-            ("conclusion", "Conclusion & Priority Actions"),
+            ("listing_path", "Assumptions & Listing Path"),
+            ("financial_highlights", "Financial Position & Gap Assessment"),
+            ("equity_bridge", "Financial Bridge to Listing Threshold"),
+            ("gaps_recommendations", "Critical Gaps & Priority Actions"),
+            ("conclusion", "Conclusion & Readiness Assessment"),
         ],
         "standard": [
+            ("listing_path", "Assumptions & Listing Path"),
+            ("fpi_regime", "FPI Status & Reporting Regime"),
             ("nasdaq_requirements", "Nasdaq Listing Requirements — Financial Standards"),
             ("financial_highlights", "Financial Analysis — Financial Highlights"),
             ("other_metrics", "Financial Analysis — Other Metrics"),
-            ("industry_considerations", "Industry Considerations"),
+            ("equity_bridge", "Financial Bridge to Listing Threshold"),
+            ("entity_structure", "Entity Structure & Cap Table Assessment"),
+            ("audit_readiness", "Audit & Accounting Readiness"),
             ("financial_gaps", "Financial Gaps & Recommendations"),
             ("governance_gaps", "Governance Gaps & Recommendations"),
             ("reporting_gaps", "Reporting & Disclosure Gaps"),
+            ("legal_compliance", "Legal & Regulatory Compliance Map"),
             ("industry_gaps", "Industry-Specific Gaps"),
-            ("conclusion", "Conclusion & Priority Actions"),
+            ("transaction_feasibility", "Transaction Feasibility & Peer Positioning"),
+            ("workplan", "Public Company Readiness Workplan"),
+            ("conclusion", "Conclusion & Readiness Assessment"),
         ],
         "premium": [
+            ("listing_path", "Assumptions & Listing Path"),
+            ("fpi_regime", "FPI Status & Reporting Regime"),
             ("nasdaq_requirements", "Nasdaq Listing Requirements — Financial Standards"),
             ("financial_highlights", "Financial Analysis — Financial Highlights"),
             ("other_metrics", "Financial Analysis — Other Metrics"),
-            ("industry_considerations", "Industry Considerations"),
+            ("equity_bridge", "Financial Bridge to Listing Threshold"),
+            ("entity_structure", "Entity Structure & Cap Table Assessment"),
+            ("cap_table_analysis", "Cap Table Listability & Pre-IPO Cleanup"),
+            ("audit_readiness", "Audit & Accounting Readiness"),
             ("financial_gaps", "Financial Gaps & Recommendations"),
             ("governance_gaps", "Governance Gaps & Recommendations"),
             ("reporting_gaps", "Reporting & Disclosure Gaps"),
+            ("legal_compliance", "Legal & Regulatory Compliance Map"),
             ("industry_gaps", "Industry-Specific Gaps"),
-            ("conclusion", "Conclusion & Priority Actions"),
+            ("peer_comps", "Peer Comparables & Valuation Reality Check"),
+            ("transaction_feasibility", "Transaction Feasibility & Bankability Analysis"),
+            ("workplan", "Public Company Readiness Workplan"),
+            ("conclusion", "Conclusion & Readiness Assessment"),
         ],
     },
     "industry_report": {
@@ -309,6 +328,347 @@ TIER_INSTRUCTIONS = {
 }
 
 
+# ──────────────────────────────────────────────────────────────
+# Gap Analysis — dedicated prompt & per-section instructions
+# ──────────────────────────────────────────────────────────────
+
+def _build_gap_analysis_prompt(
+    company, documents, tier, tier_instruction, template,
+    gap_knowledge, web_context, company_context,
+) -> str:
+    """Build a specialised system prompt for gap analysis reports."""
+    return f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong), specialising in Nasdaq IPO advisory and pre-IPO gap analysis for Asia-Pacific companies.
+
+## YOUR ROLE
+You are writing a **transaction-grade gap analysis** — a document that will be presented to prospects and used for advisory decision-making. This is NOT an AI research memo or narrative summary. It must read like a professional advisory memo that a senior banker or securities lawyer would take seriously.
+
+## CRITICAL RULES
+
+### 1. DATA CONSISTENCY (MANDATORY)
+Before writing ANY section, establish a single set of canonical numbers from the available data and use them consistently throughout the ENTIRE report:
+- Pick ONE shareholders' equity figure and use it everywhere
+- Pick ONE exchange rate and use it everywhere
+- Pick ONE revenue figure and use it everywhere
+- Pick ONE net income/loss figure and use it everywhere
+- If data conflicts exist in the source materials, pick the most recent audited figure and note the discrepancy once
+- NEVER let the same metric appear with different values on different pages
+
+### 2. NO INLINE CITATIONS
+Do NOT use numbered inline citations like [1], [2], [3]. Instead, state the basis naturally:
+- "Based on FY20XX audited financial statements..."
+- "Per management representations..."
+- "According to Nasdaq Listing Rule 5505..."
+- "Based on publicly available information..."
+
+### 3. INFORMATION GAP HANDLING
+When data is not available (e.g., no cap table provided, no org chart, no audit reports):
+- Do NOT fabricate or assume data
+- Clearly flag it as **"Information Required"** with a description of what is needed
+- Explain WHY this information matters for the gap analysis
+- Provide the analytical framework so the section is useful even without the data
+- Example: "**Information Required:** Full cap table with all share classes, convertible instruments, SAFEs, warrants, and ESOP details. Without this, public float feasibility and pre-IPO restructuring needs cannot be assessed."
+
+### 4. TIMELINE AWARENESS
+- The report date is today's date — all action timelines must be FORWARD-LOOKING from today
+- Never write timelines that reference dates in the past
+- Use relative timeframes (e.g., "Within 3-6 months", "Pre-filing") rather than specific quarter/year if unsure of the engagement start date
+
+### 5. FPI-AWARE ANALYSIS
+When analysing a non-US company for Nasdaq listing, always consider Foreign Private Issuer (FPI) status:
+- FPI can use IFRS as issued by IASB (not required to convert to US GAAP). SEC explicitly allows this.
+- FPI has home country practice exemptions for many Nasdaq corporate governance rules (but NOT for audit committee independence)
+- Reg FD does NOT apply to FPIs — do not recommend establishing a Reg FD policy for FPI companies
+- FPIs file on 20-F (annual) and 6-K (interim), NOT 10-K/10-Q/8-K
+- FPIs are not required to file quarterly earnings reports in the typical 10-Q format
+- Always state whether the company likely qualifies as FPI and what implications that has
+
+### 6. LISTING PATH SPECIFICITY
+Do not assume "Nasdaq Capital Market + F-1" by default. The report must explicitly address:
+- Which Nasdaq tier (Capital Market / Global Market / Global Select Market) and why
+- Whether F-1 (FPI) or S-1 (domestic) registration path
+- Whether existing entity can list directly or needs topco restructure / redomicile / holdco insertion
+- IPO mechanism: firm commitment, best efforts, direct listing, or de-SPAC optionality
+- Note: Even if a company meets quantitative standards, Nasdaq retains discretion to impose additional conditions or deny listing based on investor protection concerns
+
+### 7. TRANSACTION-GRADE DEPTH
+Each gap must include:
+- **Current State** — what exists today, with specific data points where available
+- **Requirement** — the specific Nasdaq rule, SEC regulation, or market standard
+- **Gap** — the specific shortfall, quantified where possible
+- **Required Action** — concrete, actionable steps (not generic advice)
+- **Severity** — Critical / High / Medium / Low
+- **Owner** — who is responsible (e.g., Company / Legal Counsel / Auditor / Underwriter)
+
+### 8. WORKPLAN FORMAT
+The conclusion workplan must be structured by workstreams, not generic bullet points. Each workstream should specify: current state, red flags, required actions, owner, estimated effort, priority (must-have vs good-to-have), and timing (pre-filing / filing / pre-roadshow).
+
+Tier: {tier.upper()} — {tier_instruction}
+
+## Report Template Reference
+{template[:3000]}{gap_knowledge}
+{web_context}
+
+## Company Data
+{company_context}"""
+
+
+GAP_SECTION_INSTRUCTIONS = {
+    "listing_path": """Write the Listing Path Assumptions section. This is the MOST IMPORTANT section — it sets the foundation for the entire analysis. Cover:
+1. Recommended Nasdaq tier (Capital Market / Global Market / Global Select) with rationale based on the company's financials
+2. Registration path: F-1 (Foreign Private Issuer) vs S-1 — determine if the company qualifies as FPI
+3. Listing vehicle: Can the existing entity list directly, or is a topco restructure / redomicile / holdco insertion needed?
+4. IPO mechanism: Firm commitment IPO, best efforts, direct listing, or de-SPAC — recommend with rationale
+5. Key assumption dependencies: What must be true for this path to work?
+If entity structure information is not available, state what's needed and provide the framework for analysis.""",
+
+    "fpi_regime": """Write the FPI Status & Reporting Regime section. Determine if the company likely qualifies as a Foreign Private Issuer under SEC rules and the implications:
+1. FPI qualification test (ownership test + business contacts test)
+2. If FPI: can use IFRS (no US GAAP conversion required), files 20-F/6-K (not 10-K/10-Q/8-K), Reg FD does NOT apply
+3. Corporate governance exemptions available under home country practice (but audit committee independence still required)
+4. Interim reporting differences — FPIs are not in the typical quarterly 10-Q cycle
+5. Implications for disclosure architecture, compliance costs, and timeline
+If company jurisdiction suggests FPI status, explicitly state which requirements can be relaxed vs which are non-negotiable.""",
+
+    "nasdaq_requirements": """Write the Nasdaq Listing Requirements table comparing all three financial standards (Shareholders' Capital, Market Capitalization, Net Income) against the company's current position. Include exchange rate. Identify which standard is most achievable.""",
+
+    "financial_highlights": """Write the Financial Highlights section with a comparison table. Use ONLY the canonical numbers established for this report. Show YoY changes where multi-year data is available. Include: Revenue, Gross Profit, Gross Margin, Operating Income/Loss, Net Income/Loss, Total Assets, Shareholders' Equity, Cash & Equivalents, Monthly Burn Rate (if loss-making), Cash Runway.""",
+
+    "other_metrics": """Write the Other Financial Metrics section covering operational and health indicators: Gross Profit Margin trend, Operating Margin trend, Monthly Operating Burn, Cash Runway, Revenue Concentration (top customer), User/Customer metrics if available, Market Context. Flag concerning patterns with severity ratings.""",
+
+    "equity_bridge": """Write the Financial Bridge to Listing Threshold section. This is CRITICAL — build a step-by-step bridge:
+1. Current shareholders' equity (single canonical figure)
+2. + Planned fundraising (Series A or other)
+3. - Estimated IPO costs and fees (USD 1.5-2.5M typical)
+4. - Debt cleanup / restructuring adjustments
+5. +/- Operating results between now and listing
+6. = Pro forma equity at listing
+7. Compare against Nasdaq threshold — is there still a gap?
+If equity figures are unclear or conflicting, note the discrepancy and show the bridge under best-case and worst-case scenarios. Do NOT let the reader think one fundraising round automatically closes the gap without showing the math.""",
+
+    "entity_structure": """Write the Entity Structure & Cap Table Assessment. Cover:
+1. Ultimate listing entity — who/what will be the listed vehicle?
+2. Operating subsidiaries and their jurisdictions
+3. Nominee / trust / layered holding structures
+4. Dormant entities / historical liabilities
+5. Founder loans / shareholder advances / intercompany balances
+6. VIE structures / revenue pass-through / principal-agent issues
+7. Where are key licenses, contracts, IP held — operating sub or parent/founder?
+If org chart or entity information is not provided, flag as Information Required and explain why this analysis is critical for listing feasibility.""",
+
+    "cap_table_analysis": """Write the Cap Table Listability & Pre-IPO Cleanup section. Cover:
+1. Fully diluted share count and ownership breakdown
+2. Convertible notes / SAFEs / preference shares / warrants / ESOP
+3. Liquidation preferences / anti-dilution / ratchet provisions
+4. Super voting / non-standard voting rights
+5. Founder / investor / related party concentration
+6. Public float feasibility — can a meaningful float be created?
+7. Pre-IPO actions needed: share consolidation, reverse split, class simplification, debt-to-equity conversion
+If cap table is not provided, flag as Information Required and describe exactly what data is needed.""",
+
+    "audit_readiness": """Write the Audit & Accounting Readiness section. This must go DEEPER than "get a PCAOB audit". Cover:
+1. Can 2-3 years of audited FS be obtained? Any going concern / qualified opinion risk?
+2. IFRS vs US GAAP path (considering FPI status)
+3. Revenue recognition complexity — identify specific issues for this company's business model
+4. Deferred revenue / wallet balances / user credits / prepaid items
+5. Token / digital asset / rewards liability accounting (if applicable)
+6. Principal vs agent determination for marketplace/platform models
+7. Related-party balances — can they be cleaned?
+8. Tax / SST / transfer pricing / withholding tax exposure
+9. Consolidation basis — any issues?
+10. Internal controls readiness for SOX 302/404 compliance""",
+
+    "financial_gaps": """Write the Financial Gaps & Recommendations section in a structured table format. For each gap include: Metric, Company's Current Position, Nasdaq Requirement, Gap Assessment (with severity: CRITICAL/HIGH/MEDIUM), and Strategic Recommendations with specific action items.""",
+
+    "governance_gaps": """Write the Governance Gaps & Recommendations section. For each gap use the format: Gap title, Current State, Nasdaq Requirement (cite specific rule numbers like Rule 5605, 5630), Risk if not addressed, Required Action with timeline and owner.""",
+
+    "reporting_gaps": """Write the Reporting & Disclosure Gaps section considering FPI status. Cover: Financial reporting standards conversion, PCAOB audit requirements, SEC filing obligations (20-F/6-K for FPI, not 10-K/10-Q), internal controls over financial reporting (ICFR/COSO), governance disclosure, KPI and non-financial metric disclosure requirements, risk factor disclosure requirements.""",
+
+    "legal_compliance": """Write the Legal & Regulatory Compliance Map section. This must be SPECIFIC to the company's industry and jurisdictions, not generic. Cover:
+1. Industry-specific licensing requirements per jurisdiction
+2. Regulatory boundaries (e.g., gaming/betting, financial services, crypto/token regulations)
+3. AML/KYC/data privacy/cybersecurity obligations
+4. IP ownership completeness (code, brand, content, software)
+5. Key contract dependencies (publishers, payment channels, app stores)
+6. Pending disputes / threatened claims / founder legal history
+Present as a compliance checklist with status (Compliant / Gap / Information Required) per item.""",
+
+    "industry_gaps": """Write the Industry-Specific Gaps section. These must be unique to this company — not generic industry commentary. Each gap must reference specific company data or clearly flag where data is missing. Focus on what would concern an institutional investor or underwriter about THIS specific company.""",
+
+    "peer_comps": """Write the Peer Comparables & Valuation Reality Check section. Cover:
+1. Identify 5-8 listed peer companies (Nasdaq/NYSE/global) in similar sectors
+2. Compare: revenue scale, gross margin, EBITDA profile, EV/Revenue multiples
+3. How would investors categorize this company's story?
+4. Is the target market cap / valuation realistic given peer trading levels?
+5. What valuation range is defensible for underwriting purposes?
+If insufficient data, provide the peer identification framework and note what financial data is needed for a proper comparison.""",
+
+    "transaction_feasibility": """Write the Transaction Feasibility & Bankability Analysis section. This is what the client really cares about — not just "can we theoretically list" but "will this deal actually work":
+1. Public float requirement and feasibility
+2. Minimum viable raise size for underwriter interest
+3. Post-fees working capital — does the company have 12-18 months runway after IPO costs?
+4. Is the deal too small / too niche / too hard to sell to institutional investors?
+5. Prospectus narrative strength — is there enough institutional story?
+6. Auditor willingness (will a PCAOB firm sign off?)
+7. Legal counsel appetite (will a reputable securities firm take this?)
+This section distinguishes listing eligibility from transaction feasibility.""",
+
+    "workplan": """Write the Public Company Readiness Workplan. Structure by WORKSTREAMS, not generic bullets. Each workstream must include:
+- Workstream name (e.g., Corporate Restructuring, Audit & Accounting, Legal & Regulatory, Board & Governance, Internal Controls, IPO Materials, Cap Table Cleanup, Financing Bridge)
+- Current state
+- Red flags (if any)
+- Required actions (numbered)
+- Owner (Company / Legal Counsel / Auditor / Underwriter / Advisory)
+- Estimated effort (light / moderate / heavy)
+- Priority: Must-have vs Good-to-have
+- Timing: Pre-filing / Filing / Pre-roadshow
+Present as a structured table or matrix format.""",
+
+    "conclusion": """Write the Conclusion & Readiness Assessment. Structure as:
+1. Strengths — what makes the IPO story credible
+2. Critical blockers — the 3-5 issues that MUST be resolved before filing
+3. Overall readiness rating: Ready / Conditionally Ready / Not Ready (with rationale)
+4. Recommended next steps (numbered, prioritized, with owners)
+5. Realistic timeline estimate for IPO readiness given identified gaps
+Be direct and honest — this is for decision-making, not marketing.""",
+}
+
+
+# Sections that must run first (they establish canonical data for everything else)
+GAP_SEQUENTIAL_SECTIONS = {
+    "listing_path", "fpi_regime", "nasdaq_requirements",
+    "financial_highlights", "other_metrics", "equity_bridge",
+}
+
+# Sections that benefit from deepseek-reasoner (chain-of-thought reasoning)
+# These involve complex financial math, multi-step logic, or judgment calls
+GAP_REASONER_SECTIONS = {
+    "equity_bridge",        # multi-step financial bridge math
+    "cap_table_analysis",   # complex structural assessment
+    "audit_readiness",      # deep accounting analysis
+    "peer_comps",           # valuation cross-checks and comparables
+    "transaction_feasibility",  # multi-factor feasibility judgment
+}
+
+# Max concurrent API calls (DeepSeek rate-limits aggressively on free/low tiers)
+MAX_CONCURRENT = 2
+
+
+async def _generate_gap_parallel(
+    db: AsyncSession,
+    report: "Report",
+    sections: list[tuple[str, str]],
+    system_prompt: str,
+    gap_user_suffix: str,
+    max_tokens: int,
+) -> None:
+    """Generate gap analysis sections in two passes:
+    Pass 1: Sequential — foundation sections that establish canonical data
+    Pass 2: Parallel — all remaining sections (with foundation content as context)
+
+    Cuts total generation time from ~8min to ~3min for a 16-section report.
+    """
+    import asyncio
+
+    total = len(sections)
+    foundation_content: list[str] = []
+
+    # Pass 1: Generate foundation sections sequentially
+    sequential_sections = []
+    parallel_sections = []
+    for i, (key, title) in enumerate(sections):
+        if key in GAP_SEQUENTIAL_SECTIONS:
+            sequential_sections.append((i, key, title))
+        else:
+            parallel_sections.append((i, key, title))
+
+    report.progress_message = f"Pass 1/{2}: Establishing data foundations (0/{len(sequential_sections)})"
+    await db.commit()
+
+    for idx, (sort_order, section_key, section_title) in enumerate(sequential_sections):
+        use_reasoner = section_key in GAP_REASONER_SECTIONS
+        model_tag = " [R1]" if use_reasoner else ""
+        report.progress_message = f"Pass 1/2: {idx+1}/{len(sequential_sections)} — {section_title}{model_tag}"
+        await db.commit()
+
+        section_instruction = GAP_SECTION_INSTRUCTIONS.get(section_key, "")
+        content = await generate_text(
+            system_prompt=system_prompt,
+            user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble.{gap_user_suffix}\n{section_instruction}',
+            max_tokens=max_tokens,
+            use_reasoner=use_reasoner,
+        )
+
+        section = ReportSection(
+            report_id=report.id,
+            section_key=section_key,
+            section_title=section_title,
+            content=content,
+            sort_order=sort_order,
+        )
+        db.add(section)
+        await db.commit()
+        foundation_content.append(f"### {section_title}\n{content[:1500]}")
+
+    # Build a condensed summary of foundation sections for parallel context
+    foundation_summary = "\n\n".join(foundation_content)
+    parallel_system_prompt = system_prompt + (
+        f"\n\n## ALREADY GENERATED SECTIONS (use these as canonical reference — do NOT contradict any numbers or assumptions here):\n{foundation_summary}"
+    )
+
+    # Pass 2: Generate remaining sections in parallel batches
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+
+    async def _gen_section(sort_order: int, section_key: str, section_title: str) -> ReportSection:
+        async with semaphore:
+            use_reasoner = section_key in GAP_REASONER_SECTIONS
+            section_instruction = GAP_SECTION_INSTRUCTIONS.get(section_key, "")
+            content = await generate_text(
+                system_prompt=parallel_system_prompt,
+                user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble.{gap_user_suffix}\n{section_instruction}',
+                max_tokens=max_tokens,
+                use_reasoner=use_reasoner,
+            )
+            return ReportSection(
+                report_id=report.id,
+                section_key=section_key,
+                section_title=section_title,
+                content=content,
+                sort_order=sort_order,
+            )
+
+    # Process parallel sections in small batches, saving after each batch
+    batch_size = MAX_CONCURRENT
+    for batch_start in range(0, len(parallel_sections), batch_size):
+        batch = parallel_sections[batch_start:batch_start + batch_size]
+        batch_num = batch_start // batch_size + 1
+        total_batches = (len(parallel_sections) + batch_size - 1) // batch_size
+        batch_labels = []
+        for _, k, t in batch:
+            tag = " [R1]" if k in GAP_REASONER_SECTIONS else ""
+            batch_labels.append(f"{t}{tag}")
+        report.progress_message = f"Pass 2/2: Batch {batch_num}/{total_batches} — {' + '.join(batch_labels)}"
+        await db.commit()
+
+        tasks = [_gen_section(so, k, t) for so, k, t in batch]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                sort_order, key, title = batch[i]
+                section = ReportSection(
+                    report_id=report.id,
+                    section_key=key,
+                    section_title=title,
+                    content=f"*Generation failed: {str(result)}*",
+                    sort_order=sort_order,
+                )
+                db.add(section)
+            else:
+                db.add(result)
+
+        await db.commit()
+
+
 async def generate_report_bg(
     db: AsyncSession,
     company_id: UUID,
@@ -376,17 +736,25 @@ async def generate_report_bg(
             except FileNotFoundError:
                 pass
 
-        # Build source registry for citations
+        # Build source registry for citations (not used for gap_analysis)
         web_results_list = []
         if web_context:
-            # Parse web results back from formatted text for registry
             import re
             for match in re.finditer(r"### Source \d+: (.+?)\nURL: (.+?)\n", web_context):
                 web_results_list.append({"title": match.group(1), "url": match.group(2)})
 
         source_registry, references_section = _build_source_registry(documents, web_results_list or None)
 
-        system_prompt = f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong).
+        # Build report-type-specific system prompt
+        if report_type == "gap_analysis":
+            system_prompt = _build_gap_analysis_prompt(
+                company, documents, tier, tier_instruction, template,
+                gap_knowledge, web_context, company_context,
+            )
+            # Gap analysis: no citations, no references section
+            references_section = ""
+        else:
+            system_prompt = f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong).
 Generate professional report content. Be concise, data-driven, and specific.
 Use markdown formatting. Reference actual company data when available.
 Follow IFRS 9 and IFRS 13 standards for fair value analysis.
@@ -407,35 +775,65 @@ Example: "Revenue increased 23% YoY to RM 12.1M [1], outpacing the industry aver
 Tier: {tier.upper()} — {tier_instruction}
 
 ## Report Template Reference
-{template[:2000]}{extra_knowledge}{gap_knowledge}
+{template[:2000]}{extra_knowledge}
 {web_context}
 
 ## Company Data
 {company_context}"""
 
+        # Retrieve memories for this skill
+        from app.services.agent.memory import retrieve_memories
+        memory_rules = await retrieve_memories(db, company_id=company_id, skill_name="generate_gap_analysis" if report_type == "gap_analysis" else f"generate_{report_type}")
+        if memory_rules:
+            rules_text = "\n".join(f"- {r}" for r in memory_rules)
+            system_prompt += f"\n\n## Guidelines from past feedback (follow these strictly):\n{rules_text}\n"
+
         max_tokens_per_section = {"essential": 800, "standard": 1500, "premium": 2500}.get(tier, 1500)
+        # Gap analysis needs more tokens for the new detailed sections
+        if report_type == "gap_analysis":
+            max_tokens_per_section = {"essential": 1000, "standard": 2000, "premium": 3000}.get(tier, 2000)
 
-        for i, (section_key, section_title) in enumerate(sections):
-            report.progress_message = f"Generating {i+1}/{len(sections)}: {section_title}"
-            await db.commit()
+        # Gap analysis user prompt — no citation instruction
+        gap_user_suffix = (
+            " Do NOT use inline citation numbers like [1], [2]. "
+            "State the basis of information naturally (e.g., 'Based on FY2025 audited financials' or 'Per management representations'). "
+            "If information is not available, clearly state 'Information Required' and describe what data is needed."
+        ) if report_type == "gap_analysis" else (
+            " IMPORTANT: Cite all data points and claims using inline [n] references to the numbered sources provided."
+        )
 
-            content = await generate_text(
-                system_prompt=system_prompt,
-                user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble. IMPORTANT: Cite all data points and claims using inline [n] references to the numbered sources provided.',
-                max_tokens=max_tokens_per_section,
+        # --- Two-pass generation for gap analysis (parallel batches) ---
+        if report_type == "gap_analysis" and len(sections) > 5:
+            await _generate_gap_parallel(
+                db, report, sections, system_prompt, gap_user_suffix, max_tokens_per_section,
             )
+        else:
+            # Standard sequential generation for other report types
+            for i, (section_key, section_title) in enumerate(sections):
+                report.progress_message = f"Generating {i+1}/{len(sections)}: {section_title}"
+                await db.commit()
 
-            section = ReportSection(
-                report_id=report.id,
-                section_key=section_key,
-                section_title=section_title,
-                content=content,
-                sort_order=i,
-            )
-            db.add(section)
-            await db.commit()
+                section_instruction = ""
+                if report_type == "gap_analysis":
+                    section_instruction = GAP_SECTION_INSTRUCTIONS.get(section_key, "")
 
-        # Append Sources & References section
+                content = await generate_text(
+                    system_prompt=system_prompt,
+                    user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble.{gap_user_suffix}\n{section_instruction}',
+                    max_tokens=max_tokens_per_section,
+                )
+
+                section = ReportSection(
+                    report_id=report.id,
+                    section_key=section_key,
+                    section_title=section_title,
+                    content=content,
+                    sort_order=i,
+                )
+                db.add(section)
+                await db.commit()
+
+        # Append Sources & References section (not for gap_analysis)
         if references_section:
             ref_section = ReportSection(
                 report_id=report.id,
