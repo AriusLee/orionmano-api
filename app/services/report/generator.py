@@ -31,6 +31,7 @@ REPORT_SECTIONS = {
             ("listing_path", "Assumptions & Listing Path"),
             ("financial_highlights", "Financial Position & Gap Assessment"),
             ("equity_bridge", "Financial Bridge to Listing Threshold"),
+            ("scorecard", "IPO Readiness Scorecard"),
             ("gaps_recommendations", "Critical Gaps & Priority Actions"),
             ("conclusion", "Conclusion & Readiness Assessment"),
         ],
@@ -43,13 +44,14 @@ REPORT_SECTIONS = {
             ("equity_bridge", "Financial Bridge to Listing Threshold"),
             ("entity_structure", "Entity Structure & Cap Table Assessment"),
             ("audit_readiness", "Audit & Accounting Readiness"),
+            ("scorecard", "IPO Readiness Scorecard"),
             ("financial_gaps", "Financial Gaps & Recommendations"),
             ("governance_gaps", "Governance Gaps & Recommendations"),
             ("reporting_gaps", "Reporting & Disclosure Gaps"),
             ("legal_compliance", "Legal & Regulatory Compliance Map"),
             ("industry_gaps", "Industry-Specific Gaps"),
             ("transaction_feasibility", "Transaction Feasibility & Peer Positioning"),
-            ("workplan", "Public Company Readiness Workplan"),
+            ("roadmap", "Implementation Roadmap & Timeline"),
             ("conclusion", "Conclusion & Readiness Assessment"),
         ],
         "premium": [
@@ -62,6 +64,7 @@ REPORT_SECTIONS = {
             ("entity_structure", "Entity Structure & Cap Table Assessment"),
             ("cap_table_analysis", "Cap Table Listability & Pre-IPO Cleanup"),
             ("audit_readiness", "Audit & Accounting Readiness"),
+            ("scorecard", "IPO Readiness Scorecard"),
             ("financial_gaps", "Financial Gaps & Recommendations"),
             ("governance_gaps", "Governance Gaps & Recommendations"),
             ("reporting_gaps", "Reporting & Disclosure Gaps"),
@@ -69,7 +72,7 @@ REPORT_SECTIONS = {
             ("industry_gaps", "Industry-Specific Gaps"),
             ("peer_comps", "Peer Comparables & Valuation Reality Check"),
             ("transaction_feasibility", "Transaction Feasibility & Bankability Analysis"),
-            ("workplan", "Public Company Readiness Workplan"),
+            ("roadmap", "Implementation Roadmap & Timeline"),
             ("conclusion", "Conclusion & Readiness Assessment"),
         ],
     },
@@ -477,11 +480,40 @@ If cap table is not provided, flag as Information Required and describe exactly 
 9. Consolidation basis — any issues?
 10. Internal controls readiness for SOX 302/404 compliance""",
 
-    "financial_gaps": """Write the Financial Gaps & Recommendations section in a structured table format. For each gap include: Metric, Company's Current Position, Nasdaq Requirement, Gap Assessment (with severity: CRITICAL/HIGH/MEDIUM), and Strategic Recommendations with specific action items.""",
+    "scorecard": """Write the IPO Readiness Scorecard section. This is a visual summary of the company's readiness across all dimensions.
 
-    "governance_gaps": """Write the Governance Gaps & Recommendations section. For each gap use the format: Gap title, Current State, Nasdaq Requirement (cite specific rule numbers like Rule 5605, 5630), Risk if not addressed, Required Action with timeline and owner.""",
+Create a table with the following format:
 
-    "reporting_gaps": """Write the Reporting & Disclosure Gaps section considering FPI status. Cover: Financial reporting standards conversion, PCAOB audit requirements, SEC filing obligations (20-F/6-K for FPI, not 10-K/10-Q), internal controls over financial reporting (ICFR/COSO), governance disclosure, KPI and non-financial metric disclosure requirements, risk factor disclosure requirements.""",
+| Dimension | Rating | Key Finding | Critical Actions |
+|-----------|--------|-------------|-----------------|
+
+**Dimensions to rate (all required):**
+1. **Financial Position** — equity, profitability, cash runway vs Nasdaq thresholds
+2. **Corporate Structure** — entity structure, cap table, listing vehicle readiness
+3. **Audit & Accounting** — PCAOB readiness, GAAP/IFRS compliance, internal controls
+4. **Governance & Board** — independence, committees, policies
+5. **Legal & Regulatory** — licensing, compliance, IP, pending issues
+6. **Reporting & Disclosure** — SEC filing readiness, IR function, KPI framework
+7. **Market Readiness** — peer positioning, valuation defensibility, institutional narrative
+8. **Transaction Feasibility** — underwriter appetite, deal size viability, public float
+
+**Rating scale (use these exact labels and emoji):**
+- 🟢 **Ready** — meets requirements, no material gaps
+- 🟡 **Conditional** — achievable with specific remediation within 6 months
+- 🔴 **Not Ready** — significant gaps requiring major work (>6 months) or fundamental restructuring
+- ⚪ **Information Required** — cannot assess without additional data
+
+After the table, provide:
+1. **Overall Readiness Rating:** Ready / Conditionally Ready / Not Ready
+2. **Estimated Time to IPO Readiness:** X-Y months from today
+3. **Estimated Total Remediation Cost:** USD X-Y range (sum of all workstream costs)
+4. **Go/No-Go Recommendation:** Clear judgment with conditions""",
+
+    "financial_gaps": """Write the Financial Gaps & Recommendations section in a structured table format. For each gap include: Metric, Company's Current Position, Nasdaq Requirement, Gap Assessment (with severity: CRITICAL/HIGH/MEDIUM), Strategic Recommendations with specific action items, and **Estimated Remediation Cost** (provide a USD range, e.g., "USD 50K-100K for audit conversion" or "USD 0 — internal process change"). Every recommendation must have a cost estimate, even if it's "$0 — internal effort" or "TBD — dependent on scope".""",
+
+    "governance_gaps": """Write the Governance Gaps & Recommendations section. For each gap use the format: Gap title, Current State, Nasdaq Requirement (cite specific rule numbers like Rule 5605, 5630), Risk if not addressed, Required Action with timeline and owner, and **Estimated Cost** (e.g., independent director compensation: USD 30K-60K/year per director, D&O insurance: USD 50K-200K/year, committee setup: USD 10K-30K legal fees).""",
+
+    "reporting_gaps": """Write the Reporting & Disclosure Gaps section considering FPI status. Cover: Financial reporting standards conversion, PCAOB audit requirements, SEC filing obligations (20-F/6-K for FPI, not 10-K/10-Q), internal controls over financial reporting (ICFR/COSO), governance disclosure, KPI and non-financial metric disclosure requirements, risk factor disclosure requirements. For each gap, include **Estimated Cost** (e.g., PCAOB audit: USD 200K-500K, GAAP/IFRS conversion: USD 100K-300K, SOX readiness: USD 150K-400K, IR function setup: USD 50K-150K/year).""",
 
     "legal_compliance": """Write the Legal & Regulatory Compliance Map section. This must be SPECIFIC to the company's industry and jurisdictions, not generic. Cover:
 1. Industry-specific licensing requirements per jurisdiction
@@ -490,9 +522,9 @@ If cap table is not provided, flag as Information Required and describe exactly 
 4. IP ownership completeness (code, brand, content, software)
 5. Key contract dependencies (publishers, payment channels, app stores)
 6. Pending disputes / threatened claims / founder legal history
-Present as a compliance checklist with status (Compliant / Gap / Information Required) per item.""",
+Present as a compliance checklist with status (Compliant / Gap / Information Required) per item. For each gap, include **Estimated Cost** (e.g., legal opinion: USD 20K-50K, licensing application: USD 10K-50K, IP registration: USD 5K-20K, regulatory counsel retainer: USD 50K-150K).""",
 
-    "industry_gaps": """Write the Industry-Specific Gaps section. These must be unique to this company — not generic industry commentary. Each gap must reference specific company data or clearly flag where data is missing. Focus on what would concern an institutional investor or underwriter about THIS specific company.""",
+    "industry_gaps": """Write the Industry-Specific Gaps section. These must be unique to this company — not generic industry commentary. Each gap must reference specific company data or clearly flag where data is missing. Focus on what would concern an institutional investor or underwriter about THIS specific company. For each gap, include **Estimated Remediation Cost** with a USD range.""",
 
     "peer_comps": """Write the Peer Comparables & Valuation Reality Check section. Cover:
 1. Identify 5-8 listed peer companies (Nasdaq/NYSE/global) in similar sectors
@@ -512,16 +544,67 @@ If insufficient data, provide the peer identification framework and note what fi
 7. Legal counsel appetite (will a reputable securities firm take this?)
 This section distinguishes listing eligibility from transaction feasibility.""",
 
-    "workplan": """Write the Public Company Readiness Workplan. Structure by WORKSTREAMS, not generic bullets. Each workstream must include:
-- Workstream name (e.g., Corporate Restructuring, Audit & Accounting, Legal & Regulatory, Board & Governance, Internal Controls, IPO Materials, Cap Table Cleanup, Financing Bridge)
-- Current state
-- Red flags (if any)
-- Required actions (numbered)
-- Owner (Company / Legal Counsel / Auditor / Underwriter / Advisory)
-- Estimated effort (light / moderate / heavy)
-- Priority: Must-have vs Good-to-have
-- Timing: Pre-filing / Filing / Pre-roadshow
-Present as a structured table or matrix format.""",
+    "roadmap": """Write the Implementation Roadmap & Timeline section. This combines the workplan with a visual timeline.
+
+### Part 1: Workstream Summary Table
+
+Create a table with ALL workstreams:
+
+| # | Workstream | Status | Severity | Est. Cost (USD) | Owner | Timeline | Phase |
+|---|-----------|--------|----------|-----------------|-------|----------|-------|
+
+**Workstreams (all required):**
+1. Corporate Restructuring (topco, holdco, redomicile)
+2. Capital Raising & Equity Bridge
+3. Audit & Accounting Conversion (PCAOB, GAAP/IFRS)
+4. Internal Controls & SOX Readiness
+5. Board & Governance Setup
+6. Legal & Regulatory Cleanup
+7. Cap Table Cleanup & Simplification
+8. Financial Systems & Close Process
+9. IPO Narrative & Investor Materials
+10. Transaction Team Assembly (underwriter, counsel, auditor)
+
+**Status:** 🟢 On Track / 🟡 Action Needed / 🔴 Critical / ⚪ Not Started
+**Phase:** Immediate / Pre-filing / Filing / Pre-roadshow
+
+### Part 2: Gantt-Style Timeline
+
+Create a TEXT-BASED Gantt chart showing all workstreams across a timeline. Use this format:
+
+```
+Phase:        | IMMEDIATE  | PRE-FILING    | FILING      | PRE-ROADSHOW |
+Timeline:     | Month 1-3  | Month 4-8     | Month 9-12  | Month 13-15  |
+─────────────────────────────────────────────────────────────────────────
+Restructuring |████████████|               |             |              |
+Cap Raise     |████████████|███████████████|             |              |
+Audit/PCAOB   |            |███████████████|█████████████|              |
+SOX/Controls  |            |███████████████|█████████████|              |
+Governance    |████████████|███████████████|             |              |
+Legal/Reg     |████████████|███████████████|             |              |
+Cap Table     |████████████|               |             |              |
+Fin Systems   |            |███████████████|█████████████|              |
+IPO Materials |            |               |█████████████|██████████████|
+Deal Team     |            |███████████████|█████████████|██████████████|
+```
+
+Adjust the bars based on the company's actual situation. Show dependencies (e.g., "Audit cannot start until Restructuring is complete").
+
+### Part 3: Cost Summary
+
+| Category | Estimated Range (USD) |
+|----------|----------------------|
+| Advisory & Consulting | $XXK - $XXK |
+| Legal (Securities + Corporate) | $XXK - $XXK |
+| Audit (PCAOB + SOX) | $XXK - $XXK |
+| Governance (Directors, D&O) | $XXK - $XXK |
+| Regulatory & Licensing | $XXK - $XXK |
+| IPO Transaction Costs | $XXK - $XXK |
+| **Total Estimated Cost** | **$X.XM - $X.XM** |
+
+### Part 4: Critical Path & Dependencies
+
+List the 3-5 items that are on the CRITICAL PATH — if any of these slip, the entire IPO timeline shifts. Show dependencies between workstreams.""",
 
     "conclusion": """Write the Conclusion & Readiness Assessment. Structure as:
 1. Strengths — what makes the IPO story credible
@@ -545,8 +628,10 @@ GAP_REASONER_SECTIONS = {
     "equity_bridge",        # multi-step financial bridge math
     "cap_table_analysis",   # complex structural assessment
     "audit_readiness",      # deep accounting analysis
+    "scorecard",            # multi-dimension judgment + go/no-go recommendation
     "peer_comps",           # valuation cross-checks and comparables
     "transaction_feasibility",  # multi-factor feasibility judgment
+    "roadmap",              # cost aggregation + dependency analysis + timeline
 }
 
 # Max concurrent API calls (DeepSeek rate-limits aggressively on free/low tiers)
