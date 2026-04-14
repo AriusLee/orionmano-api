@@ -1,5 +1,6 @@
 """Generate branded PDF reports using WeasyPrint — matching Orionmano's actual report format."""
 
+import os
 from uuid import UUID
 from datetime import datetime
 
@@ -13,6 +14,7 @@ from app.models.company import Company
 
 
 REPORT_TYPE_LABELS = {
+    "gap_analysis": "Gap Analysis",
     "industry_report": "Industry Expert Report",
     "dd_report": "Draft Financial Due Diligence Report",
     "valuation_report": "Valuation Report",
@@ -23,6 +25,7 @@ REPORT_TYPE_LABELS = {
 }
 
 REPORT_ICONS = {
+    "gap_analysis": "&#128203;",
     "industry_report": "&#127919;",
     "dd_report": "&#128187;",
     "valuation_report": "&#128200;",
@@ -60,6 +63,7 @@ body { font-family: 'Inter', sans-serif; font-size: 10pt; color: #1E293B; line-h
 .cover .brand { font-size: 14pt; font-weight: 700; letter-spacing: 8px; color: #14B8A6; margin-bottom: 8px; }
 .cover .sub { font-size: 8pt; letter-spacing: 4px; color: #64748B; margin-bottom: 50px; text-transform: uppercase; }
 .cover .icon { font-size: 72pt; margin-bottom: 40px; opacity: 0.6; }
+.cover .company-logo { max-width: 120px; max-height: 120px; margin-bottom: 30px; border-radius: 12px; object-fit: contain; }
 .cover h1 { font-size: 22pt; font-weight: 700; margin-bottom: 8px; }
 .cover .report-type { font-size: 13pt; color: #94A3B8; margin-bottom: 6px; }
 .cover .date { font-size: 9pt; color: #475569; margin-top: 50px; }
@@ -89,15 +93,47 @@ body { font-family: 'Inter', sans-serif; font-size: 10pt; color: #1E293B; line-h
 .section .content code { background: #F1F5F9; padding: 1px 4px; border-radius: 3px; font-size: 9pt; }
 .section .content pre { background: #F1F5F9; padding: 12px; border-radius: 6px; margin: 8px 0; overflow-x: auto; font-size: 8pt; }
 .section .content blockquote { border-left: 3px solid #14B8A6; padding-left: 12px; margin: 8px 0; color: #475569; font-style: italic; }
-.section .content table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 9pt; }
-.section .content th { background: #0C1929; color: #F8FAFC; padding: 6px 10px; text-align: left; font-weight: 600; }
-.section .content td { padding: 5px 10px; border-bottom: 1px solid #E2E8F0; }
+.section .content table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 8pt; table-layout: fixed; word-wrap: break-word; overflow-wrap: break-word; }
+.section .content th { background: #0C1929; color: #F8FAFC; padding: 5px 6px; text-align: left; font-weight: 600; word-wrap: break-word; overflow-wrap: break-word; }
+.section .content td { padding: 4px 6px; border-bottom: 1px solid #E2E8F0; word-wrap: break-word; overflow-wrap: break-word; vertical-align: top; }
 .section .content tr:nth-child(even) td { background: #F8FAFC; }
+.section .content hr { border: none; border-top: 1px solid #CBD5E1; margin: 16px 0; }
+.section .content h4 { font-size: 10pt; font-weight: 600; color: #334155; margin-top: 10px; margin-bottom: 4px; }
+.section .content h5 { font-size: 9pt; font-weight: 600; color: #475569; margin-top: 8px; margin-bottom: 3px; }
+.section .content em { color: #475569; }
+.section .content a { color: #14B8A6; text-decoration: underline; }
+.section .content img { max-width: 100%; height: auto; }
+.section .content br { line-height: 0.5; }
 """
 
 
 def _md_to_html(text: str) -> str:
-    return markdown.markdown(text, extensions=["tables", "fenced_code"])
+    import re
+
+    # Strip wrapping markdown code fences the LLM sometimes adds
+    stripped = text.strip()
+    if stripped.startswith("```markdown"):
+        stripped = stripped[len("```markdown"):].strip()
+    if stripped.startswith("```md"):
+        stripped = stripped[len("```md"):].strip()
+    if stripped.startswith("```"):
+        stripped = stripped[3:].strip()
+    if stripped.endswith("```"):
+        stripped = stripped[:-3].strip()
+
+    # Ensure blank line before tables — markdown requires it for table parsing
+    # Detect table start: a header row (|...|) followed by a separator row (|---|)
+    stripped = re.sub(r'(\S[^\n]*)\n(\|[^\n]+\|\s*\n\|[\s:|-]+\|)', r'\1\n\n\2', stripped)
+
+    return markdown.markdown(
+        stripped,
+        extensions=[
+            "tables",
+            "fenced_code",
+            "sane_lists",
+            "md_in_html",
+        ],
+    )
 
 
 async def generate_report_pdf(db: AsyncSession, company_id: UUID, report_id: UUID) -> bytes:
@@ -116,6 +152,16 @@ async def generate_report_pdf(db: AsyncSession, company_id: UUID, report_id: UUI
     icon = REPORT_ICONS.get(report.report_type, "&#128196;")
     date_str = datetime.now().strftime("%d %B %Y")
 
+    # Build company logo HTML — use fetched logo or fallback to icon
+    logo_html = f'<div class="icon">{icon}</div>'
+    if company and company.logo_path and os.path.exists(company.logo_path):
+        import base64
+        with open(company.logo_path, "rb") as f:
+            logo_b64 = base64.b64encode(f.read()).decode()
+        ext = company.logo_path.rsplit(".", 1)[-1].lower()
+        mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "ico": "image/x-icon", "webp": "image/webp"}.get(ext, "image/png")
+        logo_html = f'<img class="company-logo" src="data:{mime};base64,{logo_b64}" alt="{company_name} logo" />'
+
     # Build sections HTML
     sections_html = ""
     toc_html = ""
@@ -130,7 +176,7 @@ async def generate_report_pdf(db: AsyncSession, company_id: UUID, report_id: UUI
 <div class="cover">
   <div class="brand">ORIONMANO</div>
   <div class="sub">Assurance Services</div>
-  <div class="icon">{icon}</div>
+  {logo_html}
   <h1>{company_name}</h1>
   <div class="report-type">{report_type_label}</div>
   <div class="date">Transaction Services | {date_str}</div>

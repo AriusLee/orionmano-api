@@ -182,3 +182,25 @@ async def get_executive_summary(
     from app.services.company_intelligence import generate_executive_summary
     summary = await generate_executive_summary(db, company_id)
     return {"summary": summary}
+
+
+@router.post("/{company_id}/fetch-logo")
+async def fetch_company_logo(
+    company_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Fetch and store the company logo from their website."""
+    from app.services.ai.logo_fetcher import fetch_logo
+
+    result = await db.execute(select(Company).where(Company.id == company_id))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    logo_path = await fetch_logo(company.name, company.website)
+    if logo_path:
+        company.logo_path = logo_path
+        await db.commit()
+        return {"logo_path": logo_path, "status": "fetched"}
+    return {"logo_path": None, "status": "not_found"}

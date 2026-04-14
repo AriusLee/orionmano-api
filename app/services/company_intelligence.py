@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.models.company import Company
 from app.models.document import Document
 from app.services.ai.client import generate_text
+from app.services.ai.logo_fetcher import fetch_logo
 
 
 async def auto_fill_company(db: AsyncSession, company_id: UUID) -> dict:
@@ -56,6 +57,16 @@ async def auto_fill_company(db: AsyncSession, company_id: UUID) -> dict:
     if not company.registration_number and merged.get("registration_number"):
         company.registration_number = merged["registration_number"]
         updated["registration_number"] = merged["registration_number"]
+
+    # Auto-fetch logo if not already set
+    if not company.logo_path:
+        try:
+            logo_path = await fetch_logo(company.name, company.website or merged.get("website"))
+            if logo_path:
+                company.logo_path = logo_path
+                updated["logo_path"] = logo_path
+        except Exception:
+            pass
 
     if updated:
         await db.commit()

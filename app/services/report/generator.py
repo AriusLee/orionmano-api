@@ -257,6 +257,51 @@ def _build_company_context(company: Company, documents: list[Document]) -> str:
     return "\n".join(parts)
 
 
+def _build_source_registry(documents: list[Document], web_results: list[dict] | None = None) -> tuple[str, str]:
+    """Build a numbered source registry and return (registry_text, references_section).
+
+    Returns:
+        registry_text: Source list for the system prompt so the AI knows how to cite.
+        references_section: Formatted "Sources & References" markdown section for the report.
+    """
+    sources = []
+    ref_lines = []
+    idx = 1
+
+    # Document sources
+    for doc in documents:
+        if doc.extracted_data and doc.extraction_status == "completed":
+            doc_type = ""
+            if isinstance(doc.extracted_data, dict):
+                doc_type = doc.extracted_data.get("document_type", "")
+            label = f"{doc.filename}"
+            if doc_type:
+                label += f" ({doc_type})"
+            sources.append(f"[{idx}] {label}")
+            ref_lines.append(f"{idx}. {label} — Provided by company management")
+            idx += 1
+
+    # Web search sources
+    if web_results:
+        for r in web_results:
+            if r.get("url"):
+                title = r.get("title", "Web source")
+                url = r["url"]
+                sources.append(f"[{idx}] {title} — {url}")
+                ref_lines.append(f"{idx}. {title} — {url}")
+                idx += 1
+
+    registry_text = ""
+    if sources:
+        registry_text = "## Available Sources (use these citation numbers)\n" + "\n".join(sources)
+
+    references_section = ""
+    if ref_lines:
+        references_section = "## Sources & References\n\n" + "\n".join(ref_lines)
+
+    return registry_text, references_section
+
+
 TIER_INSTRUCTIONS = {
     "essential": "Write concisely. 2-3 pages total. Focus on key findings only.",
     "standard": "Write detailed analysis. 5-8 pages total. Include data-driven insights.",
@@ -331,10 +376,33 @@ async def generate_report_bg(
             except FileNotFoundError:
                 pass
 
+        # Build source registry for citations
+        web_results_list = []
+        if web_context:
+            # Parse web results back from formatted text for registry
+            import re
+            for match in re.finditer(r"### Source \d+: (.+?)\nURL: (.+?)\n", web_context):
+                web_results_list.append({"title": match.group(1), "url": match.group(2)})
+
+        source_registry, references_section = _build_source_registry(documents, web_results_list or None)
+
         system_prompt = f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong).
 Generate professional report content. Be concise, data-driven, and specific.
 Use markdown formatting. Reference actual company data when available.
 Follow IFRS 9 and IFRS 13 standards for fair value analysis.
+
+## CITATION REQUIREMENTS (MANDATORY)
+You MUST cite sources for all claims, data points, and analysis using inline numbered references.
+- Use the format [1], [2], [3] etc. to cite sources inline within your text.
+- Every financial figure, metric, or data point MUST have a citation to its source document.
+- Every market data point, industry statistic, or external fact MUST have a citation.
+- Place the citation number immediately after the relevant claim or data point.
+- A single sentence may have multiple citations if it draws from multiple sources.
+- If you cannot attribute a claim to a specific source, state the basis (e.g., "Based on management representations" or "Industry standard practice").
+
+Example: "Revenue increased 23% YoY to RM 12.1M [1], outpacing the industry average of 15% [4]."
+
+{source_registry}
 
 Tier: {tier.upper()} — {tier_instruction}
 
@@ -353,7 +421,7 @@ Tier: {tier.upper()} — {tier_instruction}
 
             content = await generate_text(
                 system_prompt=system_prompt,
-                user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble.',
+                user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble. IMPORTANT: Cite all data points and claims using inline [n] references to the numbered sources provided.',
                 max_tokens=max_tokens_per_section,
             )
 
@@ -365,6 +433,18 @@ Tier: {tier.upper()} — {tier_instruction}
                 sort_order=i,
             )
             db.add(section)
+            await db.commit()
+
+        # Append Sources & References section
+        if references_section:
+            ref_section = ReportSection(
+                report_id=report.id,
+                section_key="references",
+                section_title="Sources & References",
+                content=references_section,
+                sort_order=len(sections),
+            )
+            db.add(ref_section)
             await db.commit()
 
         report.status = "draft"
