@@ -104,11 +104,20 @@ body { font-family: 'Inter', sans-serif; font-size: 10pt; color: #1E293B; line-h
 .section .content a { color: #14B8A6; text-decoration: underline; }
 .section .content img { max-width: 100%; height: auto; }
 .section .content br { line-height: 0.5; }
+
+/* Inline chart figures generated from ```chart``` JSON blocks */
+.section .content figure.chart { margin: 16px 0; page-break-inside: avoid; }
+.section .content figure.chart .chart-title { font-size: 10pt; font-weight: 600; color: #0F172A; margin-bottom: 6px; }
+.section .content figure.chart .chart-body { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px; }
+.section .content figure.chart .chart-body svg { display: block; max-width: 100%; height: auto; }
+.section .content figure.chart .chart-source { font-size: 8pt; font-style: italic; color: #64748B; margin-top: 4px; }
+.section .content pre.chart-error { background: #FEF2F2; color: #991B1B; padding: 8px; border-radius: 6px; font-size: 8pt; white-space: pre-wrap; }
 """
 
 
 def _md_to_html(text: str) -> str:
     import re
+    from app.services.report.chart_renderer import replace_chart_blocks
 
     # Strip wrapping markdown code fences the LLM sometimes adds
     stripped = text.strip()
@@ -116,13 +125,19 @@ def _md_to_html(text: str) -> str:
         stripped = stripped[len("```markdown"):].strip()
     if stripped.startswith("```md"):
         stripped = stripped[len("```md"):].strip()
-    if stripped.startswith("```"):
+    # Only strip an outer ``` fence if the OPENING fence isn't immediately
+    # followed by a known code-block language we care about (`chart`).
+    # Otherwise we'd swallow the chart block.
+    if stripped.startswith("```") and not stripped.startswith("```chart"):
         stripped = stripped[3:].strip()
-    if stripped.endswith("```"):
+    if stripped.endswith("```") and not re.search(r"```chart\s*\n[\s\S]*?```\s*$", stripped):
         stripped = stripped[:-3].strip()
 
+    # Convert ```chart {...}``` fences into inline-SVG <figure> blocks BEFORE
+    # passing to the markdown parser so the JSON never reaches the renderer.
+    stripped = replace_chart_blocks(stripped)
+
     # Ensure blank line before tables — markdown requires it for table parsing
-    # Detect table start: a header row (|...|) followed by a separator row (|---|)
     stripped = re.sub(r'(\S[^\n]*)\n(\|[^\n]+\|\s*\n\|[\s:|-]+\|)', r'\1\n\n\2', stripped)
 
     return markdown.markdown(
