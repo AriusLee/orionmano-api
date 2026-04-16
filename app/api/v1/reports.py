@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db, async_session
@@ -63,6 +63,26 @@ async def list_reports(
         select(Report).where(Report.company_id == company_id).order_by(Report.created_at.desc())
     )
     return result.scalars().all()
+
+
+@router.delete("/{report_id}", status_code=204)
+async def delete_report(
+    company_id: UUID,
+    report_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Report).where(Report.id == report_id, Report.company_id == company_id)
+    )
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    await db.execute(delete(ReportSection).where(ReportSection.report_id == report_id))
+    await db.delete(report)
+    await db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/{report_id}", response_model=ReportResponse)
