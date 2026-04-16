@@ -1,4 +1,7 @@
-"""Generate branded PDF reports using WeasyPrint — matching Orionmano's actual report format."""
+"""Generate branded PDF reports using WeasyPrint.
+
+Brand (Orionmano vs MVPI) is selected per report_type — see app.services.branding.
+"""
 
 import os
 from uuid import UUID
@@ -11,6 +14,7 @@ import markdown
 
 from app.models.report import Report, ReportSection
 from app.models.company import Company
+from app.services.branding import brand_for, brand_logo_data_uri
 
 
 REPORT_TYPE_LABELS = {
@@ -32,18 +36,21 @@ REPORT_ICONS = {
     "teaser": "&#128196;",
 }
 
-CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+def _page_css(brand_name: str, brand_subtitle: str) -> str:
+    return (
+        "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');\n"
+        "@page {\n"
+        "  size: A4;\n"
+        "  margin: 25mm 20mm 30mm 20mm;\n"
+        f'  @top-left {{ content: "{brand_name}"; font-family: \'Inter\', sans-serif; font-size: 8px; font-weight: 700; letter-spacing: 3px; color: #14B8A6; }}\n'
+        f'  @top-right {{ content: "{brand_subtitle}"; font-family: \'Inter\', sans-serif; font-size: 8px; color: #94A3B8; letter-spacing: 1px; }}\n'
+        "  @bottom-left { content: counter(page); font-family: 'Inter', sans-serif; font-size: 8px; color: #64748B; }\n"
+        "  @bottom-right { content: \"Strictly Private and Confidential\"; font-family: 'Inter', sans-serif; font-size: 7px; color: #64748B; font-weight: 600; }\n"
+        "}\n"
+    )
 
-@page {
-  size: A4;
-  margin: 25mm 20mm 30mm 20mm;
-  @top-left { content: "ORIONMANO"; font-family: 'Inter', sans-serif; font-size: 8px; font-weight: 700; letter-spacing: 3px; color: #14B8A6; }
-  @top-right { content: "Assurance Services"; font-family: 'Inter', sans-serif; font-size: 8px; color: #94A3B8; letter-spacing: 1px; }
-  @bottom-left { content: counter(page); font-family: 'Inter', sans-serif; font-size: 8px; color: #64748B; }
-  @bottom-right { content: "Strictly Private and Confidential"; font-family: 'Inter', sans-serif; font-size: 7px; color: #64748B; font-weight: 600; }
-}
 
+_STATIC_CSS = """
 @page :first {
   margin: 0;
   @top-left { content: none; }
@@ -60,6 +67,7 @@ body { font-family: 'Inter', sans-serif; font-size: 10pt; color: #1E293B; line-h
   align-items: center; justify-content: center; text-align: center;
   background: #0C1929; color: #F8FAFC; page-break-after: always;
 }
+.cover .brand-logo { max-height: 56px; max-width: 180px; margin-bottom: 18px; object-fit: contain; }
 .cover .brand { font-size: 14pt; font-weight: 700; letter-spacing: 8px; color: #14B8A6; margin-bottom: 8px; }
 .cover .sub { font-size: 8pt; letter-spacing: 4px; color: #64748B; margin-bottom: 50px; text-transform: uppercase; }
 .cover .icon { font-size: 72pt; margin-bottom: 40px; opacity: 0.6; }
@@ -166,6 +174,12 @@ async def generate_report_pdf(db: AsyncSession, company_id: UUID, report_id: UUI
     report_type_label = REPORT_TYPE_LABELS.get(report.report_type, report.report_type)
     icon = REPORT_ICONS.get(report.report_type, "&#128196;")
     date_str = datetime.now().strftime("%d %B %Y")
+    brand = brand_for(report.report_type)
+    brand_logo = brand_logo_data_uri(brand)
+    brand_logo_html = (
+        f'<img class="brand-logo" src="{brand_logo}" alt="{brand.name} logo" />'
+        if brand_logo else ""
+    )
 
     # Build company logo HTML — use fetched logo or fallback to icon
     logo_html = f'<div class="icon">{icon}</div>'
@@ -185,12 +199,14 @@ async def generate_report_pdf(db: AsyncSession, company_id: UUID, report_id: UUI
         sections_html += f'<div class="section"><h2>{section.section_title}</h2><div class="content">{content_html}</div></div>'
         toc_html += f'<div class="toc-item"><span>{section.section_title}</span></div>'
 
-    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>{CSS}</style></head><body>
+    css = _page_css(brand.name, brand.subtitle) + _STATIC_CSS
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>{css}</style></head><body>
 
 <!-- COVER PAGE -->
 <div class="cover">
-  <div class="brand">ORIONMANO</div>
-  <div class="sub">Assurance Services</div>
+  {brand_logo_html}
+  <div class="brand">{brand.name}</div>
+  <div class="sub">{brand.subtitle}</div>
   {logo_html}
   <h1>{company_name}</h1>
   <div class="report-type">{report_type_label}</div>

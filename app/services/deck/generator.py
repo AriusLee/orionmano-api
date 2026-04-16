@@ -11,10 +11,18 @@ from sqlalchemy import select
 from app.models.company import Company
 from app.models.document import Document
 from app.services.deck.styles import CSS
+from app.services.branding import Brand, brand_for, brand_logo_data_uri
 
 
-def _footer(deck_name: str) -> str:
-    return f'<div class="footer"><span class="brand">ORIONMANO</span><span>{deck_name}</span></div>'
+def _footer(brand: Brand, deck_name: str) -> str:
+    return f'<div class="footer"><span class="brand">{brand.name}</span><span>{deck_name}</span></div>'
+
+
+def _brand_logo_img(brand: Brand, max_height_px: int = 40) -> str:
+    uri = brand_logo_data_uri(brand)
+    if not uri:
+        return ""
+    return f'<img src="{uri}" alt="{brand.name} logo" style="max-height:{max_height_px}px;max-width:180px;object-fit:contain;margin-bottom:18px;" />'
 
 
 def _esc(val: str | None) -> str:
@@ -63,12 +71,13 @@ async def _get_company_data(db: AsyncSession, company_id: UUID) -> dict:
     }
 
 
-def build_sales_deck(data: dict) -> str:
+def build_sales_deck(data: dict, brand: Brand) -> str:
     name = _esc(data["name"])
     industry = _esc(data["industry"])
     country = _esc(data["country"])
     description = _esc(data["description"]) or f"A {industry.lower()} company based in {country}."
-    f = _footer("Sales Deck")
+    f = _footer(brand, "Sales Deck")
+    brand_logo = _brand_logo_img(brand, max_height_px=48)
 
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>{CSS}</style></head><body>
 
@@ -78,8 +87,9 @@ def build_sales_deck(data: dict) -> str:
   <div class="glow glow-b" style="width:300px;height:300px;bottom:-50px;left:100px;opacity:0.08;"></div>
   <div class="rel" style="display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">
     <div>
-      <div style="font-size:16px;letter-spacing:10px;color:#14B8A6;font-weight:600;margin-bottom:36px;">ORIONMANO</div>
-      <div style="font-size:11px;letter-spacing:4px;color:#64748B;margin-bottom:40px;">ASSURANCE SERVICES</div>
+      {brand_logo}
+      <div style="font-size:16px;letter-spacing:10px;color:#14B8A6;font-weight:600;margin-bottom:36px;">{brand.name}</div>
+      <div style="font-size:11px;letter-spacing:4px;color:#64748B;margin-bottom:40px;">{brand.subtitle.upper()}</div>
       <div class="divider" style="width:60px;margin:0 auto 28px;"></div>
       <h1>{name}</h1>
       <p style="font-size:17px;color:#94A3B8;">Advisory Engagement Proposal</p>
@@ -88,16 +98,16 @@ def build_sales_deck(data: dict) -> str:
   </div>
 </div>
 
-<!-- SLIDE 2: ABOUT ORIONMANO -->
+<!-- SLIDE 2: ABOUT {brand.name} -->
 <div class="slide" style="padding:56px 70px;">
   <div class="glow glow-t" style="width:400px;height:400px;top:-150px;left:-150px;opacity:0.1;"></div>
   <div class="rel">
-    <div class="label">About Orionmano</div>
+    <div class="label">About {brand.name}</div>
     <h2>Your trusted <span class="teal">financial advisory</span> partner</h2>
     <div class="divider"></div>
     <div class="g2" style="gap:50px;margin-top:12px;">
       <div>
-        <p style="margin-bottom:20px;">Orionmano International Holdings is a Hong Kong-based financial advisory firm specializing in business valuation, due diligence, accounting & tax services, and regulatory compliance.</p>
+        <p style="margin-bottom:20px;">{brand.legal_name} is a financial advisory firm specializing in business valuation, due diligence, transaction services, and capital markets advisory.</p>
         <p>Our work follows international standards including IFRS 13 and ASC 820, ensuring accurate and reliable financial guidance for clients across Asia-Pacific.</p>
       </div>
       <div class="g2" style="gap:16px;">
@@ -248,7 +258,7 @@ def build_sales_deck(data: dict) -> str:
           <p style="font-size:12px;margin-top:6px;">Receive first deliverables</p>
         </div>
       </div>
-      <p style="font-size:12px;color:#475569;margin-top:50px;">ORIONMANO ASSURANCE SERVICES &middot; Strictly Private and Confidential</p>
+      <p style="font-size:12px;color:#475569;margin-top:50px;">{brand.footer_tag} &middot; Strictly Private and Confidential</p>
     </div>
   </div>
 </div>
@@ -256,18 +266,20 @@ def build_sales_deck(data: dict) -> str:
 </body></html>"""
 
 
-def build_kickoff_deck(data: dict) -> str:
+def build_kickoff_deck(data: dict, brand: Brand) -> str:
     name = _esc(data["name"])
     industry = _esc(data["industry"])
     country = _esc(data["country"])
-    f = _footer("Kick-off Meeting Deck")
+    f = _footer(brand, "Kick-off Meeting Deck")
+    brand_logo = _brand_logo_img(brand, max_height_px=48)
 
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>{CSS}</style></head><body>
 <div class="slide">
   <div class="glow glow-t" style="width:500px;height:500px;top:-100px;right:-100px;opacity:0.15;"></div>
   <div class="rel" style="display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">
     <div>
-      <div style="font-size:16px;letter-spacing:10px;color:#14B8A6;font-weight:600;margin-bottom:36px;">ORIONMANO</div>
+      {brand_logo}
+      <div style="font-size:16px;letter-spacing:10px;color:#14B8A6;font-weight:600;margin-bottom:36px;">{brand.name}</div>
       <div class="divider" style="width:60px;margin:0 auto 28px;"></div>
       <h1>{name}</h1>
       <p style="font-size:17px;">Engagement Kick-off</p>
@@ -323,19 +335,21 @@ def build_kickoff_deck(data: dict) -> str:
 </body></html>"""
 
 
-def build_teaser(data: dict) -> str:
+def build_teaser(data: dict, brand: Brand) -> str:
     name = _esc(data["name"])
     industry = _esc(data["industry"])
     country = _esc(data["country"])
     description = _esc(data["description"]) or f"A {industry.lower()} company based in {country}."
-    f = _footer("Company Teaser")
+    f = _footer(brand, "Company Teaser")
+    brand_logo = _brand_logo_img(brand, max_height_px=44)
 
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>{CSS}</style></head><body>
 <div class="slide">
   <div class="glow glow-t" style="width:500px;height:500px;top:-100px;right:-100px;opacity:0.15;"></div>
   <div class="rel" style="display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">
     <div>
-      <div style="font-size:16px;letter-spacing:10px;color:#14B8A6;font-weight:600;margin-bottom:20px;">ORIONMANO</div>
+      {brand_logo}
+      <div style="font-size:16px;letter-spacing:10px;color:#14B8A6;font-weight:600;margin-bottom:20px;">{brand.name}</div>
       <div class="divider" style="width:60px;margin:0 auto 28px;"></div>
       <h1 style="font-size:48px;">{name}</h1>
       <p style="font-size:18px;margin-top:8px;">{industry} &middot; {country}</p>
@@ -365,12 +379,12 @@ def build_teaser(data: dict) -> str:
 </body></html>"""
 
 
-def build_company_deck(data: dict) -> str:
+def build_company_deck(data: dict, brand: Brand) -> str:
     name = _esc(data["name"])
     industry = _esc(data["industry"])
     country = _esc(data["country"])
     description = _esc(data["description"]) or f"A {industry.lower()} company based in {country}."
-    f = _footer("Investor Presentation")
+    f = _footer(brand, "Investor Presentation")
 
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>{CSS}</style></head><body>
 <div class="slide">
@@ -381,7 +395,7 @@ def build_company_deck(data: dict) -> str:
       <div class="divider" style="width:60px;margin:0 auto 28px;"></div>
       <h1 style="font-size:40px;">Investor Presentation</h1>
       <p style="font-size:16px;margin-top:8px;">{industry} &middot; {country}</p>
-      <p style="font-size:12px;color:#475569;margin-top:50px;">Prepared by Orionmano Assurance Services</p>
+      <p style="font-size:12px;color:#475569;margin-top:50px;">Prepared by {brand.legal_name}</p>
     </div>
   </div>
 </div>
@@ -424,7 +438,7 @@ def build_company_deck(data: dict) -> str:
     <div>
       <h1 style="margin-bottom:20px;">{name}</h1>
       <div class="divider" style="width:60px;margin:0 auto 28px;"></div>
-      <p style="font-size:16px;">For further information, please contact Orionmano Assurance Services</p>
+      <p style="font-size:16px;">For further information, please contact {brand.legal_name}</p>
       <p style="font-size:12px;color:#475569;margin-top:50px;">Strictly Private and Confidential</p>
     </div>
   </div>
@@ -447,7 +461,8 @@ async def generate_deck_pdf(db: AsyncSession, company_id: UUID, deck_type: str) 
     if not builder:
         raise ValueError(f"Unknown deck type: {deck_type}")
 
-    html_content = builder(data)
+    brand = brand_for(deck_type)
+    html_content = builder(data, brand)
 
     from weasyprint import HTML
     pdf_bytes = HTML(string=html_content).write_pdf()
