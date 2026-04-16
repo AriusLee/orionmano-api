@@ -1,9 +1,12 @@
 import asyncio
+import os
+import time
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.config import settings
 from app.database import get_db, async_session
 from app.models.user import User
 from app.models.company import Company
@@ -333,3 +336,58 @@ async def fetch_company_logo(
         await db.commit()
         return {"logo_path": logo_path, "status": "fetched"}
     return {"logo_path": None, "status": "not_found"}
+
+
+_LOGO_EXT_BY_MIME = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+    "image/svg+xml": "svg",
+    "image/gif": "gif",
+    "image/x-icon": "ico",
+    "image/vnd.microsoft.icon": "ico",
+}
+_ALLOWED_LOGO_EXTS = set(_LOGO_EXT_BY_MIME.values())
+_MAX_LOGO_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+@router.post("/{company_id}/logo", response_model=CompanyResponse)
+async def upload_company_logo(
+    company_id: UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Upload a custom logo for the company. Replaces any existing logo."""
+    result = await db.execute(select(Company).where(Company.id == company_id))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    content = await file.read()
+    if len(content) > _MAX_LOGO_BYTES:
+        raise HTTPException(status_code=400, detail="Logo must be 5 MB or smaller")
+
+    ext = _LOGO_EXT_BY_MIME.get((file.content_type or "").lower())
+    if not ext and file.filename and "." in file.filename:
+        candidate = file.filename.rsplit(".", 1)[-1].lower()
+        if candidate in _ALLOWED_LOGO_EXTS:
+            ext = candidate
+    if not ext:
+        raise HTTPException(status_code=400, detail="Unsupported image type")
+
+    logo_dir = os.path.join(settings.UPLOAD_DIR, "logos")
+    os.makedirs(logo_dir, exist_ok=True)
+
+    # Cache-bust by appending a timestamp so the new image overrides the old
+    # one in the browser even when the company id is reused.
+    filename = f"{company.id}-{int(time.time())}.{ext}"
+    filepath = os.path.join(logo_dir, filename)
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    company.logo_path = filepath
+    await db.commit()
+    await db.refresh(company)
+    return company
