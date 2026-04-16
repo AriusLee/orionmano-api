@@ -26,6 +26,7 @@ class Company(Base):
     enterprise_stage: Mapped[str | None] = mapped_column(String(50))
     engagement_type: Mapped[str | None] = mapped_column(String(50))
     target_exchange: Mapped[str | None] = mapped_column(String(50))
+    report_tier: Mapped[str] = mapped_column(String(20), default="standard")  # essential, standard, premium
     logo_path: Mapped[str | None] = mapped_column(String(500))
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

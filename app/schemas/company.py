@@ -31,6 +31,7 @@ class CompanyUpdate(BaseModel):
     website: str | None = None
     engagement_type: str | None = None
     target_exchange: str | None = None
+    report_tier: str | None = None
 
 
 class CompanyResponse(BaseModel):
@@ -49,6 +50,7 @@ class CompanyResponse(BaseModel):
     enterprise_stage: str | None = None
     engagement_type: str | None = None
     target_exchange: str | None = None
+    report_tier: str = "standard"
     logo_path: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
