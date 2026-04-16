@@ -10,6 +10,7 @@ class DocumentResponse(BaseModel):
     file_size: int | None = None
     mime_type: str | None = None
     category: str | None = None
+    categories: list[str] | None = None
     extraction_status: str
     extracted_data: dict | None = None
     created_at: datetime

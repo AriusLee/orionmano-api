@@ -18,6 +18,10 @@ class Document(Base):
     file_size: Mapped[int | None] = mapped_column(Integer)
     mime_type: Mapped[str | None] = mapped_column(String(100))
     category: Mapped[str | None] = mapped_column(String(50))
+    # A doc can satisfy multiple checklist slots (e.g. org chart + cap table).
+    # Populated by extract_document; `category` is kept as the primary slug
+    # for legacy queries and filters.
+    categories: Mapped[list[str] | None] = mapped_column(JSONB)
     extraction_status: Mapped[str] = mapped_column(String(50), default="pending")
     extracted_data: Mapped[dict | None] = mapped_column(JSONB)
     extraction_error: Mapped[str | None] = mapped_column(Text)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 from uuid import UUID
 from datetime import datetime, date
 
@@ -56,3 +56,18 @@ class CompanyResponse(BaseModel):
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @computed_field
+    @property
+    def logo_url(self) -> str | None:
+        """HTTP path (relative to backend origin) under /uploads, suitable for
+        the frontend to prepend with the backend base URL. Derived from
+        logo_path, which is stored as a filesystem path."""
+        if not self.logo_path:
+            return None
+        normalized = self.logo_path.replace("\\", "/")
+        marker = "/uploads/"
+        idx = normalized.find(marker)
+        if idx == -1:
+            return None
+        return normalized[idx:]

@@ -13,26 +13,34 @@ from app.config import settings
 async def fetch_logo(company_name: str, website: str | None = None) -> str | None:
     """Try multiple strategies to find and download a company logo.
 
+    Users sometimes paste more than one URL (comma/semicolon/whitespace
+    separated). Each candidate is tried in order through the full strategy
+    chain; the first hit wins.
+
     Returns the local file path if successful, None otherwise.
     """
     logo_bytes = None
     logo_ext = "png"
 
-    strategies = [
-        lambda: _from_clearbit(website),
-        lambda: _from_google_favicon(website),
-        lambda: _from_og_image(website),
-        lambda: _from_favicon(website),
-    ]
+    candidates = _candidate_websites(website) or [website]
 
-    for strategy in strategies:
-        try:
-            result = await strategy()
-            if result:
-                logo_bytes, logo_ext = result
-                break
-        except Exception:
-            continue
+    for candidate in candidates:
+        strategies = [
+            lambda c=candidate: _from_clearbit(c),
+            lambda c=candidate: _from_google_favicon(c),
+            lambda c=candidate: _from_og_image(c),
+            lambda c=candidate: _from_favicon(c),
+        ]
+        for strategy in strategies:
+            try:
+                result = await strategy()
+                if result:
+                    logo_bytes, logo_ext = result
+                    break
+            except Exception:
+                continue
+        if logo_bytes:
+            break
 
     if not logo_bytes:
         return None
@@ -54,10 +62,32 @@ async def fetch_logo(company_name: str, website: str | None = None) -> str | Non
 def _extract_domain(website: str | None) -> str | None:
     if not website:
         return None
+    website = website.strip().strip(",;").strip()
+    if not website:
+        return None
     if not website.startswith("http"):
         website = "https://" + website
     parsed = urlparse(website)
-    return parsed.netloc or None
+    # Strip any trailing punctuation that slipped past split (e.g. "example.com,")
+    netloc = (parsed.netloc or "").rstrip(",;/ ").strip()
+    return netloc or None
+
+
+def _candidate_websites(raw: str | None) -> list[str]:
+    """Split a user-entered website field into individual URL candidates.
+
+    Handles comma/semicolon/whitespace-separated lists. Preserves order so the
+    first one the user typed is tried first.
+    """
+    if not raw:
+        return []
+    parts = re.split(r"[,;\s]+", raw.strip())
+    seen: list[str] = []
+    for p in parts:
+        p = p.strip().strip(",;").strip()
+        if p and p not in seen:
+            seen.append(p)
+    return seen
 
 
 async def _from_clearbit(website: str | None) -> tuple[bytes, str] | None:
