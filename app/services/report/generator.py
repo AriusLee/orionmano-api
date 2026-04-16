@@ -78,35 +78,41 @@ REPORT_SECTIONS = {
     },
     "industry_report": {
         "essential": [
+            ("sources_of_information", "Sources of Information"),
             ("executive_summary", "Executive Summary"),
             ("industry_overview", "Industry Overview"),
-            ("recommendations", "Strategic Recommendations"),
+            ("competitive_landscape", "Competitive Landscape"),
+            ("strategic_recommendations", "Strategic Recommendations"),
         ],
         "standard": [
-            ("scope_of_services", "Scope of Services"),
+            ("sources_of_information", "Sources of Information"),
             ("executive_summary", "Executive Summary"),
-            ("industry_overview", "Industry Overview and Market Context"),
-            ("market_size", "Global Market Size and Trajectory"),
+            ("industry_definition_scope", "Industry Definition and Scope"),
+            ("value_chain", "Industry Value Chain"),
+            ("market_size_trajectory", "Market Size and Growth Trajectory"),
             ("growth_drivers", "Market Growth Drivers"),
             ("competitive_landscape", "Competitive Landscape"),
             ("industry_trends", "Industry Trends"),
-            ("recommendations", "Strategic Recommendations"),
-            ("conclusion", "Conclusion"),
+            ("entry_barriers", "Key Entry Barriers"),
+            ("market_outlook", "Market Outlook"),
+            ("strategic_recommendations", "Strategic Recommendations"),
         ],
         "premium": [
-            ("scope_of_services", "Scope of Services"),
+            ("sources_of_information", "Sources of Information"),
             ("executive_summary", "Executive Summary"),
-            ("industry_overview", "Industry Overview and Market Context"),
-            ("market_size", "Global Market Size and Trajectory"),
+            ("industry_definition_scope", "Industry Definition and Scope"),
+            ("value_chain", "Industry Value Chain — Upstream, Midstream, Downstream"),
+            ("market_size_trajectory", "Market Size and Growth Trajectory"),
             ("geographic_distribution", "Geographic Market Distribution"),
+            ("market_segments", "Market Segment Deep Dive"),
             ("growth_drivers", "Market Growth Drivers and Structural Tailwinds"),
-            ("segment_deep_dive", "Market Segment Deep Dive"),
-            ("competitive_landscape", "Competitive Market Structure and Dynamics"),
+            ("competitive_landscape_matrix", "Competitive Landscape — Player Archetypes and Capability Matrix"),
+            ("competitive_benchmarking", "Competitive Landscape — Financial Benchmarking of Named Peers"),
             ("industry_trends", "Industry Trends and Evolution"),
-            ("challenges", "Market Challenges and Headwinds"),
-            ("outlook", "Market Outlook and Future Opportunities"),
-            ("recommendations", "Strategic Recommendations"),
-            ("conclusion", "Conclusion"),
+            ("entry_barriers", "Key Entry Barriers"),
+            ("challenges_headwinds", "Market Challenges and Headwinds"),
+            ("market_outlook", "Market Outlook and Future Opportunities"),
+            ("strategic_recommendations", "Strategic Recommendations"),
         ],
     },
     "dd_report": {
@@ -638,6 +644,284 @@ GAP_REASONER_SECTIONS = {
 MAX_CONCURRENT = 2
 
 
+# ──────────────────────────────────────────────────────────────
+# Industry Expert Report — Frost & Sullivan / CIC-style prompt
+# ──────────────────────────────────────────────────────────────
+
+INDUSTRY_SECTION_INSTRUCTIONS = {
+    "sources_of_information": """Write the Sources of Information preamble in the style used by HKEX IPO industry-overview sections.
+
+Open with a short statement that the industry information in this report is derived from public market research, official publications, trade associations, and Orionmano's own research. State that Orionmano Industries is the imprint under which this analysis is published.
+
+Then cover in short paragraphs:
+1. **Research methodology** — Primary research (expert interviews, industry participant conversations) and secondary research (public company reports, government statistics, trade associations, news and academic research).
+2. **Base assumptions** — Enumerate the explicit macro assumptions under which forecasts were prepared (e.g., (i) steady GDP growth in the relevant geography, (ii) no material geopolitical disruption, (iii) continuation of current regulatory regime).
+3. **Data currency** — State the as-of date of the analysis.
+4. **Limitations** — Note that forward-looking statements are inherently uncertain.
+
+Do NOT name any paid/proprietary database. Do NOT cite client management. Do NOT use <cite/> tags in this section — it is a methodology preamble, not a factual-claim section.""",
+
+    "executive_summary": """Write the Executive Summary. 4–6 punchy findings, each with a specific data point and a <cite/> tag. Cover: (1) headline market size and dual CAGR (historical and forecast), (2) key structural growth driver, (3) competitive-structure observation (consolidated vs fragmented; top-N share), (4) one material trend, (5) one challenge, (6) outlook line. End with one sentence framing the report's scope.""",
+
+    "industry_definition_scope": """Define the industry precisely.
+- Scope boundaries: what is IN scope and what is explicitly OUT of scope
+- Key products / services / categories in the industry
+- Primary end-customer segments
+- Relationship to adjacent industries
+- Unit of measurement used throughout the report (retail sales, ex-factory, revenue, GMV, etc.) — state explicitly
+Every quantitative statement must carry a <cite/> tag.""",
+
+    "industry_overview": """Combined overview covering definition, market size (with dual CAGR), key segments, and competitive structure at a high level. Use this for essential-tier reports only. Every numeric claim cited via <cite/>.""",
+
+    "value_chain": """Describe the industry value chain explicitly as **Upstream**, **Midstream**, **Downstream**, each as its own subsection with:
+- Activities and participants at that stage
+- Key inputs/outputs
+- Margin profile (high/low and why)
+- Concentration or fragmentation
+Conclude with a short paragraph on where economic value accrues and why. Cite structural claims via <cite/> where external evidence exists.""",
+
+    "market_size_trajectory": """Present the market-size trajectory in Frost & Sullivan exhibit style.
+
+Open with a paragraph stating the global market size in the most recent full year and the historical CAGR (at least 5 years back) and forecast CAGR (at least 5 years forward), with dual-CAGR format:
+"The [industry] market was valued at [unit] [X] in [year], growing at a CAGR of A.B% over [historical window], and is projected to reach [unit] [Y] by [forecast year], representing a CAGR of C.D% over [forecast window]."
+
+Then emit BOTH a chart block AND a markdown table for the trajectory:
+
+```chart
+{"type":"bar","title":"Exhibit 1: [Industry] Market Size, [start]–[end]F","x_label":"Year","y_label":"Market Size","y_unit":"[unit]","data":[{"x":"20YY","Market Size":N},{"x":"20YY","Market Size":N}],"series":["Market Size"],"annotations":["Historical CAGR A.B%","Forecast CAGR C.D%"],"source_note":"Source: Orionmano Industries"}
+```
+
+Followed by the markdown table: Year | Market Size ([unit]) | YoY Growth. Include at least 3 historical years and 3 forecast years (matching the chart data).
+
+Discuss the inflection points in the curve. Every numeric claim requires a <cite/> tag.""",
+
+    "geographic_distribution": """Break the market down by geography. Name specific regions/countries with their share of the total (as a %) and each region's local CAGR.
+
+Emit a chart block showing share-of-global by region, then the full table:
+
+```chart
+{"type":"horizontal-bar","title":"Exhibit: Regional Market Share","x_label":"Share of Global","y_label":"Region","y_unit":"%","data":[{"x":"North America","Share":34.2},{"x":"Europe Union","Share":22.1}],"series":["Share"],"source_note":"Source: Orionmano Industries"}
+```
+
+Followed by markdown table: Region | Market Size ([unit]) | Share of Global (%) | Historical CAGR | Forecast CAGR.
+
+Discuss which regions are gaining share and why. Every figure cited via <cite/>.""",
+
+    "market_segments": """Deep dive by market segment. For EACH major segment, produce:
+- Segment name and definition
+- Market size (latest year) and CAGR (dual: historical + forecast)
+- Share of the overall market
+- Key sub-segments or product categories
+- Margin / unit-economics commentary where known publicly
+
+Emit ONE summary chart at the top showing segment shares (pie):
+
+```chart
+{"type":"pie","title":"Exhibit: Market Share by Segment, [latest year]","x_label":"Segment","y_label":"Share","y_unit":"%","data":[{"x":"Segment A","Share":42},{"x":"Segment B","Share":31}],"series":["Share"],"source_note":"Source: Orionmano Industries"}
+```
+
+Then for the largest 1–2 segments, also emit a stacked-bar chart showing their growth trajectory:
+
+```chart
+{"type":"stacked-bar","title":"Exhibit: [Top Segments] Trajectory, [start]–[end]F","x_label":"Year","y_label":"Market Size","y_unit":"[unit]","data":[{"x":"20YY","Segment A":N,"Segment B":N}],"series":["Segment A","Segment B"],"source_note":"Source: Orionmano Industries"}
+```
+
+Followed by per-segment markdown tables. Every figure cited via <cite/>.""",
+
+    "growth_drivers": """Identify 4–6 structural growth drivers. For each:
+- Name the driver (bold)
+- Quantify its impact with at least one external data point under a <cite/> tag
+- Explain the mechanism linking it to industry growth
+Avoid generic drivers ("digital transformation"); be specific to the industry.""",
+
+    "competitive_landscape": """Combined competitive landscape for standard/essential tiers:
+1. Market structure (consolidated vs fragmented; Top-N market share with a <cite/>)
+2. Player archetypes — classify participants into 2–4 cohorts (e.g., global incumbents, regional specialists, new entrants)
+3. Named leading players (3–6) with a one-line positioning for each
+4. Basis of competition (price, technology, distribution, brand)
+Emit an "**Exhibit: Leading Players**" markdown table: Player | Headquarters | Positioning | Key Strength.""",
+
+    "competitive_landscape_matrix": """Competitive landscape Part 1 — player archetypes and capability matrix.
+
+Classify industry participants into archetypes (e.g., "Global [X]s", "Regional specialists", "Vertically integrated players", "Digital-native entrants"). For each archetype give 2–3 representative named companies.
+
+Then emit "**Exhibit: Capability and Presence Matrix**" as a markdown table with:
+- Rows = 6–10 named leading players
+- Columns = capability/presence dimensions relevant to the industry (e.g., for CRDMO: Drug Discovery | Drug Development | Commercial Manufacturing | Innovator Focus | Global Reach)
+- Cells = presence indicator: **Strong** / **Limited** / **Negligible** (use bold labels, not emoji)
+
+Every factual assertion about specific companies must carry a <cite/> tag.""",
+
+    "competitive_benchmarking": """Competitive landscape Part 2 — financial benchmarking of named peers.
+
+Emit TWO chart blocks then the full table.
+
+Chart 1 — Revenue scale comparison (bar):
+```chart
+{"type":"bar","title":"Exhibit: Revenue Scale of Select Peers","x_label":"Company","y_label":"Revenue","y_unit":"USD M","data":[{"x":"Peer A","Revenue":5632},{"x":"Peer B","Revenue":1611}],"series":["Revenue"],"source_note":"Source: Orionmano Industries"}
+```
+
+Chart 2 — Margin comparison (bar with two series):
+```chart
+{"type":"bar","title":"Exhibit: Profitability of Select Peers","x_label":"Company","y_label":"Margin","y_unit":"%","data":[{"x":"Peer A","EBITDA Margin":33.3,"PAT Margin":26.8},{"x":"Peer B","EBITDA Margin":24.6,"PAT Margin":13.7}],"series":["EBITDA Margin","PAT Margin"],"source_note":"Source: Orionmano Industries"}
+```
+
+Then "**Exhibit: Financial Benchmarking of Select Peers**" as a markdown table:
+- Rows = 5–8 named public peers
+- Columns = Revenue (latest year, with unit) | Revenue CAGR (last 2–3 years) | EBITDA Margin | PAT Margin | Revenue Growth (YoY) | ROE or ROCE
+- Include the reporting period under each company name
+- Footnotes to the table must spell out the specific accounting basis (IFRS/US GAAP), FX rates used, and fiscal-year conventions
+
+Follow with 2–3 paragraphs interpreting: who leads on scale, who leads on margin, growth-vs-profitability trade-off, regional patterns.
+
+Every figure requires a <cite/> tag tied to a public source. If public financials are unavailable for a company, mark the cell "n/d" (not disclosed) — do not fabricate. Omit the company entirely from chart blocks if its values are n/d (charts cannot render n/d).""",
+
+    "industry_trends": """Identify 4–6 industry trends. For each:
+- Trend name (bold)
+- What is happening, with a quantitative anchor (<cite/>)
+- Who is driving it (which player archetype or demand segment)
+- Implication for competitive dynamics
+Avoid buzzwords without data.""",
+
+    "entry_barriers": """Discuss 4–6 key barriers to entry. Order by severity (highest first). For each:
+- Barrier name (bold)
+- Mechanism (why it matters)
+- Empirical evidence or quantification where possible (<cite/>)
+- How incumbents exploit this barrier
+Include capital intensity, regulatory, technology/IP, brand/trust, distribution-access, and scale-economics barriers as relevant.""",
+
+    "challenges_headwinds": """4–6 challenges facing the industry. For each: name, description, quantification or evidence (<cite/>), which player cohort is most exposed. Include macro, regulatory, input-cost, and demand-side headwinds. Be balanced — do not only list risks the target company is insulated from.""",
+
+    "market_outlook": """Forward-looking assessment. Structure:
+1. **Base-case trajectory** — reiterate forecast CAGR with <cite/>
+2. **Upside scenarios** — 2–3 catalysts that could accelerate growth
+3. **Downside scenarios** — 2–3 risks that could slow or reverse growth
+4. **Structural endpoints** — where the industry is heading over 5–10 years (consolidation, digital share, geographic mix shift, product-mix shift)
+No new data here without <cite/>; synthesize from earlier sections.""",
+
+    "strategic_recommendations": """Strategic recommendations for participants in this industry. 4–6 concrete recommendations, each with:
+- Recommendation title (bold)
+- Rationale grounded in findings from earlier sections (reference sections by name, not by citation — internal cross-reference)
+- Which cohort or company profile this applies to
+- Execution considerations
+This section synthesizes; it does not introduce new external data. Minimal <cite/> usage here — cite only new facts not established earlier.""",
+}
+
+
+# Sections that benefit from deepseek-reasoner (dense analysis + cross-section synthesis)
+INDUSTRY_REASONER_SECTIONS = {
+    "competitive_benchmarking",
+    "market_outlook",
+    "strategic_recommendations",
+}
+
+
+def _build_industry_report_prompt(
+    company,
+    tier: str,
+    tier_instruction: str,
+    template: str,
+    web_context: str,
+    company_context: str,
+) -> str:
+    """Build the Frost & Sullivan / CIC-style system prompt for industry reports."""
+    return f"""You are a senior research analyst at **Orionmano Industries**, an independent industry research imprint publishing on industries.omassurance.com.
+
+You are drafting a section of an **Independent Industry Expert Report** — the institutional-grade document that accompanies Hong Kong IPO prospectuses and equivalent filings. Match the voice, density, and structure of Frost & Sullivan and China Insights Consultancy (CIC) reports.
+
+## VOICE AND STYLE
+- Third-person, analytical, data-dense. No first person. No marketing language. No AI disclaimers. No hedging fillers ("it is worth noting that…").
+- Every quantitative claim carries a specific number and a citation.
+- Prefer specific company and product names over generic categories.
+- Use markdown. Use bold for exhibit labels and emphasis.
+
+## STRUCTURAL PATTERNS TO FOLLOW
+
+### Dual CAGR
+Always present historical and forecast CAGR side-by-side:
+"The market grew from [unit] X in 20YY to [unit] Y in 20YY, a CAGR of A.B%, and is expected to reach [unit] Z by 20YYE, representing a CAGR of C.D% over 20YY–20YYE."
+
+### Exhibits — Charts AND Tables
+Reference every data exhibit as "**Exhibit N: [description]**". Source note line in italics underneath.
+
+For ANY quantitative exhibit you would normally show as a chart in a Frost & Sullivan report (market-size trajectory, market shares, segment splits, peer benchmarking, geographic distribution), you MUST emit BOTH:
+
+1. A `chart` fenced JSON block (rendered as an actual chart by the system), AND
+2. A markdown table immediately below it (so the same data is readable in PDF / fallback views).
+
+Chart spec format (use this EXACT schema):
+
+```chart
+{{
+  "type": "bar" | "stacked-bar" | "line" | "pie" | "horizontal-bar",
+  "title": "Exhibit N: [description]",
+  "x_label": "string",
+  "y_label": "string",
+  "y_unit": "USD M" | "RMB Bn" | "%" | etc.,
+  "data": [
+    {{"x": "2024", "Market Size": 6.86}},
+    {{"x": "2025", "Market Size": 7.72}}
+  ],
+  "series": ["Market Size"],
+  "annotations": ["CAGR 2024-2032: 12.6%"],
+  "source_note": "Source: Orionmano Industries"
+}}
+```
+
+Rules for chart blocks:
+- For time-series → `bar` or `line`. x = year (string). One key per series.
+- For market-share → `pie` or `horizontal-bar`. Each data row has `x` (segment name) and a single value series (usually "Share").
+- For benchmarking → `bar` (one row per peer, multiple series for revenue/margin/etc).
+- For nested segmentation over time → `stacked-bar`. Each data row has `x` (year) and one key per stack segment.
+- `data` MUST contain only numeric values for series (no strings, no "n/a"). If a value is unknown, omit the row.
+- `annotations` is optional — short text labels rendered as captions.
+- `source_note` is optional but recommended.
+
+### Nested Segmentation
+Break markets down on more than one dimension (e.g., Global → Geography → Segment → Sub-segment). Each level gets its own size and CAGR.
+
+## CITATION PROTOCOL — MANDATORY
+
+Every quantitative claim, market statistic, trend assertion, and external fact MUST carry an inline `<cite/>` tag in the following exact format:
+
+  `<cite topic="kebab-case-topic-identifier" claim="The specific factual claim with numbers included in one sentence."/>`
+
+### Tag Rules
+1. One `<cite/>` tag per distinct factual claim. Placed IMMEDIATELY after the claim, inline (not at end of paragraph).
+2. `topic` — a stable kebab-case identifier naming the subject matter. Examples:
+   - `global-cosmetics-market-size-2023`
+   - `china-skincare-cagr-2023-2028`
+   - `mainland-china-perfume-top-5-share`
+   - `crdmo-industry-outsourcing-trend`
+   Use the SAME topic value across sections when citing the same underlying subject so articles can be reused.
+3. `claim` — the specific factual statement, one sentence, including the numbers. Do NOT put double-quote characters inside the claim value. If you need a quote, rephrase.
+4. Every number in your output must carry a `<cite/>`. If you cannot substantiate a number, do not state it.
+5. DO NOT use `[1]`, `[2]`, `[^1]` or footnote syntax directly — the system converts `<cite/>` tags to footnotes automatically.
+
+### Forbidden Sources
+- Do NOT cite paid or proprietary databases (IQVIA, Bloomberg, Refinitiv, Frost & Sullivan proprietary, CIC proprietary, Gartner, internal client documents).
+- Do NOT cite the target company's internal documents or management representations.
+- The citation system maps every `<cite/>` to a public Orionmano article — you never pick the source directly.
+
+### Example
+"The global cosmetics market reached RMB 953.7 billion in 2023, growing at a CAGR of 6.6% over 2018–2023, and is expected to reach RMB 1,402.5 billion by 2028 at a CAGR of 8.0% over 2023–2028.<cite topic="mainland-china-cosmetics-market-size" claim="Mainland China cosmetics market grew from RMB 693.5bn in 2018 to RMB 953.7bn in 2023 (CAGR 6.6%), and is expected to reach RMB 1,402.5bn by 2028 (CAGR 8.0%)."/>"
+
+## TIER
+Tier: **{tier.upper()}** — {tier_instruction}
+
+## INDUSTRY REPORT TEMPLATE
+{template[:2500]}
+
+## PUBLIC WEB RESEARCH (background only — do NOT quote these sources directly; use them to form your claims, then cite via `<cite/>` tags)
+{web_context}
+
+## TARGET COMPANY CONTEXT (for framing the industry, not for citing)
+{company_context}
+
+REMEMBER: This is an INDUSTRY report, not a company report. Focus on the industry. The target company context tells you which industry, geography, and segment to analyze — but the report is about the industry, and only references the target company in the Strategic Recommendations section.
+"""
+
+
 async def _generate_gap_parallel(
     db: AsyncSession,
     report: "Report",
@@ -838,6 +1122,13 @@ async def generate_report_bg(
             )
             # Gap analysis: no citations, no references section
             references_section = ""
+        elif report_type == "industry_report":
+            system_prompt = _build_industry_report_prompt(
+                company, tier, tier_instruction, template, web_context, company_context,
+            )
+            # Industry reports use inline <cite/> -> per-section GFM footnotes.
+            # No numbered-source registry, no end-of-doc references section.
+            references_section = ""
         else:
             system_prompt = f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong).
 Generate professional report content. Be concise, data-driven, and specific.
@@ -878,14 +1169,23 @@ Tier: {tier.upper()} — {tier_instruction}
         if report_type == "gap_analysis":
             max_tokens_per_section = {"essential": 1000, "standard": 2000, "premium": 3000}.get(tier, 2000)
 
-        # Gap analysis user prompt — no citation instruction
-        gap_user_suffix = (
-            " Do NOT use inline citation numbers like [1], [2]. "
-            "State the basis of information naturally (e.g., 'Based on FY2025 audited financials' or 'Per management representations'). "
-            "If information is not available, clearly state 'Information Required' and describe what data is needed."
-        ) if report_type == "gap_analysis" else (
-            " IMPORTANT: Cite all data points and claims using inline [n] references to the numbered sources provided."
-        )
+        # Per-report-type user-prompt suffix
+        if report_type == "gap_analysis":
+            gap_user_suffix = (
+                " Do NOT use inline citation numbers like [1], [2]. "
+                "State the basis of information naturally (e.g., 'Based on FY2025 audited financials' or 'Per management representations'). "
+                "If information is not available, clearly state 'Information Required' and describe what data is needed."
+            )
+        elif report_type == "industry_report":
+            gap_user_suffix = (
+                " IMPORTANT: cite every quantitative claim using inline `<cite topic=\"kebab-case\" claim=\"...\"/>` tags as specified. "
+                "Do NOT use [1], [2], or [^n] syntax. Do NOT cite paid/proprietary databases or client documents. "
+                "The citation system converts your `<cite/>` tags to footnotes automatically."
+            )
+        else:
+            gap_user_suffix = (
+                " IMPORTANT: Cite all data points and claims using inline [n] references to the numbered sources provided."
+            )
 
         # --- Two-pass generation for gap analysis (parallel batches) ---
         if report_type == "gap_analysis" and len(sections) > 5:
@@ -899,14 +1199,27 @@ Tier: {tier.upper()} — {tier_instruction}
                 await db.commit()
 
                 section_instruction = ""
+                use_reasoner = False
                 if report_type == "gap_analysis":
                     section_instruction = GAP_SECTION_INSTRUCTIONS.get(section_key, "")
+                elif report_type == "industry_report":
+                    section_instruction = INDUSTRY_SECTION_INSTRUCTIONS.get(section_key, "")
+                    use_reasoner = section_key in INDUSTRY_REASONER_SECTIONS
 
                 content = await generate_text(
                     system_prompt=system_prompt,
                     user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble.{gap_user_suffix}\n{section_instruction}',
                     max_tokens=max_tokens_per_section,
+                    use_reasoner=use_reasoner,
                 )
+
+                # Industry reports: resolve <cite/> tags into GFM footnotes and
+                # create PublishedArticle stubs for later body generation.
+                if report_type == "industry_report":
+                    from app.services.report.citations import process_cite_tags
+                    content, _ = await process_cite_tags(
+                        db, content, report_id=report.id
+                    )
 
                 section = ReportSection(
                     report_id=report.id,
@@ -932,6 +1245,14 @@ Tier: {tier.upper()} — {tier_instruction}
 
         report.status = "draft"
         report.progress_message = None
+        await db.commit()
+
+        # Industry reports: kick off background article-body generation for
+        # every PublishedArticle stub this report created. Detached from the
+        # current session so the report is returned to the UI immediately.
+        if report_type == "industry_report":
+            from app.services.article.generator import generate_pending_articles_for_report
+            asyncio.create_task(generate_pending_articles_for_report(report.id))
 
     except Exception as e:
         report.status = "failed"

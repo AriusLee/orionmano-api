@@ -4,6 +4,7 @@ from app.models.document import Document
 from app.models.report import Report, ReportSection
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.memory import Memory
+from app.models.published_article import PublishedArticle
 
 __all__ = [
     "User",
@@ -14,4 +15,5 @@ __all__ = [
     "ChatConversation",
     "ChatMessage",
     "Memory",
+    "PublishedArticle",
 ]

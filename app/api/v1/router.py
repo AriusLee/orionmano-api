@@ -6,6 +6,7 @@ from app.api.v1.reports import router as reports_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.decks import router as decks_router
 from app.api.v1.memory import router as memory_router
+from app.api.v1.articles import router as articles_router
 
 v1_router = APIRouter(prefix="/api/v1")
 v1_router.include_router(auth_router)
@@ -15,3 +16,4 @@ v1_router.include_router(reports_router)
 v1_router.include_router(chat_router)
 v1_router.include_router(decks_router)
 v1_router.include_router(memory_router)
+v1_router.include_router(articles_router)

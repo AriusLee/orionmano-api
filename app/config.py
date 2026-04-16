@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = '["http://localhost:3020"]'
     UPLOAD_DIR: str = "./uploads"
 
+    # Public article site. Every industry-report citation resolves to an
+    # article URL on this host. Site itself ships later — for now articles
+    # live in the DB and the URL is a stable reservation.
+    ARTICLE_SITE_BASE_URL: str = "https://industries.omassurance.com/articles/"
+
     @property
     def cors_origins_list(self) -> List[str]:
         return json.loads(self.CORS_ORIGINS)
