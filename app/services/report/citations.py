@@ -15,7 +15,7 @@ the PublishedArticle row for audit only.
 
 import re
 import hashlib
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -127,20 +127,57 @@ async def resolve_citation(
 ) -> PublishedArticle:
     """Find or create a PublishedArticle for a (topic, claim) pair.
 
-    Reuses an existing article when the same fact_hash already has one.
-    New stubs come back with body_md=None, status='pending' — the article
+    Tiered reuse policy:
+      1. Same fact_hash AND age < ARTICLE_REUSE_DAYS — exact fact, fresh.
+      2. Same topic, status in (draft|published), age < ARTICLE_REUSE_DAYS,
+         body_md present — Company-A-and-B-on-the-same-industry case.
+      3. Otherwise — generate a fresh article. Stale predecessors stay in
+         the DB so existing reports keep resolving, but they no longer get
+         picked up by new citations.
+
+    New stubs come back with body_md=None, status='pending'. The article
     generator fills them in after the report finishes.
     """
     topic_norm = topic.strip().lower()
     fh = _fact_hash(topic_norm, claim)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.ARTICLE_REUSE_DAYS)
 
+    # Tier 1 — exact fact match within the freshness window.
     result = await db.execute(
-        select(PublishedArticle).where(PublishedArticle.fact_hash == fh)
+        select(PublishedArticle)
+        .where(
+            PublishedArticle.fact_hash == fh,
+            PublishedArticle.created_at >= cutoff,
+        )
+        .order_by(PublishedArticle.created_at.desc())
+        .limit(1)
     )
-    existing = result.scalar_one_or_none()
-    if existing:
-        return existing
+    fresh_exact = result.scalar_one_or_none()
+    if fresh_exact:
+        return fresh_exact
 
+    # Tier 2 — same topic, fresh, with a real body. Reuse as the canonical
+    # topic-level resource for any new citation in the same industry. We
+    # require body_md to avoid binding new reports to a still-pending or
+    # failed generation.
+    result = await db.execute(
+        select(PublishedArticle)
+        .where(
+            PublishedArticle.topic == topic_norm,
+            PublishedArticle.created_at >= cutoff,
+            PublishedArticle.status.in_(("draft", "published")),
+            PublishedArticle.body_md.is_not(None),
+        )
+        .order_by(PublishedArticle.created_at.desc())
+        .limit(1)
+    )
+    fresh_topic = result.scalar_one_or_none()
+    if fresh_topic:
+        return fresh_topic
+
+    # Tier 3 — create new. A stale ancestor with the same fact_hash may
+    # already exist; that's fine, we no longer enforce uniqueness on
+    # fact_hash so the successor can coexist.
     base_slug = _slugify(topic_norm)
     slug = await _reserve_slug(db, base_slug)
 
