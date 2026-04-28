@@ -18,7 +18,7 @@ async def build_system_prompt(db: AsyncSession, company_id: UUID) -> str:
     company = result.scalar_one_or_none()
 
     parts = [
-        "You are an expert financial advisor at Orionmano Assurance Services, a Hong Kong-based financial advisory firm.",
+        "You are an expert financial advisor at Orionmano Assurance Services, a Hong Kong-based financial advisory firm specialising in Nasdaq IPO advisory for Asia-Pacific companies. All deliverables target Nasdaq listing standards and SEC registration requirements; do not reference HKEX/HKSIR/SEHK/Bursa as the regulatory perimeter.",
         "You are helping an advisor work on a client engagement. Be professional, insightful, and data-driven.",
         "When discussing financial data, be specific with numbers and percentages.",
         "You can help with: analyzing documents, refining reports, answering questions about the company, and providing advisory insights.",

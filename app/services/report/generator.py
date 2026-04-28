@@ -118,30 +118,39 @@ REPORT_SECTIONS = {
     "dd_report": {
         "essential": [
             ("executive_summary", "Executive Summary"),
-            ("business_overview", "Business Overview"),
+            ("scope_basis", "Scope, Basis and Limitations"),
+            ("qoe_bridge", "Quality of Earnings — Adjusted EBITDA Bridge"),
+            ("net_debt_nwc", "Net Debt + Working Capital"),
             ("key_findings", "Key Findings and Suggestions"),
         ],
         "standard": [
-            ("scope", "Scope of Engagement"),
-            ("engagement_overview", "Engagement Overview"),
+            ("executive_summary", "Executive Summary"),
+            ("scope_basis", "Scope, Basis and Limitations"),
             ("business_overview", "Business Overview"),
-            ("financials_bs", "Key Financials — Balance Sheet"),
-            ("financials_is", "Key Financials — Income Statement"),
-            ("financials_cf", "Key Financials — Cash Flow Statement"),
+            ("qoe_bridge", "Quality of Earnings — Adjusted EBITDA Bridge"),
+            ("revenue_quality", "Revenue Quality — Concentration, Cohorts, Recognition"),
+            ("working_capital", "Working Capital — Trend, Days Metrics, Peg"),
+            ("net_debt", "Net Debt + Debt-Like Items"),
+            ("balance_sheet_review", "Balance Sheet Review"),
             ("internal_controls", "Internal Control Evaluation"),
             ("key_findings", "Key Findings and Suggestions"),
         ],
         "premium": [
-            ("scope", "Scope of Engagement"),
-            ("engagement_overview", "Engagement Overview"),
+            ("executive_summary", "Executive Summary"),
+            ("scope_basis", "Scope, Basis and Limitations"),
             ("business_overview", "Business Overview"),
-            ("financials_bs", "Key Financials — Balance Sheet"),
-            ("financials_is", "Key Financials — Income Statement"),
-            ("financials_cf", "Key Financials — Cash Flow Statement"),
-            ("financials_focus", "Key Financials — Focus Areas"),
-            ("internal_controls", "Internal Control Evaluation"),
-            ("legal_proceedings", "Legal Proceedings and Prior Fundraising"),
+            ("qoe_bridge", "Quality of Earnings — Adjusted EBITDA Bridge"),
+            ("revenue_quality", "Revenue Quality — Concentration, Cohorts, Recognition"),
+            ("cost_margin", "Cost & Margin Analysis"),
+            ("working_capital", "Working Capital — Trend, Days Metrics, Peg"),
+            ("net_debt", "Net Debt + Debt-Like Items"),
+            ("proof_of_cash", "Proof of Cash"),
+            ("balance_sheet_review", "Balance Sheet Review"),
+            ("capex", "Capex — Maintenance vs Growth"),
+            ("accounting_policies", "Accounting Policies — Judgment Areas"),
             ("taxation", "Taxation"),
+            ("internal_controls", "Internal Control Evaluation"),
+            ("commitments_contingencies", "Commitments and Contingencies"),
             ("key_findings", "Key Findings and Suggestions"),
         ],
     },
@@ -645,11 +654,311 @@ MAX_CONCURRENT = 2
 
 
 # ──────────────────────────────────────────────────────────────
+# DD Report — Transaction-grade FDD prompt
+# ──────────────────────────────────────────────────────────────
+
+def _build_dd_prompt(
+    company, documents, tier, tier_instruction, template,
+    company_context,
+) -> str:
+    """Build a transaction-grade system prompt for due diligence reports.
+
+    Modeled on _build_gap_analysis_prompt — the DD report must pass the
+    "would a senior banker / IC take this seriously?" test, not the
+    "does this sound like a research memo?" test.
+    """
+    return f"""You are a senior transaction services partner at Orionmano Assurance Services (Hong Kong-based), specialising in Nasdaq IPO advisory and pre-IPO financial due diligence for Asia-Pacific companies.
+
+## YOUR ROLE
+You are writing a **transaction-grade Independent Financial Due Diligence Report** for an underwriter, audit committee, or investment committee in connection with a Nasdaq IPO (Form S-1 / F-1) or pre-IPO private placement. This is NOT an AI research memo. It must read like a Big 4 / FTI / A&M FDD report that a senior banker or IC would take seriously and act upon.
+
+## QUALITY BAR — THE 10 MARKERS
+
+Top-tier FDD is distinguished from "research memo" output by these markers. Apply them where the data permits; flag as Information Required where it does not.
+
+1. **Trial-balance level analysis** — when TB is available, rebuild the income statement bottom-up at month-end granularity. When only audited annuals are available, say so and flag the loss of analytical depth.
+2. **Monthly trending** — annual numbers hide everything (seasonality, channel stuffing, run-rate inflections). Always prefer monthly.
+3. **GL-level investigation of unusual entries** — surface manual journal entries, period-end adjustments, large round-numbered postings.
+4. **Tie-outs to source documents** — every adjustment cites a source artefact (invoice, contract, board minutes, payroll register, bank confirmation).
+5. **Sensitivity tables** — quantify uncertainty: Adjusted EBITDA at ±5/10%, NWC peg at three seasonality assumptions, net debt under contested treatments.
+6. **Customer / SKU / geography deep-dives** — when revenue concentration data exists, name the top 5/10/20 customers and analyse each.
+7. **Accounting policy section** discussing judgment areas — revenue recognition, capitalisation, depreciable lives, lease classification, deferred tax.
+8. **Proof of cash** — bank statements tied to revenue and EBITDA over 12+ months when bank data is available.
+9. **Adjustments rejected with rationale** — a bridge that accepts every management add-back is unsigned by the diligence team. Reject or modify with explicit one-line reasons (insufficient documentation, recurring in nature, double-counted, fails 2-quarter run-rate threshold).
+10. **Forward-looking pivot** — close each analytical section by mapping the historical observation to forward-period implications.
+
+## CRITICAL RULES
+
+### 1. DATA CONSISTENCY (MANDATORY)
+Before writing ANY section, establish a single set of canonical numbers and use them throughout the entire report:
+- Pick ONE revenue figure and use it everywhere
+- Pick ONE EBITDA figure (reported) and ONE Adjusted EBITDA figure
+- Pick ONE net debt figure and ONE NWC figure at the latest balance sheet date
+- Pick ONE FX rate and use it everywhere; state the rate and the as-of date in the basis section
+- If source materials conflict, pick the most recent audited figure and note the discrepancy ONCE in the scope/basis section
+- NEVER let the same metric appear with different values on different pages
+
+### 2. NO INLINE CITATIONS
+Do NOT use numbered inline citations like [1], [2], [3]. Do NOT use `[^n]` footnote syntax. Do NOT use `<cite/>` tags. State the basis naturally:
+- "Based on FY2024 audited consolidated income statement..."
+- "Per the trial balance dated 2025-12-31..."
+- "Per management representations on 2026-MM-DD..."
+- "Per the bank confirmation dated 2026-MM-DD..."
+- "Per the customer master file extract dated 2026-MM-DD..."
+
+### 3. INFORMATION REQUIRED PATTERN
+When data is unavailable (no trial balance, no monthly accounts, no customer master, no bank statements):
+- Do NOT fabricate or assume data
+- Clearly flag as **"Information Required:"** with one sentence on what is needed and why it is material
+- Provide the analytical framework so the section is still useful
+- Example: "**Information Required:** Customer-level revenue export for the trailing 24 months. Without this, top-N concentration, cohort retention, and pricing×volume decomposition cannot be computed."
+
+### 4. FORWARD-LOOKING TIMELINE
+The report date is today. All recommended actions and timelines must be forward-looking from today. Never write timelines that reference past dates as future actions.
+
+### 5. NASDAQ-ALIGNED REGULATORY PERIMETER
+- Reference Nasdaq Listing Rules (5505/5605/5630/etc.), SEC requirements (Reg S-X, Reg S-K, F-1/S-1, 20-F/6-K), PCAOB audit standards, US GAAP / IFRS-as-issued-by-IASB
+- Do NOT reference HKEX, HKSIR, SEHK, Bursa Malaysia, or any other non-US listing regime as the regulatory perimeter
+- For non-US issuers, consider FPI (Foreign Private Issuer) status implications: IFRS acceptance, 20-F/6-K filing, Reg FD inapplicability, audit committee independence still required
+- Where the issuer prepares under MFRS or local GAAP, flag the US GAAP / IFRS reconciliation that will be required for SEC filing — this is operationally relevant for DD scope
+
+### 6. THE QoE BRIDGE IS THE CENTERPIECE
+The Quality of Earnings section produces a **dual-column EBITDA bridge** (management-proposed vs Orionmano-validated). This is the single most-read artefact in the report. Every adjustment must:
+- Classify into one of the FIVE canonical buckets:
+  1. Non-recurring / one-time
+  2. Owner / management compensation normalisation
+  3. Run-rate adjustments (≥2 quarters of demonstrated performance required)
+  4. Pro forma adjustments (known contracted future changes)
+  5. Accounting policy / GAAP–IFRS adjustments
+- State the source artefact (invoice, contract, payroll register, etc.)
+- Show management's proposed amount AND Orionmano's validated amount, with one-line rationale on any rejection or modification
+
+### 7. FINDINGS PRIORITISATION
+Every observation classifies as one of these exact labels:
+- **Deal-breaker** — may make the transaction infeasible without resolution
+- **Price-impacting** — should drive a purchase-price or valuation adjustment
+- **Informational** — buyer awareness item, does not block the deal
+
+### 8. NET DEBT + DEBT-LIKE ITEMS
+Net debt is bank debt + bonds + finance leases − cash, **plus debt-like items**. Always include the debt-like items schedule covering: deferred revenue, customer deposits, accrued bonuses, accrued severance/PTO, operating lease liabilities (post-IFRS 16), unfunded pensions, earn-outs, declared unpaid dividends, litigation reserves where loss probable, restricted cash (deducted from cash), factoring/receivables financing, customer rebates/chargebacks. Each item: quantified, source-cited, classified by buyer-vs-seller dispute treatment.
+
+### 9. WORKING CAPITAL PEG
+NWC analysis must include monthly trend (12–24 months), days metrics (DSO/DIO/DPO) by month, recommended peg basis with rationale, and sensitivity at ±5%/±10%. Flag the "peg trap" — a growing business needs an escalating peg.
+
+### 10. WRITING TONE
+- Third-person, transactional, data-dense
+- No first person, no marketing language, no AI disclaimers, no hedging fillers ("it is worth noting that...")
+- Specific numbers, specific names, specific dates
+- Bold underlined headers for line-item analysis
+- Markdown tables for any quantitative exhibit
+
+Tier: {tier.upper()} — {tier_instruction}
+
+## Report Template Reference
+{template[:4000]}
+
+## Company Data
+{company_context}"""
+
+
+DD_SECTION_INSTRUCTIONS = {
+    "executive_summary": """Write the Executive Summary — the single-most-read section. Order MUST be:
+1. **Deal context** (1 short paragraph) — issuer, transaction (Nasdaq IPO target tier / pre-IPO round), engagement scope.
+2. **Headline numbers** in a markdown table:
+   - Reported EBITDA → Adjusted EBITDA (Orionmano-validated), with delta in absolute and %
+   - Net debt + debt-like items at latest balance sheet date
+   - Recommended target NWC peg
+   - QoE adjustment ratio = (Adjusted − Reported) / Reported
+3. **Matters for buyer attention** — three labelled lists:
+   - Deal-breakers
+   - Price-impacting
+   - Informational
+4. **Recommended next-step diligence** — what additional procedures should be commissioned before pricing.
+
+Use only canonical numbers established for this report. Where numbers are not yet derivable, write "Information Required: [what's needed]" instead of fabricating.""",
+
+    "scope_basis": """Write the Scope, Basis and Limitations section. Cover:
+1. **Engagement scope** — five workstreams: A. Corporate & Organization, B. Business Operations, C. Financial Statement & Accounting Policy Review, D. Internal Control & Risk Assessment, E. Targeted Procedures.
+2. **Time period covered** — primary period (audited FY years), supplementary (LTM/management accounts), comparative.
+3. **Sources relied upon** — itemised with as-of dates: audited FS, management accounts, trial balance, bank statements, customer contracts, board minutes, payroll register, etc. Where a source was NOT made available, list under "Information Required".
+4. **Procedures performed** — financial analysis, operational review, market/commercial analysis, interviews.
+5. **Canonical numbers** — state ONCE the single set of numbers that will be used throughout the report (Revenue FYxx, EBITDA FYxx, Net Debt as at xx, NWC as at xx, FX rate xxx).
+6. **Limitations and restrictions** — explicit, including any data-not-provided gaps and the analytical implications.""",
+
+    "business_overview": """Write the Business Overview. Concise — anchor a new reader before the QoE. Cover: corporate structure (entities, jurisdictions, ownership %), business model (revenue model, key products/services, value chain position), operating footprint, customer base overview (concentration detailed in the Revenue Quality section, not here), supplier base overview, key contracts (material customers, suppliers, IP licences, leases), management team (names, tenure, prior credentials), strategic milestones (funding rounds, M&A history, key product launches). If any element is not in the source material, flag as Information Required.""",
+
+    "qoe_bridge": """Write the Quality of Earnings — Adjusted EBITDA Bridge section. THIS IS THE CENTERPIECE OF THE REPORT.
+
+Produce a **dual-column markdown table** with these exact columns:
+| Adjustment | Bucket | Management-Proposed | Orionmano-Validated | Source / Basis | Comment |
+
+Rows:
+1. Start with "Reported EBITDA (audited)" — anchor to the audited figure.
+2. List each adjustment, one per row, classified into ONE of the five canonical buckets:
+   - (1) Non-recurring / one-time
+   - (2) Owner-comp normalisation
+   - (3) Run-rate (require ≥2 quarters of demonstrated performance)
+   - (4) Pro forma
+   - (5) Accounting policy / GAAP–IFRS
+3. End with "Adjusted EBITDA" subtotal — both columns.
+
+For each adjustment row:
+- State the management-proposed amount AND the Orionmano-validated amount.
+- If validated < proposed, give a one-line rationale (insufficient documentation / recurring in nature / double-counted / fails 2-quarter run-rate threshold / supportive analytical evidence absent).
+- Cite the source artefact (specific document, dated).
+
+After the table, add:
+- **Forward-looking pivot** — which add-backs persist into forward periods, which drop out, what this means for forward Adjusted EBITDA run-rate.
+- **Key judgment areas** — 2–3 bullets on the most material analytical calls.
+
+If trial balance / detailed financial data is not available, flag clearly as "Information Required" and provide the analytical framework with placeholder rows showing what adjustments WOULD typically be evaluated for this kind of business.""",
+
+    "revenue_quality": """Write the Revenue Quality section. Cover:
+1. **Customer concentration** — Top 5, Top 10, Top 20 customers as % of revenue, presented in a markdown table. Top customer >25% should be flagged as deal-breaker level. If customer-level data not available, flag Information Required.
+2. **Cohort retention** — customers grouped by acquisition year, with NRR by cohort, gross retention, expansion vs contraction. Markdown table preferred.
+3. **Pricing × volume × mix decomposition** — split revenue growth into ASP change × unit change × mix change. Reveals durability of growth.
+4. **Recurring vs one-time** — split revenue into contracted recurring (subscription/MRC), repeat non-contracted, one-time/project. Each carries a different valuation multiple.
+5. **Revenue recognition policy** — point-in-time vs over-time per ASC 606 / IFRS 15. Note any cut-off testing concerns (channel stuffing, Q4 spike pattern).""",
+
+    "cost_margin": """Write the Cost & Margin Analysis section. Cover:
+1. **Monthly gross margin trend** — minimum 36 months, presented as a markdown table or note "Information Required: monthly P&L for last 36 months" if only annual is available. Annual hides seasonality, channel stuffing, run-rate inflections.
+2. **Margin decomposition** — input cost inflation, pricing actions, mix, volume leverage, one-time effects. Quantify each driver where possible.
+3. **Cost composition** — fixed vs variable, headcount-to-revenue ratio.
+4. **Sensitivity** — gross margin at ±5% / ±10% on key input assumptions, customer-Y leaving scenario, pricing reverting to industry mean.""",
+
+    "working_capital": """Write the Working Capital section — trend, days metrics, peg. Cover:
+1. **Monthly NWC trend** — trailing 18–24 months, markdown table. Long enough to capture seasonality. Flag Information Required if only annuals are available.
+2. **Days metrics by month** — DSO, DIO, DPO. Detects pre-close manipulation (unusual receivables stretch, payables compression).
+3. **Recommended peg** — basis (TTM monthly average / trailing-6-month / seasonally-adjusted) with rationale. Provide the recommended peg figure. Sensitivity at ±5% / ±10%.
+4. **Peg trap warning** — if business is growing, peg should escalate. Stale 12-month average punishes the buyer who inherits higher working capital need.
+5. **Closing-mechanic recommendation** — estimated closing NWC delivery, true-up window (60–90 days post-close).""",
+
+    "net_debt": """Write the Net Debt + Debt-Like Items section. Produce the schedule as a markdown table with columns: Item | Amount | Source | Buyer Comment.
+
+Lines (include all that are applicable):
+- Bank borrowings (current + non-current)
+- Bonds / notes
+- Finance lease liabilities
+- Less: Cash and cash equivalents
+- Less: Restricted cash (then add back as debt-like)
+- **Sub-total: Bank net debt**
+- Plus debt-like items:
+  - Deferred revenue
+  - Customer deposits
+  - Accrued bonuses (unpaid earned)
+  - Accrued severance / unpaid PTO
+  - Operating lease liabilities (IFRS 16) — flag as buyer-vs-seller contested
+  - Unfunded pension / post-retirement obligations
+  - Earn-outs from prior acquisitions
+  - Declared but unpaid dividends
+  - Litigation reserves (loss probable per legal opinion)
+  - Factoring / receivables financing (off-balance-sheet)
+  - Customer rebates / chargebacks accrued
+- **Total Net Debt + Debt-Like Items**
+
+Each item: quantified, source-cited, with one-line buyer-vs-seller dispute classification. Accrued bonus and deferred revenue are typically the most contested in practice — call those out explicitly.""",
+
+    "proof_of_cash": """Write the Proof of Cash section. Reconcile bank statement deposits and disbursements to reported revenue and EBITDA over 12+ months.
+
+Output should include:
+1. Reconciliation table: Reported Revenue (P&L) → Bank Deposits Tied to Sales → Variance, by quarter or month
+2. Reconciliation: EBITDA → Operating Cash Flow → Variance
+3. Discussion of unreconciled items >5% of revenue or EBITDA
+4. Flags for: revenue recognised but not deposited, deposits not accounted for in revenue, large round-number transfers, intercompany flows masquerading as third-party
+
+If bank statements are not available, flag clearly as Information Required: bank statements for the trailing 12 months for all material operating accounts. Without these, proof of cash cannot be performed and a key forensic-grade procedure is missing from the report.""",
+
+    "balance_sheet_review": """Write the Balance Sheet Review — account-by-account walk of every material balance. For each line, follow the per-line-item pattern:
+1. State the change (absolute + % YoY)
+2. Explain the driver
+3. Assess reasonableness
+4. Flag risks (collectability, impairment, classification, disclosure)
+
+Cover (omit lines not material to this business): AR (aging, ECL adequacy, concentration, RPT exposure), prepayments (RPT exposure, IPO-cost prepayments), inventory (aging, NRV, obsolescence), PPE (additions/disposals, utilisation, impairment indicators), intangibles (nature, amortisation policy, internally generated vs acquired), ROU assets, investments (classification, impairment), goodwill (impairment testing), AP (aging, RPT), other payables / accruals (deferred rev, customer deposits, IPO accruals), borrowings (covenants, repayment schedule, fixed/floating), convertibles (terms, classification), lease liabilities, deferred tax.
+
+Use bold underlined headers per line item. Include a Focus Areas table at the end summarising the material items requiring further scrutiny.""",
+
+    "capex": """Write the Capex section. Cover:
+1. **Maintenance vs growth split** — 3-year history with categorisation. Critical for FCF defensibility.
+2. Capex / revenue ratio benchmarked against peer trading levels
+3. Capex composition by category (PPE, software, M&A)
+4. Forward capex plan disclosed by management — assess reasonableness against historical run-rate and growth strategy
+5. **Forward-looking pivot** — what should buyer underwrite as forward maintenance capex floor for valuation purposes.""",
+
+    "accounting_policies": """Write the Accounting Policies — Judgment Areas section. For each material policy: (a) state the current treatment, (b) is it consistent with peer comps, (c) is it aggressive or conservative, (d) how would a buyer apply it differently, (e) what happens upon US GAAP / IFRS reconciliation for SEC filing.
+
+Cover the following where relevant:
+- Revenue recognition (ASC 606 / IFRS 15) — performance obligations, variable consideration, principal vs agent determination
+- Capitalisation of software / R&D
+- Inventory valuation (LIFO/FIFO, NRV)
+- Depreciable lives
+- Lease classification (IFRS 16 / ASC 842) — finance vs operating, discount rate
+- Deferred tax recognition
+- Impairment testing assumptions (CGU allocation, key assumptions)
+
+For Asia-Pacific issuers preparing under MFRS or local GAAP, explicitly flag the US GAAP / IFRS reconciliation that will be required for SEC F-1 filing.""",
+
+    "taxation": """Write the Taxation section. Cover:
+1. Effective tax rate reconciliation by year (markdown table with each component)
+2. Tax loss carryforwards — movement table, DTA recognition status, expiry timeline
+3. Tax jurisdictions analysis — for each material jurisdiction: applicable rates, key considerations, compliance status
+4. Open tax audits / disputes
+5. Transfer pricing arrangements — documentation status, intercompany pricing methodology, risk exposure
+6. Indirect tax (VAT/GST/SST) — registration, compliance, refund position
+7. Withholding tax — cross-border flows
+8. **Pre-listing structure tax considerations** — Cayman / BVI topco / opco re-organisation tax cost; this is operationally critical for Nasdaq-bound issuers.""",
+
+    "internal_controls": """Write the Internal Control Evaluation. For each business cycle relevant to this business, produce a markdown table with columns:
+| Control Point | Risk | Control Target | Control Description | Evaluation | Suggestion |
+
+Cycles typically covered (omit those not applicable):
+1. Revenue and Accounts Receivable
+2. Procurement and Accounts Payable
+3. Inventory Management
+4. Fixed Assets Management
+5. Treasury and Cash Management
+6. Human Resources and Payroll
+7. Information Technology General Controls (ITGC) — IAM, change management, backup/DRP, cybersecurity
+8. Financial Reporting Controls
+
+For Nasdaq IPO context, also flag SOX 302 / 404 readiness:
+- Section 302 — CEO/CFO certification readiness (financial reporting reliability)
+- Section 404 — ICFR documentation, walkthroughs, key control identification, testing readiness
+- For EGCs (Emerging Growth Companies, <$1.235B revenue): 404(b) auditor attestation deferred up to 5 years, but 404(a) management assessment still required.""",
+
+    "commitments_contingencies": """Write the Commitments and Contingencies section. Cover:
+1. **Open litigation** — case-by-case (parties, claim, quantum exposure, status, management's view, Orionmano view on probability and magnitude)
+2. **Threatened claims** known to management
+3. **Guarantees and indemnities** (intra-group, third-party)
+4. **Off-balance-sheet exposures** — factoring, sale-leaseback, securitisation, parent-company guarantees
+5. **Environmental / regulatory contingencies**
+6. **Founder / shareholder / related-party legal history** — directorship disqualifications, regulatory sanctions, prior litigation involving controlling persons (relevant for SEC bad-actor disclosure)""",
+
+    "net_debt_nwc": """Write the combined Net Debt + Working Capital section (Essential tier).
+
+Part 1: **Net Debt + Debt-Like Items** schedule — markdown table with Item | Amount | Source | Buyer Comment. Cover bank debt, leases, less cash, plus the standard debt-like items (deferred revenue, customer deposits, accrued bonuses, lease liabilities, unfunded pensions, earn-outs, declared unpaid dividends, litigation reserves, restricted cash, factoring).
+
+Part 2: **Working Capital** — recommended peg with basis (TTM monthly average preferred), days metrics if computable (DSO/DIO/DPO), sensitivity at ±5% / ±10%.
+
+Together these set the purchase-price mechanism for a cash-free, debt-free deal: Equity Value = Enterprise Value − Net Debt + (Working Capital − Peg).
+
+If monthly data is not available, flag Information Required and produce the schedule based on available annual data with explicit caveats.""",
+
+    "key_findings": """Write the Key Findings and Suggestions section. Produce a markdown table:
+| # | Priority | Finding | Analysis | Management's Response | Actionable Suggestion |
+
+Where Priority is exactly one of: **Deal-breaker** / **Price-impacting** / **Informational** (not "high/medium/low").
+
+Typically 5–10 findings, ordered by priority (deal-breakers first). Each row must be self-contained — a reader skimming this page only must understand the issue and what to do. Be direct and specific; no generic advice.""",
+}
+
+
+# ──────────────────────────────────────────────────────────────
 # Industry Expert Report — Frost & Sullivan / CIC-style prompt
 # ──────────────────────────────────────────────────────────────
 
 INDUSTRY_SECTION_INSTRUCTIONS = {
-    "sources_of_information": """Write the Sources of Information preamble in the style used by HKEX IPO industry-overview sections.
+    "sources_of_information": """Write the Sources of Information preamble in the style used by the "Industry" chapter of a Nasdaq Form S-1 / F-1 IPO prospectus.
 
 Open with a short statement that the industry information in this report is derived from public market research, official publications, trade associations, and Orionmano's own research. State that Orionmano Industries is the imprint under which this analysis is published.
 
@@ -827,7 +1136,7 @@ def _build_industry_report_prompt(
     """Build the Frost & Sullivan / CIC-style system prompt for industry reports."""
     return f"""You are a senior research analyst at **Orionmano Industries**, an independent industry research imprint publishing on industries.omassurance.com.
 
-You are drafting a section of an **Independent Industry Expert Report** — the institutional-grade document that accompanies Hong Kong IPO prospectuses and equivalent filings. Match the voice, density, and structure of Frost & Sullivan and China Insights Consultancy (CIC) reports.
+You are drafting a section of an **Independent Industry Expert Report** — the institutional-grade document that accompanies Nasdaq IPO prospectuses (the "Industry" chapter typical of Form S-1 / F-1 filings) and equivalent international filings. Match the voice, density, and structure of Frost & Sullivan and China Insights Consultancy (CIC) reports.
 
 ## VOICE AND STYLE
 - Third-person, analytical, data-dense. No first person. No marketing language. No AI disclaimers. No hedging fillers ("it is worth noting that…").
@@ -1122,6 +1431,13 @@ async def generate_report_bg(
             )
             # Gap analysis: no citations, no references section
             references_section = ""
+        elif report_type == "dd_report":
+            system_prompt = _build_dd_prompt(
+                company, documents, tier, tier_instruction, template,
+                company_context,
+            )
+            # DD report: no citations, natural basis statements only
+            references_section = ""
         elif report_type == "industry_report":
             system_prompt = _build_industry_report_prompt(
                 company, tier, tier_instruction, template, web_context, company_context,
@@ -1130,7 +1446,7 @@ async def generate_report_bg(
             # No numbered-source registry, no end-of-doc references section.
             references_section = ""
         else:
-            system_prompt = f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong).
+            system_prompt = f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong-based), specialising in Nasdaq IPO advisory for Asia-Pacific companies. All deliverables target Nasdaq listing standards (Capital Market / Global Market / Global Select Market), SEC registration (S-1 / F-1 / 20-F / 6-K), PCAOB-audited financials, and US GAAP / IFRS reconciliation paths. Do NOT reference HKEX, HKSIR, SEHK, Bursa Malaysia, or other non-US listing regimes as the regulatory perimeter.
 Generate professional report content. Be concise, data-driven, and specific.
 Use markdown formatting. Reference actual company data when available.
 Follow IFRS 9 and IFRS 13 standards for fair value analysis.
@@ -1159,18 +1475,23 @@ Tier: {tier.upper()} — {tier_instruction}
 
         # Retrieve memories for this skill
         from app.services.agent.memory import retrieve_memories
-        memory_rules = await retrieve_memories(db, company_id=company_id, skill_name="generate_gap_analysis" if report_type == "gap_analysis" else f"generate_{report_type}")
+        memory_skill_name = (
+            "generate_gap_analysis" if report_type == "gap_analysis"
+            else "generate_dd_report" if report_type == "dd_report"
+            else f"generate_{report_type}"
+        )
+        memory_rules = await retrieve_memories(db, company_id=company_id, skill_name=memory_skill_name)
         if memory_rules:
             rules_text = "\n".join(f"- {r}" for r in memory_rules)
             system_prompt += f"\n\n## Guidelines from past feedback (follow these strictly):\n{rules_text}\n"
 
         max_tokens_per_section = {"essential": 800, "standard": 1500, "premium": 2500}.get(tier, 1500)
-        # Gap analysis needs more tokens for the new detailed sections
-        if report_type == "gap_analysis":
+        # Gap analysis and DD report need more tokens for the detailed transaction-grade sections
+        if report_type in ("gap_analysis", "dd_report"):
             max_tokens_per_section = {"essential": 1000, "standard": 2000, "premium": 3000}.get(tier, 2000)
 
         # Per-report-type user-prompt suffix
-        if report_type == "gap_analysis":
+        if report_type in ("gap_analysis", "dd_report"):
             gap_user_suffix = (
                 " Do NOT use inline citation numbers like [1], [2]. "
                 "State the basis of information naturally (e.g., 'Based on FY2025 audited financials' or 'Per management representations'). "
@@ -1202,6 +1523,8 @@ Tier: {tier.upper()} — {tier_instruction}
                 use_reasoner = False
                 if report_type == "gap_analysis":
                     section_instruction = GAP_SECTION_INSTRUCTIONS.get(section_key, "")
+                elif report_type == "dd_report":
+                    section_instruction = DD_SECTION_INSTRUCTIONS.get(section_key, "")
                 elif report_type == "industry_report":
                     section_instruction = INDUSTRY_SECTION_INSTRUCTIONS.get(section_key, "")
                     use_reasoner = section_key in INDUSTRY_REASONER_SECTIONS
