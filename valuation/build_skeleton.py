@@ -1575,6 +1575,201 @@ def build_sensitivity_formulas(ws):
     ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=10)
 
 
+# Curated Country ERP table — typical Asia-Pac IPO / Nasdaq-relevant jurisdictions.
+# Values approximate Damodaran's published mid-2025 country ERP / country risk
+# premium (CRP) figures. Refresh annually from
+# https://pages.stern.nyu.edu/~adamodar/ — the agent / user should update before
+# any binding valuation work.
+COUNTRY_ERP_DATA: list[tuple[str, str, str, float, float, float, str]] = [
+    # (Country, ISO2, Moody's rating, ERP, Country Risk Premium, Corporate Tax, Region)
+    ("United States",     "US", "Aaa",  0.0457, 0.0000, 0.21,   "North America"),
+    ("United Kingdom",    "GB", "Aa3",  0.0507, 0.0050, 0.25,   "Western Europe"),
+    ("Germany",           "DE", "Aaa",  0.0457, 0.0000, 0.298,  "Western Europe"),
+    ("France",            "FR", "Aa3",  0.0507, 0.0050, 0.258,  "Western Europe"),
+    ("Switzerland",       "CH", "Aaa",  0.0457, 0.0000, 0.144,  "Western Europe"),
+    ("Netherlands",       "NL", "Aaa",  0.0457, 0.0000, 0.258,  "Western Europe"),
+    ("Australia",         "AU", "Aaa",  0.0457, 0.0000, 0.30,   "Australia & NZ"),
+    ("New Zealand",       "NZ", "Aaa",  0.0457, 0.0000, 0.28,   "Australia & NZ"),
+    ("Canada",            "CA", "Aaa",  0.0457, 0.0000, 0.265,  "North America"),
+    ("Japan",             "JP", "A1",   0.0567, 0.0110, 0.305,  "Asia"),
+    ("South Korea",       "KR", "Aa2",  0.0489, 0.0032, 0.275,  "Asia"),
+    ("Taiwan",            "TW", "Aa3",  0.0507, 0.0050, 0.20,   "Asia"),
+    ("China",             "CN", "A1",   0.0567, 0.0110, 0.25,   "Asia"),
+    ("Hong Kong",         "HK", "Aa3",  0.0507, 0.0050, 0.165,  "Asia"),
+    ("Singapore",         "SG", "Aaa",  0.0457, 0.0000, 0.17,   "Asia"),
+    ("Malaysia",          "MY", "A3",   0.0623, 0.0166, 0.24,   "Asia"),
+    ("Thailand",          "TH", "Baa1", 0.0691, 0.0234, 0.20,   "Asia"),
+    ("Vietnam",           "VN", "Ba2",  0.0855, 0.0398, 0.20,   "Asia"),
+    ("Indonesia",         "ID", "Baa2", 0.0735, 0.0278, 0.22,   "Asia"),
+    ("Philippines",       "PH", "Baa2", 0.0735, 0.0278, 0.25,   "Asia"),
+    ("India",             "IN", "Baa3", 0.0786, 0.0329, 0.252,  "Asia"),
+    ("Pakistan",          "PK", "Caa2", 0.1421, 0.0964, 0.29,   "Asia"),
+    ("Bangladesh",        "BD", "B2",   0.1142, 0.0685, 0.275,  "Asia"),
+    ("Cayman Islands",    "KY", "Aa3",  0.0507, 0.0050, 0.0,    "Caribbean (offshore)"),
+    ("British Virgin Is.","VG", "NA",   0.0507, 0.0050, 0.0,    "Caribbean (offshore)"),
+    ("Bermuda",           "BM", "A2",   0.0596, 0.0139, 0.0,    "Caribbean (offshore)"),
+    ("Brazil",            "BR", "Ba2",  0.0855, 0.0398, 0.34,   "Latin America"),
+    ("Mexico",            "MX", "Baa2", 0.0735, 0.0278, 0.30,   "Latin America"),
+    ("UAE",               "AE", "Aa2",  0.0489, 0.0032, 0.09,   "Middle East"),
+    ("Saudi Arabia",      "SA", "Aa3",  0.0507, 0.0050, 0.20,   "Middle East"),
+    ("Israel",            "IL", "A2",   0.0596, 0.0139, 0.23,   "Middle East"),
+]
+
+
+def build_country_erp_formulas(ws):
+    """Country ERP reference table — bundled Damodaran-style data for top
+    Asia-Pac IPO / Nasdaq-relevant jurisdictions. Refresh annually."""
+    write_header_band(ws, 1, "Country ERP — equity risk premium reference")
+    ws.cell(row=2, column=1, value=(
+        "Reference table for country risk premium (CRP) and total ERP. "
+        "Approximates Damodaran's mid-2025 published figures. **Refresh annually** "
+        "from pages.stern.nyu.edu/~adamodar/ before any binding valuation. "
+        "Look up your jurisdiction by ISO2 in column B, take ERP from column D and CRP from column E."
+    )).font = SMALL_FONT
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=7)
+
+    HDR = 4
+    headers = ["Country", "ISO2", "Moody's rating", "ERP", "Country Risk Premium",
+               "Corporate Tax Rate", "Region"]
+    for i, h in enumerate(headers, 1):
+        c = ws.cell(row=HDR, column=i, value=h)
+        c.font = HEADER_FONT
+        c.fill = HEADER_FILL
+        c.alignment = Alignment(horizontal="center", wrap_text=True)
+        c.border = BORDER
+    ws.column_dimensions["A"].width = 24
+    ws.column_dimensions["B"].width = 8
+    ws.column_dimensions["C"].width = 12
+    ws.column_dimensions["D"].width = 10
+    ws.column_dimensions["E"].width = 18
+    ws.column_dimensions["F"].width = 18
+    ws.column_dimensions["G"].width = 24
+
+    # Data rows
+    for i, row in enumerate(COUNTRY_ERP_DATA):
+        r = HDR + 1 + i
+        for col_idx, val in enumerate(row, 1):
+            c = ws.cell(row=r, column=col_idx, value=val)
+            c.border = BORDER
+            if col_idx in (4, 5, 6):
+                c.number_format = "0.00%"
+
+    # Footer note
+    note_row = HDR + 1 + len(COUNTRY_ERP_DATA) + 1
+    ws.cell(row=note_row, column=1, value=(
+        "Source: Aswath Damodaran (NYU Stern) country ERP methodology. "
+        "Mature-market ERP baseline ≈ 4.57%; CRP is the country-specific premium added "
+        "for non-AAA jurisdictions. Numbers above are 2024-2025 approximations — "
+        "REFRESH from the live source before binding work."
+    )).font = SMALL_FONT
+    ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=7)
+
+
+def build_historical_fs_formulas(ws):
+    """Historical FS sheet — manual entry table for 3-5 yrs P&L + simple BS.
+    Designed for the agent / user to fill from PBC audited financials."""
+    write_header_band(ws, 1, "Historical Financial Statements")
+    ws.cell(row=2, column=1, value=(
+        "3-5 years audited income statement + balance sheet. Manual entry from "
+        "client PBC. Y0 base values for the Projections sheet (revenue, NWC) "
+        "should be populated from this sheet."
+    )).font = SMALL_FONT
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=8)
+
+    HDR = 4
+    n_years = 5
+    ws.cell(row=HDR, column=1, value="Line item").font = HEADER_FONT
+    ws.cell(row=HDR, column=2, value="Unit").font = HEADER_FONT
+    for y in range(n_years):
+        ws.cell(row=HDR, column=3 + y, value=f"FY-{n_years - y}").font = HEADER_FONT
+    for col in range(1, 3 + n_years):
+        ws.cell(row=HDR, column=col).fill = HEADER_FILL
+        ws.cell(row=HDR, column=col).alignment = Alignment(horizontal="center")
+        ws.cell(row=HDR, column=col).border = BORDER
+
+    ws.column_dimensions["A"].width = 32
+    ws.column_dimensions["B"].width = 12
+    for y in range(n_years):
+        ws.column_dimensions[get_column_letter(3 + y)].width = 14
+
+    def section(row, title):
+        ws.cell(row=row, column=1, value=title).font = SECTION_FONT
+        ws.cell(row=row, column=1).fill = SECTION_FILL
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2 + n_years)
+
+    def lrow(row, label, fmt="#,##0"):
+        ws.cell(row=row, column=1, value=label).font = NORMAL_FONT
+        ws.cell(row=row, column=2, value="(currency × unit)").font = SMALL_FONT
+        for c in range(3, 3 + n_years):
+            cell = ws.cell(row=row, column=c)
+            cell.number_format = fmt
+            cell.border = BORDER
+            cell.fill = INPUT_FILL
+
+    # ----- Income statement -----
+    section(6, "Income Statement")
+    is_rows = [
+        (7, "Revenue"),
+        (8, "Cost of revenue"),
+        (9, "Gross profit"),
+        (10, "Operating expenses"),
+        (11, "  Selling, general & admin"),
+        (12, "  Research & development"),
+        (13, "EBITDA"),
+        (14, "Depreciation & amortization"),
+        (15, "EBIT (Operating income)"),
+        (16, "Interest expense"),
+        (17, "Other income / (expense)"),
+        (18, "Profit before tax"),
+        (19, "Tax expense"),
+        (20, "Net income"),
+    ]
+    for r, label in is_rows:
+        lrow(r, label)
+
+    # ----- Balance sheet -----
+    section(22, "Balance Sheet")
+    bs_rows = [
+        (23, "Current assets"),
+        (24, "  Cash and equivalents"),
+        (25, "  Accounts receivable"),
+        (26, "  Inventory"),
+        (27, "  Prepaid expenses"),
+        (28, "Total current assets"),
+        (29, "Non-current assets"),
+        (30, "  Property, plant & equipment"),
+        (31, "  Intangible assets"),
+        (32, "  Other long-term assets"),
+        (33, "Total assets"),
+        (35, "Current liabilities"),
+        (36, "  Accounts payable"),
+        (37, "  Short-term debt"),
+        (38, "  Other current liabilities"),
+        (39, "Total current liabilities"),
+        (40, "Non-current liabilities"),
+        (41, "  Long-term debt"),
+        (42, "  Other long-term liabilities"),
+        (43, "Total liabilities"),
+        (44, "Total equity"),
+    ]
+    for r, label in bs_rows:
+        lrow(r, label)
+
+    # ----- Working capital + net debt derived -----
+    section(46, "Derived metrics (calculated)")
+    R_NWC, R_ND = 47, 48
+    lrow(R_NWC, "Net working capital  (= current assets − current liabilities)")
+    lrow(R_ND, "Net debt  (= short-term debt + long-term debt − cash)")
+    for y in range(n_years):
+        col = get_column_letter(3 + y)
+        ws[f"{col}{R_NWC}"] = f"={col}28-{col}39"
+        ws[f"{col}{R_ND}"] = f"={col}37+{col}41-{col}24"
+        ws[f"{col}{R_NWC}"].number_format = "#,##0"
+        ws[f"{col}{R_ND}"].number_format = "#,##0"
+        ws[f"{col}{R_NWC}"].font = Font(bold=True)
+        ws[f"{col}{R_ND}"].font = Font(bold=True)
+
+
 def build_placeholder_sheet(ws, description: str):
     write_header_band(ws, 1, ws.title)
     ws.cell(row=2, column=1, value=description).font = SMALL_FONT
@@ -1632,6 +1827,8 @@ def build():
         "Comps": build_comps_formulas,
         "Football Field": build_football_field_formulas,
         "Sensitivity": build_sensitivity_formulas,
+        "Country ERP": build_country_erp_formulas,
+        "Historical FS": build_historical_fs_formulas,
     }
 
     for name, description in SHEETS:
