@@ -1,0 +1,131 @@
+{
+  "engagement": {
+    "company_name": "Sample TechCo Holdings Limited",
+    "company_country": "SG",
+    "company_industry_us": "Software (Internet)",
+    "company_industry_global": "Software (Internet)",
+    "valuation_date": "2026-03-31",
+    "report_purpose": "IPO pricing",
+    "accounting_standard": "IFRS",
+    "engagement_team": {
+      "partner": "A. Lee",
+      "manager": "T. Wong",
+      "department": "Valuation Advisory"
+    },
+    "client_name": "Sample TechCo Holdings Limited"
+  },
+  "currency": {
+    "primary": "USD",
+    "unit": "'000",
+    "alt": null,
+    "fx_rate_alt": null
+  },
+  "tax": {
+    "jurisdiction": "SG",
+    "type": "flat",
+    "rate_low": 0.17,
+    "rate_high": 0.17,
+    "threshold": null,
+    "effective_rate_override": null
+  },
+  "projections": {
+    "years": 5,
+    "revenue_growth_method": "per_year",
+    "revenue_growth": [0.45, 0.30, 0.22, 0.16, 0.10],
+    "gross_margin": [0.62, 0.64, 0.65, 0.65, 0.66],
+    "opex_pct_revenue": [0.55, 0.50, 0.45, 0.42, 0.40],
+    "capex_pct_revenue": [0.06, 0.05, 0.04, 0.04, 0.04],
+    "dep_pct_revenue": [0.04, 0.04, 0.04, 0.04, 0.04],
+    "nwc_pct_sales": [0.08, 0.08, 0.08, 0.08, 0.08]
+  },
+  "terminal": {
+    "method": "gordon_growth",
+    "growth_rate": 0.03,
+    "exit_multiple_type": null,
+    "exit_multiple_value": null
+  },
+  "wacc": {
+    "shared": {
+      "risk_free_rate": 0.045,
+      "risk_free_rate_source": "10y UST as at 2026-04-29",
+      "equity_risk_premium": 0.055,
+      "country_risk_premium": 0.005
+    },
+    "per_management": {
+      "unlevered_beta": 1.05,
+      "target_debt_to_equity": 0.20,
+      "size_premium": 0.020,
+      "specific_risk_premium": 0.020,
+      "pretax_cost_of_debt": 0.060,
+      "target_debt_weight": 0.17,
+      "target_equity_weight": 0.83
+    },
+    "independent": {
+      "unlevered_beta": 1.15,
+      "target_debt_to_equity": 0.25,
+      "size_premium": 0.025,
+      "specific_risk_premium": 0.030,
+      "pretax_cost_of_debt": 0.065,
+      "target_debt_weight": 0.20,
+      "target_equity_weight": 0.80
+    }
+  },
+  "cocos": [
+    { "tier": 1, "include": true, "company": "Atlassian", "ticker": "NASDAQ:TEAM", "country": "AU",
+      "accounting": "US GAAP", "market_cap_usd_mm": 50000, "d_to_e": 0.05, "raw_beta": 1.20, "tax_rate": 0.21 },
+    { "tier": 1, "include": true, "company": "Datadog", "ticker": "NASDAQ:DDOG", "country": "US",
+      "accounting": "US GAAP", "market_cap_usd_mm": 38000, "d_to_e": 0.10, "raw_beta": 1.30, "tax_rate": 0.21 },
+    { "tier": 2, "include": true, "company": "MongoDB", "ticker": "NASDAQ:MDB", "country": "US",
+      "accounting": "US GAAP", "market_cap_usd_mm": 22000, "d_to_e": 0.08, "raw_beta": 1.25, "tax_rate": 0.21 }
+  ],
+  "precedents": [
+    { "include": true, "date": "2024-09-12", "acquirer": "Cisco", "target": "Splunk",
+      "ev_usd_mm": 28000, "ev_revenue": 7.2, "ev_ebitda": 24.0, "premium": 0.31,
+      "rationale": "Strategic — observability stack" }
+  ],
+  "bridge": {
+    "surplus_assets": 25000,
+    "net_debt_override": null,
+    "minority_interests": 0,
+    "non_operating_assets": 0,
+    "dlom_pct": 0.20,
+    "dloc_pct": 0.15,
+    "equity_interest_pct": 1.00,
+    "shares_outstanding": 250000000,
+    "shares_outstanding_diluted": 285000000,
+    "pre_money_pct": 0.85
+  },
+  "adjustments": {
+    "capitalize_rd": true,
+    "rd_amortization_years": 5,
+    "convert_operating_leases": false,
+    "lease_discount_rate": null
+  },
+  "football_field": {
+    "weight_dcf": 0.50,
+    "weight_comps": 0.30,
+    "weight_precedent": 0.20,
+    "weight_nav": 0.00,
+    "selected_low": null,
+    "selected_mid": null,
+    "selected_high": null
+  },
+  "sensitivity": {
+    "wacc_step": 0.005,
+    "wacc_count": 5,
+    "terminal_g_step": 0.005,
+    "terminal_g_count": 5,
+    "revenue_g_step": 0.02,
+    "ebitda_margin_step": 0.02
+  },
+  "sources": {
+    "company_name": { "source": "Engagement Letter", "detail": "EL dated 2026-03-15", "notes": "" },
+    "valuation_date": { "source": "Engagement Letter", "detail": "EL dated 2026-03-15", "notes": "" },
+    "tax_rate_high": { "source": "Manual", "detail": "Singapore corporate tax rate 17% flat", "notes": "" },
+    "risk_free_rate": { "source": "Manual", "detail": "10y UST yield 2026-04-29 close", "notes": "" },
+    "equity_risk_premium": { "source": "Damodaran", "detail": "Damodaran ERP 2024 implied", "notes": "" },
+    "country_risk_premium": { "source": "Damodaran", "detail": "Damodaran Country ERP 2024, SG", "notes": "" },
+    "dlom_pct": { "source": "Manual", "detail": "Restricted stock studies median, 2024", "notes": "Pre-IPO" },
+    "dloc_pct": { "source": "Manual", "detail": "Mergerstat control premium inverse", "notes": "" }
+  }
+}
