@@ -63,6 +63,8 @@ SCALAR_PATHS: dict[str, str] = {
     # Projections — scalars
     "projection_years": "projections.years",
     "revenue_growth_method": "projections.revenue_growth_method",
+    "revenue_y0": "projections.revenue_y0",
+    "nwc_y0": "projections.nwc_y0",
     # Terminal
     "terminal_method": "terminal.method",
     "terminal_growth_rate": "terminal.growth_rate",
@@ -138,6 +140,67 @@ PRECEDENT_FIELDS = [
     "include", "date", "acquirer", "target", "ev_usd_mm",
     "ev_revenue", "ev_ebitda", "premium", "rationale",
 ]
+
+# Historical FS row map — column letters: C=FY-5, D=FY-4, E=FY-3, F=FY-2, G=FY-1
+HISTORICAL_FS_ROWS: dict[str, int] = {
+    # Income statement
+    "revenue": 7,
+    "cogs": 8,
+    "gross_profit": 9,
+    "opex_total": 10,
+    "sga": 11,
+    "rnd": 12,
+    "ebitda": 13,
+    "da": 14,
+    "ebit": 15,
+    "interest_expense": 16,
+    "other_income_expense": 17,
+    "profit_before_tax": 18,
+    "tax_expense": 19,
+    "net_income": 20,
+    # Balance sheet — current assets
+    "cash": 24,
+    "accounts_receivable": 25,
+    "inventory": 26,
+    "prepaid_expenses": 27,
+    "total_current_assets": 28,
+    # Non-current assets
+    "ppe": 30,
+    "intangibles": 31,
+    "other_lt_assets": 32,
+    "total_assets": 33,
+    # Current liabilities
+    "accounts_payable": 36,
+    "short_term_debt": 37,
+    "other_current_liabilities": 38,
+    "total_current_liabilities": 39,
+    # Non-current liabilities
+    "long_term_debt": 41,
+    "other_lt_liabilities": 42,
+    "total_liabilities": 43,
+    "total_equity": 44,
+}
+
+# CoCo metric sheet layout — first_data_row=6, last_data_row=35 (30 rows)
+# Cols start at 5 (E). Order matches build_coco_metric_sheet metric_columns.
+COCO_METRIC_LAYOUT: dict[str, dict[str, Any]] = {
+    "CoCo Multiples": {
+        "json_key": "coco_multiples",
+        "fields": ["ev_sales_ltm", "ev_sales_ntm", "ev_ebitda_ltm",
+                   "ev_ebitda_ntm", "pe_ltm", "pe_ntm"],
+    },
+    "CoCo Margins": {
+        "json_key": "coco_margins",
+        "fields": ["gross", "ebit", "net"],
+    },
+    "CoCo Ratios": {
+        "json_key": "coco_ratios",
+        "fields": ["roe", "roa", "d_to_e", "current_ratio"],
+    },
+}
+COCO_METRIC_FIRST_ROW = 6
+COCO_METRIC_FIRST_COL = 5
+COCO_METRIC_MAX_ROWS = 30
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +379,109 @@ def populate_scalars(wb, payload: dict, vr: ValidationResult) -> int:
     return written
 
 
+def populate_historical_fs(wb, payload: dict, vr: ValidationResult) -> int:
+    """Write 5-year historical FS arrays into the Historical FS sheet.
+
+    Each entry under payload['historical_fs'] is a 5-element array ordered
+    FY-5..FY-1 (oldest to most recent). Writes into columns C..G (3..7).
+    """
+    hf = payload.get("historical_fs") or {}
+    if not hf:
+        return 0
+    if "Historical FS" not in wb.sheetnames:
+        vr.warn("Historical FS sheet missing — skipped historical_fs population")
+        return 0
+    ws = wb["Historical FS"]
+    written = 0
+    for field_name, arr in hf.items():
+        if field_name not in HISTORICAL_FS_ROWS:
+            vr.warn(f"historical_fs.{field_name} not recognized — skipped")
+            continue
+        if not isinstance(arr, list):
+            vr.warn(f"historical_fs.{field_name} must be a list of 5 numbers")
+            continue
+        row = HISTORICAL_FS_ROWS[field_name]
+        for i, v in enumerate(arr[:5]):
+            if v is None:
+                continue
+            ws.cell(row=row, column=3 + i, value=v)
+            written += 1
+    return written
+
+
+def populate_coco_metrics(wb, payload: dict, vr: ValidationResult) -> int:
+    """Fill the CoCo Multiples / Margins / Ratios sheets from the producer's
+    coco_multiples / coco_margins / coco_ratios arrays. Each array is aligned
+    row-by-row with payload['cocos'] — index N here matches comparable N.
+    """
+    written = 0
+    for sheet_name, layout in COCO_METRIC_LAYOUT.items():
+        arr = payload.get(layout["json_key"]) or []
+        if not arr:
+            continue
+        if sheet_name not in wb.sheetnames:
+            vr.warn(f"{sheet_name} sheet missing — skipped {layout['json_key']}")
+            continue
+        ws = wb[sheet_name]
+        for i, entry in enumerate(arr[:COCO_METRIC_MAX_ROWS]):
+            if not isinstance(entry, dict):
+                continue
+            row = COCO_METRIC_FIRST_ROW + i
+            for j, field_name in enumerate(layout["fields"]):
+                v = entry.get(field_name)
+                if v is None:
+                    continue
+                ws.cell(row=row, column=COCO_METRIC_FIRST_COL + j, value=v)
+                written += 1
+    return written
+
+
+def validate_sources_completeness(payload: dict, vr: ValidationResult) -> None:
+    """Warn when a scalar parameter has a value but no sources entry.
+
+    Audit-trail discipline (Damodaran Aramco pattern): every parameter that
+    drives valuation should cite a source.
+    """
+    sources = payload.get("sources") or {}
+    high_priority = {
+        "company_name", "valuation_date", "currency", "tax_rate_high",
+        "revenue_y0", "nwc_y0", "risk_free_rate", "equity_risk_premium",
+        "country_risk_premium", "unlevered_beta_per_mgmt", "dlom_pct",
+        "dloc_pct", "shares_outstanding", "terminal_growth_rate",
+    }
+    missing: list[str] = []
+    for pid in SCALAR_PATHS:
+        if pid not in high_priority:
+            continue
+        json_path = SCALAR_PATHS[pid]
+        v = get_path(payload, json_path)
+        if v in (None, ""):
+            continue
+        meta = sources.get(pid)
+        if not meta or not meta.get("source"):
+            missing.append(pid)
+    # Scenarioed high-priority too
+    for stem in ("unlevered_beta", "specific_risk_premium"):
+        for suffix in ("per_mgmt", "indep"):
+            pid = f"{stem}_{suffix}"
+            if pid in sources and sources[pid].get("source"):
+                continue
+            tup = SCENARIO_PATHS.get(stem)
+            if not tup:
+                continue
+            jpath = tup[0] if suffix == "per_mgmt" else tup[1]
+            if get_path(payload, jpath) in (None, ""):
+                continue
+            missing.append(pid)
+    if missing:
+        sample = ", ".join(missing[:8])
+        more = f" (and {len(missing) - 8} more)" if len(missing) > 8 else ""
+        vr.warn(
+            f"sources missing for {len(missing)} high-priority parameters: "
+            f"{sample}{more}"
+        )
+
+
 def populate_tables(wb, payload: dict, vr: ValidationResult) -> int:
     written = 0
     inputs_ws = wb["Inputs"]
@@ -374,6 +540,7 @@ def export(json_path: Path, skeleton_path: Path, output_path: Path) -> Validatio
 
     vr = ValidationResult()
     validate_payload(payload, vr)
+    validate_sources_completeness(payload, vr)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(skeleton_path, output_path)
@@ -381,10 +548,14 @@ def export(json_path: Path, skeleton_path: Path, output_path: Path) -> Validatio
     wb = load_workbook(output_path)
     n_scalar = populate_scalars(wb, payload, vr)
     n_table = populate_tables(wb, payload, vr)
+    n_hist = populate_historical_fs(wb, payload, vr)
+    n_coco = populate_coco_metrics(wb, payload, vr)
     wb.save(output_path)
 
-    print(f"Scalars written:  {n_scalar}")
+    print(f"Scalars written:    {n_scalar}")
     print(f"Table rows written: {n_table}")
+    print(f"Historical FS cells: {n_hist}")
+    print(f"CoCo metric cells:   {n_coco}")
     print(f"Errors:   {len(vr.errors)}")
     print(f"Warnings: {len(vr.warnings)}")
     for e in vr.errors:

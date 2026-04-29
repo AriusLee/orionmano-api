@@ -37,12 +37,18 @@ class SkillResult:
     token_usage: int = 0
 
     @staticmethod
-    def success(data: Any = None, message: str = "", artifacts: dict[str, Any] | None = None) -> SkillResult:
+    def success(
+        data: Any = None,
+        message: str = "",
+        artifacts: dict[str, Any] | None = None,
+        token_usage: int = 0,
+    ) -> SkillResult:
         return SkillResult(
             status=SkillStatus.SUCCESS,
             data=data,
             message=message,
             artifacts=artifacts or {},
+            token_usage=token_usage,
         )
 
     @staticmethod

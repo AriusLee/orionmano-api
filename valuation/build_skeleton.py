@@ -87,6 +87,10 @@ SECTIONS: list[Section] = [
         Param("projection_years", "Explicit forecast years", "number"),
         Param("revenue_growth_method", "Revenue growth method", "enum",
               notes="flat | declining | staged | per_year"),
+        Param("revenue_y0", "Revenue base (Y0 / LTM)", "currency",
+              notes="Last reported full-year revenue; cascades into Projections"),
+        Param("nwc_y0", "Net working capital (Y0)", "currency",
+              notes="Audited Y0 NWC; required for Y1 ΔNWC computation"),
         *vec("revenue_growth", "Revenue growth", "percentage"),
         *vec("gross_margin", "Gross margin", "percentage"),
         *vec("opex_pct_revenue", "Opex % of revenue", "percentage"),
@@ -447,13 +451,9 @@ def build_projections_formulas(ws):
     section(6, "Revenue & growth")
     R_REV, R_RG = 8, 9
     lrow(R_REV, "Revenue", "(currency × unit)")
-    ws.cell(row=R_REV, column=3, value=None)  # base revenue manual fill (Y0)
-    ws.cell(row=R_REV, column=3).fill = INPUT_FILL
+    ws.cell(row=R_REV, column=3, value="=revenue_y0")
     ws.cell(row=R_REV, column=3).border = BORDER
-    ws.cell(row=R_REV, column=3).comment = None
-    ws.cell(row=R_REV, column=2).font = SMALL_FONT
-    # Mark Y0 cell as manual entry
-    ws.cell(row=R_REV, column=2, value="(manual Y0)").font = SMALL_FONT
+    ws.cell(row=R_REV, column=2, value="(from Inputs)").font = SMALL_FONT
     for y in range(1, PROJECTION_YEARS + 1):
         prev = col_for_year(y - 1)
         cur = col_for_year(y)
@@ -510,10 +510,9 @@ def build_projections_formulas(ws):
     lrow(R_CAPEX, "Capex", "(currency × unit)")
     lrow(R_NWC, "Net working capital", "(currency × unit)")
     lrow(R_DNWC, "Δ Working capital", "(currency × unit)")
-    # Y0 NWC = manual entry (needed as base for ΔNWC in Y1)
-    ws.cell(row=R_NWC, column=3).fill = INPUT_FILL
+    ws.cell(row=R_NWC, column=3, value="=nwc_y0")
     ws.cell(row=R_NWC, column=3).border = BORDER
-    ws.cell(row=R_NWC, column=2, value="(manual Y0)").font = SMALL_FONT
+    ws.cell(row=R_NWC, column=2, value="(from Inputs)").font = SMALL_FONT
     for y in range(1, PROJECTION_YEARS + 1):
         cur = col_for_year(y)
         prev = col_for_year(y - 1)
@@ -1616,6 +1615,144 @@ COUNTRY_ERP_DATA: list[tuple[str, str, str, float, float, float, str]] = [
 ]
 
 
+# Industry Averages — Damodaran US-industry mid-2025 approximations.
+# Format: (Industry, n_firms, unlevered_beta, gross_margin, ebitda_margin,
+#          op_margin, capex_pct_revenue, da_pct_revenue, ev_ebitda_ntm)
+INDUSTRY_AVERAGES_DATA: list[tuple[str, int, float, float, float, float, float, float, float]] = [
+    ("Advertising",                   58, 0.97, 0.40, 0.16, 0.10, 0.018, 0.024, 14.0),
+    ("Aerospace/Defense",             71, 0.92, 0.27, 0.18, 0.12, 0.030, 0.030, 16.5),
+    ("Auto & Truck (manufacturers)",  44, 0.95, 0.18, 0.12, 0.07, 0.045, 0.040, 9.5),
+    ("Bank (Money Center)",           17, 0.78, 0.55, 0.40, 0.35, 0.005, 0.010, 8.5),
+    ("Beverage (Alcoholic)",          27, 0.62, 0.48, 0.27, 0.22, 0.040, 0.030, 14.0),
+    ("Beverage (Soft)",               29, 0.71, 0.55, 0.28, 0.22, 0.045, 0.030, 16.0),
+    ("Biotechnology",                532, 1.18, 0.60, -0.10, -0.30, 0.020, 0.030, 12.0),
+    ("Broadcasting",                  21, 0.95, 0.42, 0.32, 0.22, 0.020, 0.060, 8.5),
+    ("Building Materials",            31, 1.08, 0.30, 0.18, 0.13, 0.040, 0.040, 9.0),
+    ("Business & Consumer Services", 168, 1.10, 0.45, 0.18, 0.12, 0.025, 0.035, 13.0),
+    ("Cable TV",                      10, 0.85, 0.55, 0.36, 0.20, 0.130, 0.140, 7.0),
+    ("Chemical (Diversified)",        23, 1.04, 0.22, 0.16, 0.12, 0.040, 0.030, 9.5),
+    ("Computer Services",             63, 1.15, 0.30, 0.18, 0.14, 0.025, 0.030, 14.5),
+    ("Computers/Peripherals",         29, 1.20, 0.40, 0.22, 0.18, 0.020, 0.025, 15.0),
+    ("Construction Supplies",         38, 1.02, 0.30, 0.16, 0.12, 0.035, 0.030, 9.5),
+    ("Drugs (Biotechnology)",        532, 1.18, 0.60, -0.10, -0.30, 0.020, 0.030, 12.0),
+    ("Drugs (Pharmaceutical)",       155, 0.95, 0.65, 0.30, 0.22, 0.030, 0.040, 14.0),
+    ("Education",                     33, 1.10, 0.50, 0.18, 0.13, 0.040, 0.030, 12.0),
+    ("Electrical Equipment",         103, 1.06, 0.32, 0.17, 0.12, 0.030, 0.030, 12.0),
+    ("Engineering/Construction",      48, 1.10, 0.18, 0.10, 0.07, 0.030, 0.020, 9.0),
+    ("Entertainment",                 73, 1.10, 0.40, 0.16, 0.10, 0.040, 0.060, 13.0),
+    ("Environmental & Waste Services",87, 0.86, 0.35, 0.24, 0.15, 0.080, 0.090, 12.0),
+    ("Financial Svcs. (Non-bank)",   240, 1.00, 0.45, 0.30, 0.22, 0.010, 0.020, 11.0),
+    ("Food Processing",               79, 0.55, 0.30, 0.15, 0.11, 0.040, 0.030, 11.5),
+    ("Furn/Home Furnishings",         32, 1.10, 0.32, 0.13, 0.09, 0.025, 0.025, 9.0),
+    ("Green & Renewable Energy",      24, 1.05, 0.35, 0.45, 0.18, 0.180, 0.220, 14.0),
+    ("Healthcare Products",          238, 1.04, 0.55, 0.20, 0.14, 0.030, 0.040, 16.0),
+    ("Healthcare Services",          103, 1.05, 0.30, 0.13, 0.08, 0.025, 0.030, 12.0),
+    ("Heavy Construction",            46, 1.20, 0.18, 0.11, 0.07, 0.040, 0.030, 9.5),
+    ("Homebuilding",                  31, 1.30, 0.22, 0.16, 0.14, 0.005, 0.005, 8.5),
+    ("Hospitals/Healthcare Facilities",36, 0.85, 0.32, 0.13, 0.07, 0.040, 0.050, 10.5),
+    ("Hotel/Gaming",                  73, 1.30, 0.45, 0.22, 0.13, 0.060, 0.080, 11.5),
+    ("Household Products",            46, 0.78, 0.42, 0.18, 0.13, 0.030, 0.030, 14.5),
+    ("Information Services",          74, 1.00, 0.50, 0.30, 0.22, 0.030, 0.060, 17.0),
+    ("Insurance (General)",           20, 0.78, 0.30, 0.18, 0.14, 0.005, 0.010, 9.5),
+    ("Insurance (Life)",              23, 0.95, 0.30, 0.20, 0.15, 0.005, 0.010, 8.0),
+    ("Insurance (Property/Casualty)", 50, 0.78, 0.30, 0.20, 0.16, 0.005, 0.010, 9.5),
+    ("Investments & Asset Management",170, 1.10, 0.55, 0.40, 0.32, 0.005, 0.010, 12.0),
+    ("Machinery",                    111, 1.04, 0.30, 0.16, 0.12, 0.030, 0.030, 12.0),
+    ("Metals & Mining",              101, 1.20, 0.20, 0.18, 0.10, 0.080, 0.080, 7.5),
+    ("Office Equipment & Services",   17, 0.92, 0.35, 0.16, 0.10, 0.030, 0.040, 9.0),
+    ("Oil/Gas (Integrated)",           4, 0.92, 0.30, 0.18, 0.13, 0.080, 0.080, 6.5),
+    ("Oil/Gas (Production/Exploration)",235, 1.05, 0.55, 0.42, 0.18, 0.220, 0.250, 5.5),
+    ("Oilfield Svcs/Equip.",          84, 1.18, 0.20, 0.18, 0.10, 0.060, 0.080, 8.5),
+    ("Packaging & Container",         24, 0.86, 0.20, 0.14, 0.10, 0.045, 0.040, 9.5),
+    ("Paper/Forest Products",         13, 0.92, 0.18, 0.16, 0.09, 0.050, 0.060, 8.5),
+    ("Power",                         54, 0.40, 0.40, 0.30, 0.18, 0.110, 0.120, 12.0),
+    ("Precious Metals",              101, 1.10, 0.40, 0.30, 0.20, 0.090, 0.100, 9.0),
+    ("Publishing & Newspapers",       29, 1.00, 0.35, 0.13, 0.07, 0.020, 0.040, 9.5),
+    ("R.E.I.T.",                     228, 0.65, 0.55, 0.55, 0.27, 0.080, 0.250, 18.0),
+    ("Real Estate (Development)",     22, 1.05, 0.30, 0.20, 0.15, 0.005, 0.010, 14.0),
+    ("Real Estate (Operations & Services)",58, 1.05, 0.40, 0.22, 0.13, 0.020, 0.040, 13.5),
+    ("Recreation",                    66, 1.10, 0.35, 0.16, 0.10, 0.035, 0.045, 11.0),
+    ("Reinsurance",                    2, 0.95, 0.30, 0.20, 0.16, 0.005, 0.010, 9.0),
+    ("Restaurant/Dining",             82, 1.04, 0.32, 0.16, 0.10, 0.045, 0.045, 14.0),
+    ("Retail (Automotive)",           25, 1.10, 0.18, 0.07, 0.05, 0.012, 0.010, 10.0),
+    ("Retail (Building Supply)",       6, 0.92, 0.34, 0.13, 0.10, 0.025, 0.025, 12.0),
+    ("Retail (Distributors)",         77, 0.90, 0.20, 0.10, 0.07, 0.020, 0.020, 10.0),
+    ("Retail (General)",              17, 0.95, 0.30, 0.10, 0.07, 0.020, 0.020, 9.5),
+    ("Retail (Grocery and Food)",     11, 0.42, 0.28, 0.06, 0.04, 0.020, 0.025, 9.0),
+    ("Retail (Online)",                64, 1.20, 0.38, 0.10, 0.06, 0.040, 0.040, 18.5),
+    ("Retail (Special Lines)",        92, 1.04, 0.32, 0.10, 0.07, 0.025, 0.030, 10.0),
+    ("Rubber & Tires",                 4, 0.92, 0.20, 0.13, 0.07, 0.030, 0.040, 8.0),
+    ("Semiconductor",                 71, 1.55, 0.50, 0.32, 0.22, 0.075, 0.060, 18.0),
+    ("Semiconductor Equip",           37, 1.45, 0.45, 0.30, 0.22, 0.040, 0.040, 16.0),
+    ("Shipbuilding & Marine",          9, 1.04, 0.18, 0.12, 0.07, 0.040, 0.040, 8.0),
+    ("Shoe",                          11, 1.00, 0.45, 0.18, 0.13, 0.025, 0.030, 14.0),
+    ("Software (Entertainment)",      75, 1.30, 0.65, 0.25, 0.18, 0.030, 0.060, 18.0),
+    ("Software (Internet)",          245, 1.30, 0.70, 0.16, 0.07, 0.025, 0.060, 22.0),
+    ("Software (System & Application)",367, 1.20, 0.72, 0.30, 0.22, 0.020, 0.060, 24.0),
+    ("Steel",                         32, 1.15, 0.16, 0.13, 0.08, 0.040, 0.040, 7.5),
+    ("Telecom (Wireless)",            13, 0.85, 0.45, 0.36, 0.16, 0.180, 0.180, 7.5),
+    ("Telecom. Equipment",            93, 1.04, 0.40, 0.18, 0.13, 0.025, 0.030, 11.5),
+    ("Telecom. Services",             49, 0.65, 0.40, 0.34, 0.16, 0.140, 0.140, 7.5),
+    ("Tobacco",                        9, 0.50, 0.55, 0.40, 0.36, 0.020, 0.020, 11.0),
+    ("Transportation",                25, 0.96, 0.18, 0.18, 0.13, 0.080, 0.060, 11.0),
+    ("Transportation (Railroads)",     5, 0.85, 0.45, 0.42, 0.32, 0.150, 0.130, 11.5),
+    ("Trucking",                      36, 1.05, 0.13, 0.18, 0.10, 0.050, 0.060, 9.5),
+    ("Utility (General)",             16, 0.36, 0.40, 0.32, 0.18, 0.130, 0.140, 12.0),
+    ("Utility (Water)",                15, 0.60, 0.42, 0.45, 0.30, 0.180, 0.150, 14.0),
+]
+
+
+def build_industry_averages_formulas(ws):
+    """Industry Averages — bundled Damodaran US-industry reference data.
+    Approximates mid-2025 published figures. Use for unlevered beta selection,
+    margin sanity-checks, and capex/D&A intensity benchmarking. Refresh annually."""
+    write_header_band(ws, 1, "Industry Averages — Damodaran US-industry reference (mid-2025)")
+    ws.cell(row=2, column=1, value=(
+        "Reference table for unlevered beta, margin, capex-intensity, and EV/EBITDA NTM "
+        "by industry. Approximates Damodaran's mid-2025 published US figures. "
+        "**Refresh annually** from pages.stern.nyu.edu/~adamodar/ before binding work. "
+        "For Asia-Pac targets, betas tend to run ~10-15% higher than the US baseline."
+    )).font = SMALL_FONT
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=9)
+
+    HDR = 4
+    headers = ["Industry", "n firms", "Unlevered β", "Gross margin",
+               "EBITDA margin", "Operating margin", "Capex / Revenue",
+               "D&A / Revenue", "EV/EBITDA NTM"]
+    for i, h in enumerate(headers, 1):
+        c = ws.cell(row=HDR, column=i, value=h)
+        c.font = HEADER_FONT
+        c.fill = HEADER_FILL
+        c.alignment = Alignment(horizontal="center", wrap_text=True)
+        c.border = BORDER
+    ws.column_dimensions["A"].width = 32
+    ws.column_dimensions["B"].width = 9
+    ws.column_dimensions["C"].width = 12
+    for col in ("D", "E", "F", "G", "H"):
+        ws.column_dimensions[col].width = 14
+    ws.column_dimensions["I"].width = 14
+
+    for i, row in enumerate(INDUSTRY_AVERAGES_DATA):
+        r = HDR + 1 + i
+        for col_idx, val in enumerate(row, 1):
+            c = ws.cell(row=r, column=col_idx, value=val)
+            c.border = BORDER
+            if col_idx == 3:
+                c.number_format = "0.00"
+            elif col_idx in (4, 5, 6, 7, 8):
+                c.number_format = "0.0%"
+            elif col_idx == 9:
+                c.number_format = "0.0"
+
+    note_row = HDR + 1 + len(INDUSTRY_AVERAGES_DATA) + 1
+    ws.cell(row=note_row, column=1, value=(
+        "Source: Aswath Damodaran (NYU Stern) US-industry data, mid-2025 approximation. "
+        "Use unlevered β as starting point; relever to target capital structure on the "
+        "WACC sheet. EV/EBITDA NTM ranges are observed market trading bands — apply with judgment."
+    )).font = SMALL_FONT
+    ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=9)
+
+
 def build_country_erp_formulas(ws):
     """Country ERP reference table — bundled Damodaran-style data for top
     Asia-Pac IPO / Nasdaq-relevant jurisdictions. Refresh annually."""
@@ -1829,6 +1966,7 @@ def build():
         "Sensitivity": build_sensitivity_formulas,
         "Country ERP": build_country_erp_formulas,
         "Historical FS": build_historical_fs_formulas,
+        "Industry Averages": build_industry_averages_formulas,
     }
 
     for name, description in SHEETS:

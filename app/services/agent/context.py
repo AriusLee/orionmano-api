@@ -51,7 +51,7 @@ class AgentContext:
             result = await self.db.execute(
                 select(Document).where(
                     Document.company_id == self.company_id,
-                    Document.status == "completed",
+                    Document.extraction_status == "completed",
                 )
             )
             docs = result.scalars().all()

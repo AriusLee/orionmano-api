@@ -31,12 +31,50 @@
   "projections": {
     "years": 5,
     "revenue_growth_method": "per_year",
-    "revenue_growth": [0.45, 0.30, 0.22, 0.16, 0.10],
-    "gross_margin": [0.62, 0.64, 0.65, 0.65, 0.66],
-    "opex_pct_revenue": [0.55, 0.50, 0.45, 0.42, 0.40],
-    "capex_pct_revenue": [0.06, 0.05, 0.04, 0.04, 0.04],
-    "dep_pct_revenue": [0.04, 0.04, 0.04, 0.04, 0.04],
-    "nwc_pct_sales": [0.08, 0.08, 0.08, 0.08, 0.08]
+    "revenue_growth": [
+      0.45,
+      0.3,
+      0.22,
+      0.16,
+      0.1
+    ],
+    "gross_margin": [
+      0.62,
+      0.64,
+      0.65,
+      0.65,
+      0.66
+    ],
+    "opex_pct_revenue": [
+      0.55,
+      0.5,
+      0.45,
+      0.42,
+      0.4
+    ],
+    "capex_pct_revenue": [
+      0.06,
+      0.05,
+      0.04,
+      0.04,
+      0.04
+    ],
+    "dep_pct_revenue": [
+      0.04,
+      0.04,
+      0.04,
+      0.04,
+      0.04
+    ],
+    "nwc_pct_sales": [
+      0.08,
+      0.08,
+      0.08,
+      0.08,
+      0.08
+    ],
+    "revenue_y0": 100000,
+    "nwc_y0": 8000
   },
   "terminal": {
     "method": "gordon_growth",
@@ -53,10 +91,10 @@
     },
     "per_management": {
       "unlevered_beta": 1.05,
-      "target_debt_to_equity": 0.20,
-      "size_premium": 0.020,
-      "specific_risk_premium": 0.020,
-      "pretax_cost_of_debt": 0.060,
+      "target_debt_to_equity": 0.2,
+      "size_premium": 0.02,
+      "specific_risk_premium": 0.02,
+      "pretax_cost_of_debt": 0.06,
       "target_debt_weight": 0.17,
       "target_equity_weight": 0.83
     },
@@ -64,33 +102,71 @@
       "unlevered_beta": 1.15,
       "target_debt_to_equity": 0.25,
       "size_premium": 0.025,
-      "specific_risk_premium": 0.030,
+      "specific_risk_premium": 0.03,
       "pretax_cost_of_debt": 0.065,
-      "target_debt_weight": 0.20,
-      "target_equity_weight": 0.80
+      "target_debt_weight": 0.2,
+      "target_equity_weight": 0.8
     }
   },
   "cocos": [
-    { "tier": 1, "include": true, "company": "Atlassian", "ticker": "NASDAQ:TEAM", "country": "AU",
-      "accounting": "US GAAP", "market_cap_usd_mm": 50000, "d_to_e": 0.05, "raw_beta": 1.20, "tax_rate": 0.21 },
-    { "tier": 1, "include": true, "company": "Datadog", "ticker": "NASDAQ:DDOG", "country": "US",
-      "accounting": "US GAAP", "market_cap_usd_mm": 38000, "d_to_e": 0.10, "raw_beta": 1.30, "tax_rate": 0.21 },
-    { "tier": 2, "include": true, "company": "MongoDB", "ticker": "NASDAQ:MDB", "country": "US",
-      "accounting": "US GAAP", "market_cap_usd_mm": 22000, "d_to_e": 0.08, "raw_beta": 1.25, "tax_rate": 0.21 }
+    {
+      "tier": 1,
+      "include": true,
+      "company": "Atlassian",
+      "ticker": "NASDAQ:TEAM",
+      "country": "AU",
+      "accounting": "US GAAP",
+      "market_cap_usd_mm": 50000,
+      "d_to_e": 0.05,
+      "raw_beta": 1.2,
+      "tax_rate": 0.21
+    },
+    {
+      "tier": 1,
+      "include": true,
+      "company": "Datadog",
+      "ticker": "NASDAQ:DDOG",
+      "country": "US",
+      "accounting": "US GAAP",
+      "market_cap_usd_mm": 38000,
+      "d_to_e": 0.1,
+      "raw_beta": 1.3,
+      "tax_rate": 0.21
+    },
+    {
+      "tier": 2,
+      "include": true,
+      "company": "MongoDB",
+      "ticker": "NASDAQ:MDB",
+      "country": "US",
+      "accounting": "US GAAP",
+      "market_cap_usd_mm": 22000,
+      "d_to_e": 0.08,
+      "raw_beta": 1.25,
+      "tax_rate": 0.21
+    }
   ],
   "precedents": [
-    { "include": true, "date": "2024-09-12", "acquirer": "Cisco", "target": "Splunk",
-      "ev_usd_mm": 28000, "ev_revenue": 7.2, "ev_ebitda": 24.0, "premium": 0.31,
-      "rationale": "Strategic — observability stack" }
+    {
+      "include": true,
+      "date": "2024-09-12",
+      "acquirer": "Cisco",
+      "target": "Splunk",
+      "ev_usd_mm": 28000,
+      "ev_revenue": 7.2,
+      "ev_ebitda": 24.0,
+      "premium": 0.31,
+      "rationale": "Strategic \u2014 observability stack"
+    }
   ],
   "bridge": {
     "surplus_assets": 25000,
     "net_debt_override": null,
     "minority_interests": 0,
     "non_operating_assets": 0,
-    "dlom_pct": 0.20,
+    "dlom_pct": 0.2,
     "dloc_pct": 0.15,
-    "equity_interest_pct": 1.00,
+    "equity_interest_pct": 1.0,
     "shares_outstanding": 250000000,
     "shares_outstanding_diluted": 285000000,
     "pre_money_pct": 0.85
@@ -102,10 +178,10 @@
     "lease_discount_rate": null
   },
   "football_field": {
-    "weight_dcf": 0.50,
-    "weight_comps": 0.30,
-    "weight_precedent": 0.20,
-    "weight_nav": 0.00,
+    "weight_dcf": 0.5,
+    "weight_comps": 0.3,
+    "weight_precedent": 0.2,
+    "weight_nav": 0.0,
     "selected_low": null,
     "selected_mid": null,
     "selected_high": null
@@ -119,13 +195,346 @@
     "ebitda_margin_step": 0.02
   },
   "sources": {
-    "company_name": { "source": "Engagement Letter", "detail": "EL dated 2026-03-15", "notes": "" },
-    "valuation_date": { "source": "Engagement Letter", "detail": "EL dated 2026-03-15", "notes": "" },
-    "tax_rate_high": { "source": "Manual", "detail": "Singapore corporate tax rate 17% flat", "notes": "" },
-    "risk_free_rate": { "source": "Manual", "detail": "10y UST yield 2026-04-29 close", "notes": "" },
-    "equity_risk_premium": { "source": "Damodaran", "detail": "Damodaran ERP 2024 implied", "notes": "" },
-    "country_risk_premium": { "source": "Damodaran", "detail": "Damodaran Country ERP 2024, SG", "notes": "" },
-    "dlom_pct": { "source": "Manual", "detail": "Restricted stock studies median, 2024", "notes": "Pre-IPO" },
-    "dloc_pct": { "source": "Manual", "detail": "Mergerstat control premium inverse", "notes": "" }
-  }
+    "company_name": {
+      "source": "Engagement Letter",
+      "detail": "EL dated 2026-03-15",
+      "notes": ""
+    },
+    "valuation_date": {
+      "source": "Engagement Letter",
+      "detail": "EL dated 2026-03-15",
+      "notes": ""
+    },
+    "tax_rate_high": {
+      "source": "Manual",
+      "detail": "Singapore corporate tax rate 17% flat",
+      "notes": ""
+    },
+    "risk_free_rate": {
+      "source": "Manual",
+      "detail": "10y UST yield 2026-04-29 close",
+      "notes": ""
+    },
+    "equity_risk_premium": {
+      "source": "Damodaran",
+      "detail": "Damodaran ERP 2024 implied",
+      "notes": ""
+    },
+    "country_risk_premium": {
+      "source": "Damodaran",
+      "detail": "Damodaran Country ERP 2024, SG",
+      "notes": ""
+    },
+    "dlom_pct": {
+      "source": "Manual",
+      "detail": "Restricted stock studies median, 2024",
+      "notes": "Pre-IPO"
+    },
+    "dloc_pct": {
+      "source": "Manual",
+      "detail": "Mergerstat control premium inverse",
+      "notes": ""
+    }
+  },
+  "historical_fs": {
+    "revenue": [
+      70000,
+      78000,
+      86000,
+      95000,
+      100000
+    ],
+    "cogs": [
+      -42000,
+      -46800,
+      -51600,
+      -57000,
+      -60000
+    ],
+    "gross_profit": [
+      28000,
+      31200,
+      34400,
+      38000,
+      40000
+    ],
+    "opex_total": [
+      -21000,
+      -23400,
+      -25800,
+      -28500,
+      -30000
+    ],
+    "sga": [
+      -15000,
+      -16800,
+      -18500,
+      -20400,
+      -21500
+    ],
+    "rnd": [
+      -6000,
+      -6600,
+      -7300,
+      -8100,
+      -8500
+    ],
+    "ebitda": [
+      7000,
+      7800,
+      8600,
+      9500,
+      10000
+    ],
+    "da": [
+      -2100,
+      -2340,
+      -2580,
+      -2850,
+      -3000
+    ],
+    "ebit": [
+      4900,
+      5460,
+      6020,
+      6650,
+      7000
+    ],
+    "interest_expense": [
+      -800,
+      -800,
+      -750,
+      -700,
+      -700
+    ],
+    "other_income_expense": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "profit_before_tax": [
+      4100,
+      4660,
+      5270,
+      5950,
+      6300
+    ],
+    "tax_expense": [
+      -984,
+      -1118,
+      -1265,
+      -1428,
+      -1512
+    ],
+    "net_income": [
+      3116,
+      3542,
+      4005,
+      4522,
+      4788
+    ],
+    "cash": [
+      3000,
+      3500,
+      4500,
+      5500,
+      6500
+    ],
+    "accounts_receivable": [
+      10000,
+      11000,
+      12000,
+      13000,
+      14000
+    ],
+    "inventory": [
+      4500,
+      5000,
+      5500,
+      6000,
+      6500
+    ],
+    "prepaid_expenses": [
+      800,
+      900,
+      1000,
+      1100,
+      1200
+    ],
+    "total_current_assets": [
+      18300,
+      20400,
+      23000,
+      25600,
+      28200
+    ],
+    "ppe": [
+      22000,
+      26000,
+      30000,
+      34000,
+      38000
+    ],
+    "intangibles": [
+      3500,
+      3500,
+      3500,
+      3500,
+      3500
+    ],
+    "other_lt_assets": [
+      1500,
+      1500,
+      1500,
+      1500,
+      1500
+    ],
+    "total_assets": [
+      45300,
+      51400,
+      58000,
+      64600,
+      71200
+    ],
+    "accounts_payable": [
+      -7000,
+      -7700,
+      -8500,
+      -9300,
+      -10000
+    ],
+    "short_term_debt": [
+      -3000,
+      -2500,
+      -2000,
+      -2000,
+      -2000
+    ],
+    "other_current_liabilities": [
+      -2000,
+      -2200,
+      -2400,
+      -2700,
+      -3000
+    ],
+    "total_current_liabilities": [
+      -12000,
+      -12400,
+      -12900,
+      -14000,
+      -15000
+    ],
+    "long_term_debt": [
+      -12000,
+      -11000,
+      -9500,
+      -9000,
+      -8500
+    ],
+    "other_lt_liabilities": [
+      -1000,
+      -1000,
+      -1000,
+      -1000,
+      -1000
+    ],
+    "total_liabilities": [
+      -25000,
+      -24400,
+      -23400,
+      -24000,
+      -24500
+    ],
+    "total_equity": [
+      20300,
+      27000,
+      34600,
+      40600,
+      46700
+    ]
+  },
+  "coco_multiples": [
+    {
+      "ev_sales_ltm": 4.2,
+      "ev_sales_ntm": 3.5,
+      "ev_ebitda_ltm": 18.0,
+      "ev_ebitda_ntm": 15.0,
+      "pe_ltm": 26.0,
+      "pe_ntm": 22.0
+    },
+    {
+      "ev_sales_ltm": 3.8,
+      "ev_sales_ntm": 3.2,
+      "ev_ebitda_ltm": 16.5,
+      "ev_ebitda_ntm": 13.5,
+      "pe_ltm": 24.0,
+      "pe_ntm": 20.0
+    },
+    {
+      "ev_sales_ltm": 5.5,
+      "ev_sales_ntm": 4.6,
+      "ev_ebitda_ltm": 22.0,
+      "ev_ebitda_ntm": 18.0,
+      "pe_ltm": 32.0,
+      "pe_ntm": 26.0
+    },
+    {
+      "ev_sales_ltm": 3.1,
+      "ev_sales_ntm": 2.7,
+      "ev_ebitda_ltm": 14.0,
+      "ev_ebitda_ntm": 12.0,
+      "pe_ltm": 21.0,
+      "pe_ntm": 18.0
+    }
+  ],
+  "coco_margins": [
+    {
+      "gross": 0.55,
+      "ebit": 0.18,
+      "net": 0.12
+    },
+    {
+      "gross": 0.52,
+      "ebit": 0.16,
+      "net": 0.1
+    },
+    {
+      "gross": 0.62,
+      "ebit": 0.22,
+      "net": 0.16
+    },
+    {
+      "gross": 0.48,
+      "ebit": 0.14,
+      "net": 0.09
+    }
+  ],
+  "coco_ratios": [
+    {
+      "roe": 0.18,
+      "roa": 0.08,
+      "d_to_e": 0.2,
+      "current_ratio": 2.1
+    },
+    {
+      "roe": 0.16,
+      "roa": 0.07,
+      "d_to_e": 0.25,
+      "current_ratio": 1.9
+    },
+    {
+      "roe": 0.22,
+      "roa": 0.1,
+      "d_to_e": 0.15,
+      "current_ratio": 2.5
+    },
+    {
+      "roe": 0.14,
+      "roa": 0.06,
+      "d_to_e": 0.3,
+      "current_ratio": 1.7
+    }
+  ]
 }
