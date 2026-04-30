@@ -5,11 +5,22 @@ populated xlsx. Returns a downloadable URL.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+
+def _slugify(name: str) -> str:
+    """Make a filename-safe slug from a company name. Lowercase, kebab-case,
+    ASCII-only. Empty input falls back to 'company'."""
+    if not name:
+        return "company"
+    s = name.lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return s or "company"
 
 from app.config import settings
 from app.services.agent.context import AgentContext
@@ -55,9 +66,17 @@ class GenerateValuationWorkpaperSkill(Skill):
         out_dir = upload_root / "valuations"
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        company_id = str(ctx.company_id) if ctx.company_id else "anon"
-        timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-        output_path = out_dir / f"valuation-{company_id}-{timestamp}.xlsx"
+        company_name = getattr(ctx.company, "name", None) if ctx.company else None
+        slug = _slugify(company_name or "")
+        date_str = datetime.utcnow().strftime("%d%m%Y")
+        # If multiple workpapers in one day, suffix with -2, -3, etc. so we
+        # never overwrite earlier runs.
+        base = f"valuation-{slug}-{date_str}"
+        output_path = out_dir / f"{base}.xlsx"
+        n = 2
+        while output_path.exists():
+            output_path = out_dir / f"{base}-{n}.xlsx"
+            n += 1
 
         # 3. Run the export pipeline
         # Skeleton may not exist yet — build_skeleton.py auto-builds when missing
@@ -84,6 +103,28 @@ class GenerateValuationWorkpaperSkill(Skill):
         finally:
             json_path.unlink(missing_ok=True)
 
+        # Compute summary + persist alongside the xlsx so the dashboard endpoint
+        # can fetch the latest run without rerunning Claude.
+        summary: dict[str, Any] | None = None
+        try:
+            from compute import compute_summary  # type: ignore
+            summary = compute_summary(payload)
+            summary_payload = {
+                "company_id": str(ctx.company_id) if ctx.company_id else None,
+                "generated_at": datetime.utcnow().isoformat() + "Z",
+                "xlsx_url": f"/uploads/valuations/{output_path.name}",
+                "xlsx_filename": output_path.name,
+                "warnings": vr.warnings,
+                "errors": vr.errors,
+                "summary": summary,
+                "inputs": payload,
+            }
+            summary_path = output_path.with_suffix(".summary.json")
+            summary_path.write_text(json.dumps(summary_payload, default=str))
+        except Exception as e:
+            # Summary failure shouldn't block the workpaper download
+            summary = {"error": f"Summary computation failed: {type(e).__name__}: {e}"}
+
         if vr.errors:
             return SkillResult(
                 status=SkillStatus.PARTIAL,
@@ -93,6 +134,7 @@ class GenerateValuationWorkpaperSkill(Skill):
                     "errors": vr.errors,
                     "warnings": vr.warnings,
                     "inputs_json": payload,
+                    "summary": summary,
                 },
                 message=(
                     f"Workpaper generated with {len(vr.errors)} validation errors "
@@ -108,6 +150,7 @@ class GenerateValuationWorkpaperSkill(Skill):
                 "xlsx_url": f"/uploads/valuations/{output_path.name}",
                 "warnings": vr.warnings,
                 "inputs_json": payload,
+                "summary": summary,
             },
             message=(
                 f"Workpaper generated at {output_path.name} "
