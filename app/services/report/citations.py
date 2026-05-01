@@ -206,11 +206,11 @@ def article_url(article: PublishedArticle) -> str:
 
 
 def format_footnote(article: PublishedArticle) -> str:
-    """McKinsey-style short citation: Author, "Title," Publication, Month Year."""
+    """Short citation: "Title," Publication, Month Year."""
     month = article.article_date.strftime("%B")
     year = article.article_date.year
     return (
-        f'{article.author}, "[{article.title}]({article_url(article)})," '
+        f'"[{article.title}]({article_url(article)})," '
         f'{article.publication}, {month} {year}.'
     )
 
