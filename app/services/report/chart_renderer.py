@@ -90,6 +90,38 @@ def _normalize_data(spec: dict) -> list[dict]:
     return rows
 
 
+def _label_px(label: str) -> float:
+    """Approximate rendered width of a label at font-size 10 (Inter, sans).
+    A flat 5.6 px/char is close enough for layout decisions; the real width
+    depends on the glyph mix but rotation-vs-flat is a coarse choice."""
+    return len(_clean_label(label)) * 5.6
+
+
+def _xaxis_label_metrics(rotate: bool, max_label_px: float, base_h: int) -> tuple[int, int]:
+    """Return (pad_b, total_h) for an x-axis given rotation + longest label.
+    Rotated labels at -28° need vertical room ≈ sin(28°) × label_px ≈ 0.47×.
+    Grow the SVG height when bottom padding balloons so the plot stays tall."""
+    if not rotate:
+        return 56, base_h
+    pad_b = 28 + int(0.5 * max_label_px) + 8
+    pad_b = min(pad_b, 140)
+    h = base_h if pad_b <= 60 else base_h + (pad_b - 60)
+    return pad_b, h
+
+
+def _xaxis_label(cx: float, y: float, text: str, rotate: bool) -> str:
+    """Render one x-axis tick label, centred or tilted -28° from its anchor."""
+    if rotate:
+        return (
+            f'<text x="{cx:.1f}" y="{y:.1f}" text-anchor="end" font-size="10" '
+            f'fill="{MUTED}" transform="rotate(-28 {cx:.1f} {y:.1f})">{_esc(text)}</text>'
+        )
+    return (
+        f'<text x="{cx:.1f}" y="{(y + 2):.1f}" text-anchor="middle" '
+        f'font-size="10" fill="{MUTED}">{_esc(text)}</text>'
+    )
+
+
 def _gradient_defs(prefix: str, count: int, vertical: bool = True) -> str:
     parts: list[str] = ["<defs>"]
     for i in range(count):
@@ -109,15 +141,23 @@ def _gradient_defs(prefix: str, count: int, vertical: bool = True) -> str:
 
 
 def _render_vertical_bar(spec: dict, prefix: str, stacked: bool = False) -> str:
-    W, H = 720, 360
-    pad_l, pad_r, pad_t, pad_b = 56, 24, 28, 56
-    plot_w = W - pad_l - pad_r
-    plot_h = H - pad_t - pad_b
+    W = 720
+    pad_l, pad_r, pad_t = 56, 24, 28
 
     data = _normalize_data(spec)
     series = _series_keys(spec)
     if not data or not series:
-        return _empty(W, H, "No data")
+        return _empty(W, 360, "No data")
+
+    # Decide x-axis label rotation up front: when any label is wider than its
+    # bar slot, we tilt to -28° to stop adjacent labels from overlapping.
+    plot_w = W - pad_l - pad_r
+    group_w = plot_w / max(len(data), 1)
+    labels_px = [_label_px(str(d.get("x", ""))) for d in data]
+    max_label_px = max(labels_px, default=0)
+    rotate_labels = max_label_px > group_w - 6
+    pad_b, H = _xaxis_label_metrics(rotate_labels, max_label_px, base_h=360)
+    plot_h = H - pad_t - pad_b
 
     # Compute max
     if stacked:
@@ -129,7 +169,6 @@ def _render_vertical_bar(spec: dict, prefix: str, stacked: bool = False) -> str:
         ) or 1
 
     n = len(data)
-    group_w = plot_w / n
     inner_pad = 0.18 * group_w
     if stacked:
         bar_w = group_w - 2 * inner_pad
@@ -168,9 +207,7 @@ def _render_vertical_bar(spec: dict, prefix: str, stacked: bool = False) -> str:
                     )
         # x label
         cx = pad_l + i * group_w + group_w / 2
-        parts.append(
-            f'<text x="{cx:.1f}" y="{(pad_t + plot_h + 16):.1f}" text-anchor="middle" font-size="10" fill="{MUTED}">{_esc(d["x"])}</text>'
-        )
+        parts.append(_xaxis_label(cx, pad_t + plot_h + 14, d["x"], rotate_labels))
 
     if len(series) > 1:
         parts.append(_legend(W, H - 20, prefix, series))
@@ -224,22 +261,27 @@ def _render_horizontal_bar(spec: dict, prefix: str) -> str:
 
 
 def _render_line(spec: dict, prefix: str) -> str:
-    W, H = 720, 360
-    pad_l, pad_r, pad_t, pad_b = 56, 24, 28, 56
-    plot_w = W - pad_l - pad_r
-    plot_h = H - pad_t - pad_b
+    W = 720
+    pad_l, pad_r, pad_t = 56, 24, 28
 
     data = _normalize_data(spec)
     series = _series_keys(spec)
     if not data or not series:
-        return _empty(W, H, "No data")
+        return _empty(W, 360, "No data")
+
+    plot_w = W - pad_l - pad_r
+    n = len(data)
+    step_x = plot_w / max(n - 1, 1)
+    labels_px = [_label_px(str(d.get("x", ""))) for d in data]
+    max_label_px = max(labels_px, default=0)
+    rotate_labels = max_label_px > step_x - 6
+    pad_b, H = _xaxis_label_metrics(rotate_labels, max_label_px, base_h=360)
+    plot_h = H - pad_t - pad_b
 
     max_v = max(
         (float(d.get(s, 0) or 0) for d in data for s in series),
         default=1,
     ) or 1
-    n = len(data)
-    step_x = plot_w / max(n - 1, 1)
 
     parts = [_svg_open(W, H), _gradient_defs(prefix, len(series))]
     parts.append(_grid_y(W, H, pad_l, pad_r, pad_t, pad_b, max_v))
@@ -263,9 +305,7 @@ def _render_line(spec: dict, prefix: str) -> str:
     # x labels
     for i, d in enumerate(data):
         cx = pad_l + i * step_x
-        parts.append(
-            f'<text x="{cx:.1f}" y="{(pad_t + plot_h + 16):.1f}" text-anchor="middle" font-size="10" fill="{MUTED}">{_esc(d["x"])}</text>'
-        )
+        parts.append(_xaxis_label(cx, pad_t + plot_h + 14, d["x"], rotate_labels))
 
     if len(series) > 1:
         parts.append(_legend(W, H - 20, prefix, series))
