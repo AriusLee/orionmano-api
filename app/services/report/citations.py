@@ -230,6 +230,34 @@ _FOOTNOTE_REF_RE = re.compile(r"\[\^([A-Za-z0-9_-]+)\](?!:)")
 # A footnote definition must start a line: `[^N]: ...`.
 _FOOTNOTE_DEF_RE = re.compile(r"^\[\^([A-Za-z0-9_-]+)\]:", re.MULTILINE)
 
+# Truncated `<cite ...` tag at end of content (no closing `>`).
+_TRUNCATED_CITE_RE = re.compile(r"\s*<cite\b[^>]*$", re.IGNORECASE)
+# Truncated ` ```chart` fence at end of content. The negative lookahead
+# `(?![\s\S]*```)` skips the match when a closing fence still follows, so
+# properly-closed charts earlier in the section are left untouched.
+_TRUNCATED_CHART_RE = re.compile(
+    r"\s*```chart\b(?![\s\S]*```)[\s\S]*$",
+    re.IGNORECASE,
+)
+
+
+def salvage_truncated_tail(content: str) -> str:
+    """Strip dangling `<cite ...` or ` ```chart` blocks left by max_tokens
+    truncation in the LLM output.
+
+    When the LLM hits its token cap mid-attribute or mid-JSON, the partial
+    markup never gets parsed by the cite resolver or chart renderer and ends
+    up as raw text in the rendered report (or as an "Invalid chart spec"
+    banner in the React preview). Trimming the broken tail keeps the rest of
+    the section presentable while making the truncation invisible.
+    """
+    out = content
+    # Order matters: a chart fence may itself contain `<cite/>` examples in
+    # comments or strings, so strip the chart tail first.
+    out = _TRUNCATED_CHART_RE.sub("", out)
+    out = _TRUNCATED_CITE_RE.sub("", out)
+    return out.rstrip()
+
 
 def strip_orphan_footnote_refs(content: str) -> str:
     """Remove `[^N]` markers that have no matching `[^N]:` definition.
@@ -259,6 +287,11 @@ async def process_cite_tags(
 
     Returns (rewritten_content, articles_in_order).
     """
+    # First, salvage any tail the LLM truncated mid-tag or mid-chart-JSON.
+    # Without this, dangling `<cite ...` and ` ```chart {…` survive as raw
+    # text in the PDF and break the React chart parser in the preview UI.
+    content = salvage_truncated_tail(content)
+
     matches = list(_CITE_TAG_RE.finditer(content))
     if not matches:
         # No <cite/> tags to resolve — but the LLM may have emitted raw

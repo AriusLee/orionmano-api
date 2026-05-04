@@ -1489,6 +1489,11 @@ Tier: {tier.upper()} — {tier_instruction}
         # Gap analysis and DD report need more tokens for the detailed transaction-grade sections
         if report_type in ("gap_analysis", "dd_report"):
             max_tokens_per_section = {"essential": 1000, "standard": 2000, "premium": 3000}.get(tier, 2000)
+        # Industry reports pack chart JSON + markdown tables + dense prose +
+        # several <cite/> tags into every section. The standard envelope was
+        # truncating mid-cite-tag and mid-chart-JSON, so widen it.
+        if report_type == "industry_report":
+            max_tokens_per_section = {"essential": 1800, "standard": 3200, "premium": 4500}.get(tier, 3200)
 
         # Per-report-type user-prompt suffix
         if report_type in ("gap_analysis", "dd_report"):
