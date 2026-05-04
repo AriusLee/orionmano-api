@@ -120,6 +120,20 @@ body { font-family: 'Inter', sans-serif; font-size: 10pt; color: #1E293B; line-h
 .section .content figure.chart .chart-body svg { display: block; max-width: 100%; height: auto; }
 .section .content figure.chart .chart-source { font-size: 8pt; font-style: italic; color: #64748B; margin-top: 4px; }
 .section .content pre.chart-error { background: #FEF2F2; color: #991B1B; padding: 8px; border-radius: 6px; font-size: 8pt; white-space: pre-wrap; }
+
+/* Inline footnote citations rendered as small superscripts (e.g. 2030.^3). */
+.section .content sup { font-size: 7pt; vertical-align: super; line-height: 0; }
+.section .content sup a, .section .content sup a:link, .section .content sup a:visited {
+  color: #14B8A6; text-decoration: none; font-weight: 500; padding-left: 1px;
+}
+
+/* End-of-section footnote block (Python markdown emits div.footnote). */
+.section .content .footnote { margin-top: 14px; padding-top: 8px; border-top: 1px solid #CBD5E1; font-size: 8pt; color: #475569; line-height: 1.5; }
+.section .content .footnote hr { display: none; }
+.section .content .footnote ol { padding-left: 18px; margin: 0; }
+.section .content .footnote li { margin: 2px 0; font-size: 8pt; }
+.section .content .footnote li p { margin: 0; display: inline; font-size: 8pt; }
+.section .content .footnote a.footnote-backref { display: none; }
 """
 
 
@@ -155,7 +169,16 @@ def _md_to_html(text: str) -> str:
             "fenced_code",
             "sane_lists",
             "md_in_html",
+            "footnotes",
         ],
+        extension_configs={
+            "footnotes": {
+                # Per-section content is rendered independently; suffix each
+                # generated id with the section's hash to avoid duplicate
+                # `fn:1` ids when WeasyPrint stitches sections together.
+                "UNIQUE_IDS": True,
+            },
+        },
     )
 
 

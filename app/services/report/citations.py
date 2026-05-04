@@ -225,6 +225,28 @@ _CITE_TAG_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Inline GFM footnote reference (NOT a definition — definitions end in `:`).
+_FOOTNOTE_REF_RE = re.compile(r"\[\^([A-Za-z0-9_-]+)\](?!:)")
+# A footnote definition must start a line: `[^N]: ...`.
+_FOOTNOTE_DEF_RE = re.compile(r"^\[\^([A-Za-z0-9_-]+)\]:", re.MULTILINE)
+
+
+def strip_orphan_footnote_refs(content: str) -> str:
+    """Remove `[^N]` markers that have no matching `[^N]:` definition.
+
+    The LLM occasionally emits raw GFM footnote syntax despite the prompt
+    instructing it to use `<cite/>` tags only. Without a matching definition,
+    remark-gfm (and Python markdown without the footnotes extension) leaves
+    the marker as raw text — so users see `infrastructure.[^1]` in the
+    rendered report. Stripping orphans here makes the body read cleanly.
+    """
+    defined = set(_FOOTNOTE_DEF_RE.findall(content))
+
+    def _drop_orphan(m: re.Match) -> str:
+        return m.group(0) if m.group(1) in defined else ""
+
+    return _FOOTNOTE_REF_RE.sub(_drop_orphan, content)
+
 
 async def process_cite_tags(
     db: AsyncSession,
@@ -239,7 +261,10 @@ async def process_cite_tags(
     """
     matches = list(_CITE_TAG_RE.finditer(content))
     if not matches:
-        return content, []
+        # No <cite/> tags to resolve — but the LLM may have emitted raw
+        # `[^N]` markers anyway. Strip orphans so they don't render as
+        # raw text (e.g. `infrastructure.[^1]`) in HTML/PDF output.
+        return strip_orphan_footnote_refs(content), []
 
     seen: dict[str, int] = {}
     ordered: list[PublishedArticle] = []
@@ -273,5 +298,9 @@ async def process_cite_tags(
         for num, article in enumerate(ordered, 1):
             footer.append(f"[^{num}]: {format_footnote(article)}")
         out = out.rstrip() + "\n" + "\n".join(footer) + "\n"
+
+    # The LLM may have sprinkled additional raw `[^N]` markers alongside
+    # the resolved <cite/> tags. Drop any whose number we didn't define.
+    out = strip_orphan_footnote_refs(out)
 
     return out, ordered
