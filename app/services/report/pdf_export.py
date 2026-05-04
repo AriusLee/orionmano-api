@@ -138,7 +138,7 @@ def _md_to_html(text: str) -> str:
     # Otherwise we'd swallow the chart block.
     if stripped.startswith("```") and not stripped.startswith("```chart"):
         stripped = stripped[3:].strip()
-    if stripped.endswith("```") and not re.search(r"```chart\s*\n[\s\S]*?```\s*$", stripped):
+    if stripped.endswith("```") and not re.search(r"```chart\b[ \t]*\n?[\s\S]*?```\s*$", stripped):
         stripped = stripped[:-3].strip()
 
     # Convert ```chart {...}``` fences into inline-SVG <figure> blocks BEFORE

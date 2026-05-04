@@ -30,7 +30,11 @@ AXIS = "#94A3B8"
 BG = "#FFFFFF"
 
 
-CHART_FENCE_RE = re.compile(r"```chart\s*\n([\s\S]*?)```", re.IGNORECASE)
+# Match ```chart fences whether the JSON starts on a new line or inline on the
+# same line as the opener. The LLM occasionally collapses ```chart\n{...} into
+# ```chart {...} on a single line; the previous \s*\n required a literal
+# newline and silently let the whole block fall through to the markdown parser.
+CHART_FENCE_RE = re.compile(r"```chart\b[ \t]*\n?([\s\S]*?)```", re.IGNORECASE)
 
 
 def _clean_label(s: Any) -> str:
