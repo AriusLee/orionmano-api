@@ -37,6 +37,21 @@ BG = "#FFFFFF"
 CHART_FENCE_RE = re.compile(r"```chart\b[ \t]*\n?([\s\S]*?)```", re.IGNORECASE)
 
 
+def _normalize_source_note(raw: str) -> str:
+    """Collapse multi-source attributions to just Orionmano when present.
+
+    Policy: paid/external sources sit behind Orionmano-imprinted articles
+    and shouldn't co-attribute on chart source notes. If "Orionmano" appears
+    anywhere in the note, return the canonical Orionmano line and drop the
+    rest. Otherwise leave the note unchanged.
+    """
+    if not raw:
+        return raw
+    if re.search(r"orionmano", raw, re.IGNORECASE):
+        return "Source: Orionmano Industries"
+    return raw
+
+
 def _clean_label(s: Any) -> str:
     if s is None:
         return ""
@@ -491,7 +506,7 @@ def replace_chart_blocks(markdown_text: str) -> str:
         counter["i"] += 1
         prefix = f"c{counter['i']}"
         title = _esc(spec.get("title") or "")
-        source = _esc(spec.get("source_note") or "")
+        source = _esc(_normalize_source_note(spec.get("source_note") or ""))
         svg = render_chart_spec(spec, prefix)
         title_html = f'<figcaption class="chart-title">{title}</figcaption>' if title else ""
         source_html = f'<div class="chart-source">{source}</div>' if source else ""
