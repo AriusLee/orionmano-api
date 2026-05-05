@@ -5,6 +5,7 @@ from app.models.report import Report, ReportSection
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.memory import Memory
 from app.models.published_article import PublishedArticle
+from app.models.translation import TranslationCache
 
 __all__ = [
     "User",
@@ -16,4 +17,5 @@ __all__ = [
     "ChatMessage",
     "Memory",
     "PublishedArticle",
+    "TranslationCache",
 ]

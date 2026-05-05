@@ -1,0 +1,941 @@
+# Valuation-module-specific terms for the Orionmano Nasdaq-IPO advisory platform.
+# Cross-cutting terms (SEC forms, EBITDA, EBIT, WACC, net debt, capex, D&A, NWC, LTM/TTM/NTM,
+# CAGR, ARPU, churn, ROE/ROA/ROCE, FPI, S-1, F-1, IFRS, US GAAP, etc.) live in _shared.yaml.
+# Do NOT duplicate those here. Schema mirrors _shared.yaml; see that file for full schema docs.
+#
+# Sections:
+#   1. Fair value framework
+#   2. DCF mechanics
+#   3. Cost of capital
+#   4. Capital structure
+#   5. Comparable companies
+#   6. Precedent transactions
+#   7. Multiples
+#   8. Equity bridge & per-share derivation
+#   9. Asset-based approach
+#  10. Inputs & drivers
+#  11. Sensitivity & scenarios
+
+# ─── 1. Fair value framework ───
+
+- en: fair market value
+  definition: Price at which an asset would change hands between a willing buyer and willing seller, both informed and under no compulsion
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 公平市场价值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 公正市場価値, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: fair value measurement
+  definition: Accounting basis under IFRS 13 / ASC 820 for measuring assets and liabilities at fair value
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 公允价值计量, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 公正価値測定, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: IFRS 13
+  definition: International accounting standard governing fair value measurement
+  category: dcf
+  do_not_translate: true
+
+- en: ASC 820
+  definition: US GAAP codification topic governing fair value measurement
+  category: dcf
+  do_not_translate: true
+
+# ─── 2. DCF mechanics ───
+
+- en: discounted cash flow analysis
+  definition: Intrinsic valuation method that discounts projected free cash flows to present value
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 折现现金流分析, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 割引キャッシュフロー分析, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: DCF
+  definition: Acronym for discounted cash flow
+  category: dcf
+  do_not_translate: true
+
+- en: free cash flow
+  definition: Operating cash flow available after reinvestment in working capital and capex
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 自由现金流, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: フリーキャッシュフロー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: free cash flow to firm
+  definition: Cash flow available to all capital providers; EBIT × (1−T) + D&A − ΔNWC − capex
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 企业自由现金流, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 企業フリーキャッシュフロー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: FCFF
+  definition: Acronym for free cash flow to firm
+  category: dcf
+  do_not_translate: true
+
+- en: free cash flow to equity
+  definition: Cash flow available to equity holders after debt service and net borrowings
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 股权自由现金流, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 株主フリーキャッシュフロー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: FCFE
+  definition: Acronym for free cash flow to equity
+  category: dcf
+  do_not_translate: true
+
+- en: terminal value
+  definition: Value of the business beyond the explicit forecast period, capturing all cash flows in perpetuity
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 终值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ターミナルバリュー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: Gordon Growth Model
+  definition: Terminal value method assuming cash flows grow at a constant perpetual rate
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 戈登增长模型, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ゴードン成長モデル, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: exit multiple method
+  definition: Terminal value method that applies an EV/EBITDA or similar multiple to the final-year metric
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 退出乘数法, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 出口マルチプル法, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: terminal growth rate
+  definition: Constant perpetual growth rate applied beyond the forecast period in the Gordon Growth model
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 永续增长率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 永続成長率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: present value
+  definition: Today's value of a future cash flow, discounted at the cost of capital
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 现值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 現在価値, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: discount rate
+  definition: Rate used to convert future cash flows to present value
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 折现率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 割引率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: discount factor
+  definition: Multiplicative factor 1 / (1 + WACC)^period applied to future cash flows
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 折现系数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 割引係数, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: discount period
+  definition: Time index (years from valuation date) used to compute discount factor for each forecast year
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 折现期间, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 割引期間, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: partial year adjustment
+  definition: Mid-year or stub-period correction so the first discount period reflects the fraction of year remaining
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 不足年调整, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 期中調整, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: explicit forecast period
+  definition: Years for which line-by-line projections are modeled before terminal value (typically 5–10)
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 明确预测期, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 明示予測期間, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: projection period
+  definition: Period covered by the explicit financial forecast feeding the DCF
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 预测期间, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 予測期間, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: net borrowings
+  definition: Drawdowns net of repayments; flows through FCFE
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 净借款, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 純借入金, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: change in working capital
+  definition: Year-over-year movement in NWC; subtracted from EBIT(1−T) when computing FCFF
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 营运资金变动, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 運転資本の変動, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: Damodaran ERP
+  definition: Aswath Damodaran's published equity risk premium dataset by country and region
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: Damodaran 股权风险溢价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ダモダランERP, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: build-up method
+  definition: Cost-of-equity construction summing risk-free rate, beta × ERP, size, country and specific risk premia
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 累加法, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ビルドアップ法, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── 3. Cost of capital ───
+
+- en: weighted average cost of capital
+  definition: Blended cost of equity and after-tax cost of debt weighted by capital structure
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 加权平均资本成本, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 加重平均資本コスト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: WACC
+  definition: Acronym for weighted average cost of capital
+  category: dcf
+  do_not_translate: true
+
+- en: cost of equity
+  definition: Required return on equity capital, built from risk-free rate, beta × ERP, size and specific risk premia
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 股权成本, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 株主資本コスト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: cost of debt
+  definition: Yield required by debt holders before tax (pre-tax Kd) or after tax shield
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 债务成本, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 負債コスト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: pre-tax cost of debt
+  definition: Yield to maturity on the company's marginal debt before applying the tax shield
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 税前债务成本, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 税引前負債コスト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: after-tax cost of debt
+  definition: Pre-tax cost of debt multiplied by (1 − tax rate); reflects the interest tax shield
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 税后债务成本, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 税引後負債コスト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: risk-free rate
+  definition: Yield on long-dated government securities used as the base of the cost-of-equity build
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 无风险利率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: リスクフリーレート, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: equity risk premium
+  definition: Excess return demanded by equity investors over the risk-free rate
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 股权风险溢价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: エクイティリスクプレミアム, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: ERP
+  definition: Acronym for equity risk premium
+  category: dcf
+  do_not_translate: true
+
+- en: country risk premium
+  definition: Incremental return demanded for exposure to a specific country's macro / sovereign risk
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 国家风险溢价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: カントリーリスクプレミアム, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: size premium
+  definition: Additional return demanded for small-cap exposure, typically sourced from Kroll size deciles
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 规模溢价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 規模プレミアム, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: company-specific risk premium
+  definition: Judgment-based add-on for idiosyncratic risks not captured by beta or other premia
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 公司特定风险溢价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 企業固有リスクプレミアム, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: Kroll size premium
+  definition: Kroll-published size premium by market-cap decile, used in cost-of-equity build-up
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: Kroll 规模溢价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: KrollサイズプレミアムTBD, status: draft, reviewed_by: null, reviewed_on: null }  # standard rendering; confirm with reviewer
+
+- en: beta
+  definition: Sensitivity of an asset's returns to market returns; key input to the cost of equity
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 贝塔系数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ベータ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: levered beta
+  definition: Beta reflecting the company's actual capital structure (with financial leverage)
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 有杠杆贝塔, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: レバードベータ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: unlevered beta
+  definition: Beta stripped of financial leverage (asset beta)
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 去杠杆贝塔, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: アンレバードベータ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: raw beta
+  definition: Regression beta as reported by data vendors before adjustment or unlevering
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 原始贝塔, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 生ベータ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: relevered beta
+  definition: Unlevered beta re-leveraged at the target company's capital structure
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 重加杠杆贝塔, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: リレバードベータ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: marginal tax rate
+  definition: Statutory tax rate applied to incremental earnings; used in after-tax cost of debt and FCFF
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 边际税率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 限界税率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: effective tax rate
+  definition: Actual tax expense divided by pre-tax profit; used when it persistently differs from statutory
+  category: dcf
+  do_not_translate: false
+  zh_CN: { term: 实际税率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 実効税率, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── 4. Capital structure ───
+
+- en: capital structure
+  definition: Mix of debt and equity financing the firm; D/V and E/V weights
+  category: capital_structure
+  do_not_translate: false
+  zh_CN: { term: 资本结构, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 資本構成, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: target capital structure
+  definition: Long-run debt/equity mix used in WACC, often based on peer medians
+  category: capital_structure
+  do_not_translate: false
+  zh_CN: { term: 目标资本结构, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 目標資本構成, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: debt-to-equity ratio
+  definition: Total debt divided by total equity; key gearing metric used in beta unlevering
+  category: capital_structure
+  do_not_translate: false
+  zh_CN: { term: 债务股本比, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 負債資本比率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: debt weight
+  definition: Proportion of debt in the capital structure (D/V) used in WACC
+  category: capital_structure
+  do_not_translate: false
+  zh_CN: { term: 债务权重, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 負債ウェイト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: equity weight
+  definition: Proportion of equity in the capital structure (E/V) used in WACC
+  category: capital_structure
+  do_not_translate: false
+  zh_CN: { term: 股权权重, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 株式ウェイト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: financial leverage
+  definition: Use of debt financing to amplify returns on equity
+  category: capital_structure
+  do_not_translate: false
+  zh_CN: { term: 财务杠杆, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 財務レバレッジ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: tax shield
+  definition: Reduction in tax expense from the deductibility of interest on debt
+  category: capital_structure
+  do_not_translate: false
+  zh_CN: { term: 税盾, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: タックスシールド, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: drawdown
+  definition: New debt issuance under a credit facility increasing debt outstanding
+  category: capital_structure
+  do_not_translate: false
+  zh_CN: { term: 提款, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ドローダウン, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: bank borrowings
+  definition: Debt facilities provided by banks; carries a weighted average interest rate
+  category: capital_structure
+  do_not_translate: false
+  zh_CN: { term: 银行借款, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 銀行借入金, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: dividends
+  definition: Cash distributions to shareholders; reduce retained earnings
+  category: capital_structure
+  do_not_translate: false
+  zh_CN: { term: 股利, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 配当金, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: operating lease conversion
+  definition: Damodaran adjustment that capitalizes operating lease commitments as debt-equivalent
+  category: capital_structure
+  do_not_translate: false
+  zh_CN: { term: 经营租赁资本化调整, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: オペレーティングリース負債換算, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── 5. Comparable companies ───
+
+- en: comparable company analysis
+  definition: Market-based valuation using trading multiples of publicly listed peer companies
+  category: comps
+  do_not_translate: false
+  zh_CN: { term: 可比公司分析, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 類似会社比較分析, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: trading multiples
+  definition: Multiples derived from current public market prices of comparable companies
+  category: comps
+  do_not_translate: false
+  zh_CN: { term: 市场交易乘数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 市場取引マルチプル, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: comparable company
+  definition: Publicly listed peer used to benchmark valuation multiples
+  category: comps
+  do_not_translate: false
+  zh_CN: { term: 可比公司, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 比較対象会社, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: comparable selection criteria
+  definition: Filters (industry, size, geography, growth, profitability) used to choose peer companies
+  category: comps
+  do_not_translate: false
+  zh_CN: { term: 可比公司筛选标准, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 比較対象会社選定基準, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: tier-filtered means
+  definition: Average multiples across only the high-quality CoCo tier (Tier 1) used as headline benchmarks
+  category: comps
+  do_not_translate: false
+  zh_CN: { term: 分层均值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ティアフィルタリング平均, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: median multiple
+  definition: Median value of a multiple across the comparable set; preferred over mean for skewed distributions
+  category: comps
+  do_not_translate: false
+  zh_CN: { term: 中位数乘数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 中央値マルチプル, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: quartile
+  definition: 25th or 75th percentile boundary used to define the inter-quartile valuation range
+  category: comps
+  do_not_translate: false
+  zh_CN: { term: 四分位数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 四分位数, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── 6. Precedent transactions ───
+
+- en: precedent transaction analysis
+  definition: Valuation using multiples from historical M&A transactions in the sector
+  category: precedent
+  do_not_translate: false
+  zh_CN: { term: 先例交易分析, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 類似取引分析, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: control premium
+  definition: Premium paid above market price to acquire control of a company
+  category: precedent
+  do_not_translate: false
+  zh_CN: { term: 控制权溢价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 支配権プレミアム, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: premium paid
+  definition: Excess of transaction price over the target's pre-announcement trading price
+  category: precedent
+  do_not_translate: false
+  zh_CN: { term: 支付溢价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 支払プレミアム, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: synergies
+  definition: Incremental value created by combining two businesses (cost or revenue)
+  category: precedent
+  do_not_translate: false
+  zh_CN: { term: 协同效益, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: シナジー効果, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: fairness opinion
+  definition: Independent opinion on whether transaction consideration is fair from a financial point of view
+  category: precedent
+  do_not_translate: false
+  zh_CN: { term: 公平性意见书, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: フェアネスオピニオン, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── 7. Multiples ───
+
+- en: price to earnings ratio
+  definition: Share price divided by earnings per share; standard equity multiple
+  category: multiples
+  do_not_translate: false
+  zh_CN: { term: 市盈率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 株価収益率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: P/E
+  definition: Acronym for price-to-earnings multiple
+  category: multiples
+  do_not_translate: true
+
+- en: EV/EBITDA
+  definition: Enterprise value divided by EBITDA; capital-structure-neutral multiple
+  category: multiples
+  do_not_translate: true
+
+- en: EV/Revenue
+  definition: Enterprise value divided by revenue; used for high-growth or pre-profit companies
+  category: multiples
+  do_not_translate: true
+
+- en: EV/Sales
+  definition: Synonym for EV/Revenue
+  category: multiples
+  do_not_translate: true
+
+- en: EV/EBIT
+  definition: Enterprise value divided by EBIT; used when D&A is a meaningful differentiator
+  category: multiples
+  do_not_translate: true
+
+- en: P/B
+  definition: Acronym for price-to-book multiple
+  category: multiples
+  do_not_translate: true
+
+- en: P/NTA
+  definition: Price-to-net-tangible-assets multiple
+  category: multiples
+  do_not_translate: true
+
+- en: P/AUM
+  definition: Price-to-assets-under-management multiple, used for asset managers
+  category: multiples
+  do_not_translate: true
+
+- en: implied multiples
+  definition: Multiples implied by the DCF-derived enterprise/equity value; CoCo cross-check
+  category: multiples
+  do_not_translate: false
+  zh_CN: { term: 隐含乘数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: インプライドマルチプル, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: EBIT margin
+  definition: EBIT as a percentage of revenue
+  category: multiples
+  do_not_translate: false
+  zh_CN: { term: EBIT 利润率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: EBITマージン, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: gross profit margin
+  definition: Gross profit divided by revenue
+  category: multiples
+  do_not_translate: false
+  zh_CN: { term: 毛利润率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 売上総利益率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: net income margin
+  definition: Net income divided by revenue
+  category: multiples
+  do_not_translate: false
+  zh_CN: { term: 净利润率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 純利益率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: current ratio
+  definition: Current assets divided by current liabilities; short-term liquidity ratio
+  category: multiples
+  do_not_translate: false
+  zh_CN: { term: 流动比率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 流動比率, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── 8. Equity bridge & per-share derivation ───
+
+- en: enterprise value
+  definition: Total value of the operating business; equity value plus net debt plus minority interests less non-operating assets
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 企业价值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 企業価値, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: EV
+  definition: Acronym for enterprise value
+  category: equity_bridge
+  do_not_translate: true
+
+- en: equity value
+  definition: Value attributable to common shareholders, derived from EV via the equity bridge
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 股权价值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 株式価値, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: business enterprise value
+  definition: Fair value of the operating business unit; synonym for EV used in BEV-review engagements
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 业务企业价值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 事業企業価値, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: BEV
+  definition: Acronym for business enterprise value
+  category: equity_bridge
+  do_not_translate: true
+
+- en: equity bridge
+  definition: Reconciliation from EV to equity value via net debt, surplus assets, non-operating items, minority interests
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 股权价值测算桥, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: エクイティブリッジ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: earnings per share
+  definition: Net income divided by shares outstanding; basic and diluted variants
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 每股收益, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 一株当たり利益, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: EPS
+  definition: Acronym for earnings per share
+  category: equity_bridge
+  do_not_translate: true
+
+- en: market capitalization
+  definition: Share price multiplied by shares outstanding
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 股票市值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 株式時価総額, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: shares outstanding
+  definition: Total shares issued; basic count or fully diluted
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 已发行股份, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 発行済株式数, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: fully diluted shares
+  definition: Shares outstanding including all dilutive instruments
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 全面摊薄股份, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 完全希薄化後株式数, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: per-share value
+  definition: Equity value divided by shares outstanding; the bridge to a share price
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 每股价值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 一株当たり価値, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: pre-money valuation
+  definition: Equity value of the company before new IPO/round capital is injected
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 融资前估值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: プレマネーバリュエーション, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: post-money valuation
+  definition: Equity value of the company after new IPO/round capital is injected
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 融资后估值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ポストマネーバリュエーション, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: net cash
+  definition: Cash and cash equivalents in excess of total debt (negative net debt)
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 净现金, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 純現金, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: surplus assets
+  definition: Non-operating assets (excess cash, investments, non-core real estate) added to EV in the equity bridge
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 冗余资产, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 余剰資産, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: non-operating assets
+  definition: Assets not required to generate operating cash flows; added back in the equity bridge
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 非经营性资产, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 非事業用資産, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: minority interests
+  definition: Equity in subsidiaries not owned by the parent; subtracted from EV when bridging to parent equity
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 少数股东权益, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 少数株主持分, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: discount for lack of marketability
+  definition: Reduction applied to equity value of non-listed shares reflecting reduced liquidity
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 缺乏流动性折扣, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 市場性欠如ディスカウント, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: DLOM
+  definition: Acronym for discount for lack of marketability
+  category: equity_bridge
+  do_not_translate: true
+
+- en: discount for lack of control
+  definition: Reduction applied when valuing minority equity interests
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 缺乏控制权折扣, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 支配権欠如ディスカウント, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: DLOC
+  definition: Acronym for discount for lack of control
+  category: equity_bridge
+  do_not_translate: true
+
+- en: equity interest
+  definition: Percentage ownership stake being valued
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 股权权益, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 株式持分, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: IPO pricing
+  definition: Process of setting the offering price range for an initial public offering
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: IPO 定价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: IPO価格決定, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── 9. Asset-based approach ───
+
+- en: asset-based approach
+  definition: Valuation derived from adjusted balance-sheet asset and liability values
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 资产基础法, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 資産アプローチ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: net asset value
+  definition: Total assets minus total liabilities, often adjusted to fair market values
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 资产净值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 純資産価値, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: NAV
+  definition: Acronym for net asset value
+  category: equity_bridge
+  do_not_translate: true
+
+- en: net tangible assets
+  definition: Net asset value excluding intangible assets; used in P/NTA multiples
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 有形净资产, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 純有形資産, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: NTA
+  definition: Acronym for net tangible assets
+  category: equity_bridge
+  do_not_translate: true
+
+- en: liquidation discount
+  definition: Reduction applied to asset values to reflect forced-sale conditions
+  category: equity_bridge
+  do_not_translate: false
+  zh_CN: { term: 清算折扣, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 清算ディスカウント, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── 10. Inputs & drivers ───
+
+- en: three-statement model
+  definition: Integrated financial model linking income statement, balance sheet and cash flow statement
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 三表模型, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 三表連動モデル, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: income statement
+  definition: P&L statement showing revenue, costs and profit over a period
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 损益表, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 損益計算書, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: balance sheet
+  definition: Statement of financial position showing assets, liabilities and equity at a point in time
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 资产负债表, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 貸借対照表, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: cash flow statement
+  definition: Statement reconciling net income to cash movements via operating, investing and financing activities
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 现金流量表, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: キャッシュフロー計算書, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: AR turnover days
+  definition: Accounts receivable divided by daily revenue; days sales outstanding
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 应收账款周转天数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 売掛金回転日数, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: inventory turnover days
+  definition: Inventory divided by daily COGS; days inventory outstanding
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 存货周转天数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 棚卸資産回転日数, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: AP turnover days
+  definition: Accounts payable divided by daily COGS; days payable outstanding
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 应付账款周转天数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 買掛金回転日数, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: PPE
+  definition: Property, plant and equipment; tangible long-lived operating assets
+  category: inputs
+  do_not_translate: true
+
+- en: operating expenses
+  definition: SG&A and other expenses below gross profit and above EBIT
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 运营费用, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 営業費用, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: SG&A
+  definition: Selling, general and administrative expenses
+  category: inputs
+  do_not_translate: true
+
+- en: R&D
+  definition: Research and development expense
+  category: inputs
+  do_not_translate: true
+
+- en: capitalize R&D
+  definition: Adjustment that treats R&D as an investment and amortizes it over a useful life rather than expensing
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 研发资本化, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 研究開発費の資産計上, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: revenue growth rate
+  definition: Year-over-year percentage change in revenue; key DCF driver
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 收入增长率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 売上成長率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: retention rate
+  definition: Percentage of subscribers retained from one period to the next
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 客户留存率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 顧客維持率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: average selling price
+  definition: Revenue per unit sold; pricing input for product-based revenue builds
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 平均售价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 平均販売価格, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: bottom-up revenue build
+  definition: Revenue model assembled from unit-level drivers rather than top-down growth
+  category: inputs
+  do_not_translate: false
+  zh_CN: { term: 自下而上收入模型, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ボトムアップ売上構築, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── 11. Sensitivity & scenarios ───
+
+- en: football field chart
+  definition: Visual summary showing the valuation range from each methodology side by side
+  category: sensitivity
+  do_not_translate: false
+  zh_CN: { term: 足球场图, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: フットボールフィールドチャート, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: valuation reconciliation
+  definition: Process of weighting and combining results from different valuation methodologies into a final range
+  category: sensitivity
+  do_not_translate: false
+  zh_CN: { term: 估值加权综合, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 評価額の調整, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: sensitivity analysis
+  definition: Two-dimensional table showing how valuation responds to changes in key inputs (typically WACC × terminal g)
+  category: sensitivity
+  do_not_translate: false
+  zh_CN: { term: 敏感性分析, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 感応度分析, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: scenario analysis
+  definition: Multiple valuation runs under base / upside / downside operating assumptions
+  category: sensitivity
+  do_not_translate: false
+  zh_CN: { term: 情景分析, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: シナリオ分析, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: base case
+  definition: Most likely scenario reflecting management guidance with analyst adjustment
+  category: sensitivity
+  do_not_translate: false
+  zh_CN: { term: 基准情景, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ベースケース, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: upside case
+  definition: Optimistic scenario with higher growth, margin expansion, accelerated investment
+  category: sensitivity
+  do_not_translate: false
+  zh_CN: { term: 乐观情景, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: アップサイドケース, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: downside case
+  definition: Conservative scenario with lower growth and margin compression
+  category: sensitivity
+  do_not_translate: false
+  zh_CN: { term: 悲观情景, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ダウンサイドケース, status: draft, reviewed_by: null, reviewed_on: null }

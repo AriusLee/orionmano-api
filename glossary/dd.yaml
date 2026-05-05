@@ -1,0 +1,755 @@
+# Due-diligence-specific terms. Cross-cutting terms (SEC forms, EBITDA, SOX, IFRS, working capital,
+# NWC, capex, D&A, net debt, LTM, TTM, revenue recognition, deferred revenue, related-party
+# transaction, impairment testing, leases, ARPU, churn, audit committee, independent director,
+# due diligence, contingent liability, FPI, and all Reg S-X/S-K/FD entries) live in _shared.yaml —
+# do not duplicate here. Schema mirrors _shared.yaml; see that file for full schema docs.
+#
+# Categories used: transaction | financial_analysis | controls | risk | accounting | legal
+
+# ─── DD methodology ───
+
+- en: financial due diligence
+  definition: DD workstream focused on validating historical financial performance, position, and quality of earnings
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 财务尽职调查, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 財務デュー・ディリジェンス, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: transaction-grade
+  definition: Quality bar at which a report is suitable for use by underwriters, investment committees, and institutional investors
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 交易级别, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: トランザクション水準, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: information request list
+  definition: Structured list of documents and data the DD team requests from target management at engagement kickoff (IRL)
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 信息请求清单, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 情報依頼リスト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: management representations
+  definition: Written or oral statements by management on which the DD team relies for matters not independently verifiable
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 管理层陈述, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 経営陣確認書, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: site visit
+  definition: Physical inspection of operating premises to corroborate management representations
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 现场访问, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 現地訪問, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: management interview
+  definition: Structured discussion with key personnel to gather qualitative information
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 管理层访谈, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 経営陣インタビュー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: customer interview
+  definition: DD procedure of structured calls with key customers to corroborate satisfaction and continuity
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 客户访谈, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 顧客インタビュー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: background check
+  definition: Verification of management/shareholder credentials, directorships, litigation, regulatory sanctions
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 背景调查, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: バックグラウンドチェック, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: databook
+  definition: Structured exhibit set of underlying schedules cross-referenced from the DD report body
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 数据册, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: データブック, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: information memorandum basis
+  definition: Practice of stating documentary source and as-of date for each material figure or assertion
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 信息备忘录基准, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 情報メモランダム基準, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Findings classification ───
+
+- en: deal-breaker
+  definition: Finding severity classification — items that may render the transaction infeasible
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 重大阻碍事项, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ディール破綻事由, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: price-impacting
+  definition: Finding severity classification — items that should drive purchase-price or valuation adjustment
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 影响价格事项, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 価格影響事項, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: informational finding
+  definition: Finding severity classification — items the buyer should know but which do not block the deal
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 信息性发现, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 参考情報事項, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Transaction mechanics ───
+
+- en: debt-like items
+  definition: Liabilities not classified as bank debt but treated as debt for purchase-price purposes
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 类债务项目, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 負債性項目, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: NWC peg
+  definition: Target net-working-capital level set in the purchase agreement against which closing NWC is compared
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 营运资金基准值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: NWCペグ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: working capital true-up
+  definition: Post-closing adjustment to purchase price based on actual versus pegged NWC at closing
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 营运资金调整, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 運転資本精算, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: closing mechanic
+  definition: Contractual procedure for delivering closing balance sheet, calculating adjustments, and finalizing purchase price post-close
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 交割机制, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: クロージングメカニズム, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: earn-out
+  definition: Contingent purchase-price consideration payable to sellers based on post-close performance
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 盈利对赌款, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: アーンアウト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: pro-forma leverage
+  definition: Modeled leverage ratio reflecting capital structure post-transaction
+  category: transaction
+  do_not_translate: false
+  zh_CN: { term: 备考杠杆率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: プロフォーマ・レバレッジ, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Internal controls (SOX / ICFR) ───
+
+- en: walkthrough
+  definition: Procedure tracing a transaction end-to-end through a process to confirm understanding of controls
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 穿行测试, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ウォークスルー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: design and operating effectiveness
+  definition: Two-part test confirming a control is appropriately designed and is functioning as designed
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 设计与运行有效性, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 設計および運用有効性, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: control deficiency
+  definition: Shortcoming in design or operation of an internal control
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 控制缺陷, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 統制上の欠陥, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: material weakness
+  definition: Deficiency such that there is a reasonable possibility a material misstatement will not be prevented or detected
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 重大缺陷, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 重要な欠陥, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: segregation of duties
+  definition: Internal-control principle requiring no single individual control all phases of a transaction
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 职责分离, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 職務分掌, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: SOX Section 302
+  definition: Provision requiring CEO/CFO certification of financial statements and disclosure controls
+  category: controls
+  do_not_translate: true
+
+- en: SOX Section 404
+  definition: Provision requiring management's annual assessment and auditor attestation of ICFR
+  category: controls
+  do_not_translate: true
+
+- en: ICFR
+  definition: Internal Controls over Financial Reporting
+  category: controls
+  do_not_translate: true
+
+- en: COSO
+  definition: Committee of Sponsoring Organizations framework for designing and evaluating internal control
+  category: controls
+  do_not_translate: true
+
+- en: entity-level controls
+  definition: Controls operating across the entire organization rather than at the transaction level
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 实体层面控制, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 全社的統制, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: account reconciliation
+  definition: Periodic agreement of a general-ledger account balance to supporting detail
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 账户调节, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 勘定調整, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: dual approval
+  definition: Control requiring two authorized signatories to approve a payment above a threshold
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 双重审批, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 二重承認, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: approval matrix
+  definition: Documented schedule of authority levels by transaction type and value
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 审批权限矩阵, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 承認権限マトリックス, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: three-way matching
+  definition: Verification that purchase order, goods receipt note, and supplier invoice agree before payment
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 三单匹配, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 三者照合, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: whistleblower mechanism
+  definition: Confidential channel allowing employees to report suspected fraud or misconduct
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 举报机制, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 内部通報制度, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: fraud risk management
+  definition: Framework of policies, procedures, and controls to prevent, detect, and respond to fraud
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 舞弊风险管理, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 不正リスク管理, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── IT general controls ───
+
+- en: IT general controls
+  definition: General computer controls supporting application controls — access, change management, operations, backup
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: IT通用控制, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: IT全般統制, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: identity and access management
+  definition: Process for provisioning, deprovisioning, and reviewing user access to IT systems (IAM)
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 身份与访问管理, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: アイデンティティ・アクセス管理, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: disaster recovery plan
+  definition: Documented procedures for restoring IT systems and data following a disruption (DRP)
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 灾难恢复计划, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 災害復旧計画, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: change management
+  definition: Authorization, testing, and segregation controls governing modifications to IT systems
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 变更管理, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 変更管理, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Compliance (KYC / AML) ───
+
+- en: KYC
+  definition: Know Your Customer onboarding procedures
+  category: legal
+  do_not_translate: true
+
+- en: AML
+  definition: Anti-Money Laundering controls
+  category: legal
+  do_not_translate: true
+
+# ─── Quality of earnings ───
+
+- en: quality of earnings
+  definition: Assessment of the sustainability and recurrence of reported earnings (QoE)
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 收益质量, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 収益の質, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: QoE
+  definition: Acronym for quality of earnings
+  category: financial_analysis
+  do_not_translate: true
+
+- en: adjusted EBITDA
+  definition: Reported EBITDA after non-recurring, owner-comp, run-rate, pro forma, accounting-policy adjustments
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 调整后EBITDA, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 調整後EBITDA, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: EBITDA bridge
+  definition: Schedule reconciling reported EBITDA to adjusted EBITDA via classified add-backs
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: EBITDA桥接表, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: EBITDAブリッジ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: dual-column EBITDA bridge
+  definition: Bridge presenting management-proposed adjustments alongside diligence-validated adjustments side-by-side
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 双列EBITDA桥接表, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 二列EBITDAブリッジ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: add-back
+  definition: An adjustment that increases reported EBITDA to reflect normalized run-rate earnings
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 加回项目, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 加算調整, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: non-recurring item
+  definition: Income or expense not expected to repeat in normal operations
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 非经常性项目, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 非経常的項目, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: owner compensation normalization
+  definition: Adjustment restating founder/owner pay to market levels and stripping personal expenses
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 股东薪酬正常化, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: オーナー報酬正常化, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: run-rate adjustment
+  definition: Annualization of a mid-period event, typically requiring at least two quarters of demonstrated performance
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 年化调整, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 年換算調整, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: pro forma adjustment
+  definition: Adjustment for known contracted future changes (post-close rent elimination, signed price increase, public-company costs)
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 备考调整, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: プロフォーマ調整, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: proof of cash
+  definition: DD procedure reconciling 12+ months of bank statements to reported revenue and EBITDA
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 现金核实程序, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 現金照合手続, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: trend analysis
+  definition: Period-over-period comparison of financial line items to identify movements
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 趋势分析, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: トレンド分析, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: ratio analysis
+  definition: Computation and interpretation of financial ratios
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 比率分析, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 財務比率分析, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: price-volume-mix decomposition
+  definition: Breakdown of revenue change into ASP change, unit change, and mix change
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 价量结构分解, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 価格・数量・ミックス分解, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: cohort retention
+  definition: Analysis of customer retention by acquisition-period cohort
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 同期群留存分析, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: コホート別継続率分析, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: net revenue retention
+  definition: Revenue from existing customers in a period vs prior period, including expansion and churn (NRR)
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 净收入留存率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 純収益維持率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: NRR
+  definition: Net revenue retention
+  category: financial_analysis
+  do_not_translate: true
+
+- en: gross retention
+  definition: Revenue retained from existing customers excluding expansion, capped at 100%
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 总留存率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: グロス継続率, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Working capital & cash ───
+
+- en: days sales outstanding
+  definition: Average number of days to collect receivables (DSO)
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 应收账款天数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 売掛金回収日数, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: DSO
+  definition: Days sales outstanding
+  category: financial_analysis
+  do_not_translate: true
+
+- en: days payable outstanding
+  definition: Average number of days taken to pay suppliers (DPO)
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 应付账款天数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 買掛金支払日数, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: DPO
+  definition: Days payable outstanding
+  category: financial_analysis
+  do_not_translate: true
+
+- en: days inventory outstanding
+  definition: Average number of days inventory is held before sale (DIO)
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 存货天数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 在庫回転日数, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: DIO
+  definition: Days inventory outstanding
+  category: financial_analysis
+  do_not_translate: true
+
+- en: cash conversion cycle
+  definition: DSO + DIO − DPO; days from cash outflow for inputs to cash inflow from sales
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 现金转换周期, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 現金転換サイクル, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: free cash flow
+  definition: Operating cash flow less capital expenditures (FCF)
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 自由现金流, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: フリー・キャッシュフロー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: FCF
+  definition: Free cash flow
+  category: financial_analysis
+  do_not_translate: true
+
+- en: cash conversion ratio
+  definition: Operating cash flow divided by EBITDA — measures earnings translated to cash
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 现金转化率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: キャッシュ転換率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: aging analysis
+  definition: Schedule classifying receivables or payables by length of time outstanding
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 账龄分析, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 滞留分析, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: bank reconciliation
+  definition: Periodic reconciliation of cash book balance to bank statement
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 银行对账, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 銀行残高調整, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: bank confirmation
+  definition: Direct written confirmation from a bank of cash balances, facilities, and security
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 银行询证函, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 銀行確認書, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: covenant compliance
+  definition: Adherence to financial and operational covenants imposed by lenders
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 财务契约合规, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 財務制限条項の遵守, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: leverage ratio
+  definition: Measure of debt relative to equity or earnings
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 杠杆率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: レバレッジ比率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: interest coverage
+  definition: EBITDA (or EBIT) divided by finance costs — measures ability to service debt
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 利息覆盖倍数, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: インタレスト・カバレッジ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: liquidity ratio
+  definition: Measures of short-term solvency such as current ratio, quick ratio, cash ratio
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 流动性比率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 流動性比率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: factoring
+  definition: Sale of receivables to a third party for immediate cash, often off-balance-sheet
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 应收账款保理, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ファクタリング, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: off-balance-sheet
+  definition: Obligations not recognized on the balance sheet
+  category: financial_analysis
+  do_not_translate: false
+  zh_CN: { term: 表外项目, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: オフバランス, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Tax ───
+
+- en: deferred tax
+  definition: Tax effect of timing differences between accounting and tax recognition (DTA or DTL)
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 递延税款, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 繰延税金, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: tax loss carryforward
+  definition: Unused tax losses available to offset future taxable income, subject to expiry rules
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 税务亏损结转, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 繰越欠損金, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: effective tax rate
+  definition: Total income tax expense divided by pre-tax accounting profit
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 实际税率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 実効税率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: withholding tax
+  definition: Tax withheld at source on cross-border payments such as dividends, interest, royalties
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 预提税, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 源泉徴収税, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: arm's length
+  definition: Standard requiring related-party transactions to be priced as if between unrelated parties
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 公平交易原则, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 独立当事者間取引基準, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Accounting policy adjustments ───
+
+- en: GAAP reconciliation
+  definition: Bridging schedule reconciling local-GAAP financials to US GAAP or IFRS for SEC filing
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 会计准则调节表, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: GAAP調整表, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: variable consideration
+  definition: Portion of transaction price that varies due to discounts, rebates, refunds, performance bonuses
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 可变对价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 変動対価, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: performance obligation
+  definition: Distinct promise in a contract to transfer a good or service (IFRS 15 / ASC 606)
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 履约义务, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 履行義務, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: capitalized software
+  definition: Internally developed software costs recognized as an intangible asset rather than expensed
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 资本化软件, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ソフトウェア資産化, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: allowance for doubtful accounts
+  definition: Contra-asset reserve against accounts receivable for estimated uncollectible amounts
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 坏账准备, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 貸倒引当金, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: expected credit loss
+  definition: Forward-looking allowance for credit losses on financial assets per IFRS 9 / ASC 326 (ECL)
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 预期信用损失, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 予想信用損失, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: ECL
+  definition: Expected credit loss
+  category: accounting
+  do_not_translate: true
+
+- en: cut-off testing
+  definition: Audit procedure verifying transactions are recorded in the correct accounting period
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 截止测试, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 期間帰属テスト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: net realizable value
+  definition: Estimated selling price less costs of completion and disposal — basis for inventory write-down (NRV)
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 可变现净值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 正味実現可能価額, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: NRV
+  definition: Net realizable value
+  category: accounting
+  do_not_translate: true
+
+- en: cash-generating unit
+  definition: Smallest identifiable group of assets generating largely independent cash inflows (CGU)
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 现金产生单元, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 資金生成単位, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: CGU
+  definition: Cash-generating unit
+  category: accounting
+  do_not_translate: true
+
+- en: goodwill
+  definition: Excess of consideration paid over fair value of identifiable net assets in a business combination
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 商誉, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: のれん, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: restricted cash
+  definition: Cash subject to legal or contractual restrictions on use; treated as debt-like in transactions
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 受限资金, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 拘束性預金, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: pledged deposit
+  definition: Cash deposit pledged as security for a borrowing or guarantee
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 质押存款, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 担保差入預金, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: commitments and contingencies
+  definition: Disclosed obligations and possible liabilities (litigation, guarantees, off-balance-sheet exposures)
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 承诺与或有负债, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: コミットメント及び偶発事象, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: month-end close
+  definition: Defined process and timeline for closing the books and producing monthly financial statements
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 月末结账, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 月次決算, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: journal entry
+  definition: Accounting entry recording a transaction; manual or unusual entries are a key SOX/ICFR risk area
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 会计分录, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 仕訳, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: trial balance
+  definition: List of all general-ledger account balances at a point in time
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 试算平衡表, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 試算表, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Risk taxonomy ───
+
+- en: channel stuffing
+  definition: Practice of pushing excess product into distribution channels to inflate reported sales
+  category: risk
+  do_not_translate: false
+  zh_CN: { term: 渠道压货, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: チャネル・スタッフィング, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: customer concentration
+  definition: Degree to which revenue depends on a small number of customers
+  category: risk
+  do_not_translate: false
+  zh_CN: { term: 客户集中度, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 顧客集中リスク, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: supplier concentration
+  definition: Degree to which purchases depend on a small number of suppliers
+  category: risk
+  do_not_translate: false
+  zh_CN: { term: 供应商集中度, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 仕入先集中リスク, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: foreign exchange exposure
+  definition: Risk of loss from movements in foreign currency rates on assets, liabilities, or cash flows
+  category: risk
+  do_not_translate: false
+  zh_CN: { term: 外汇风险敞口, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 外国為替エクスポージャー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: audit qualification
+  definition: Auditor's modified opinion indicating a material misstatement or scope limitation
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 审计意见保留, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 監査意見の限定, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: emphasis of matter
+  definition: Auditor paragraph drawing attention to a matter properly disclosed but fundamental
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 强调事项段落, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 強調事項, status: draft, reviewed_by: null, reviewed_on: null }

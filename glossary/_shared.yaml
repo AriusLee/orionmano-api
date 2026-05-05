@@ -1,0 +1,495 @@
+# Cross-module finance/legal/valuation terms used by 2+ of the gap/IE/DD/valuation modules.
+# Loaded by translation_service.py on every translation pass. Module-specific files (gap.yaml,
+# ie.yaml, dd.yaml, valuation.yaml) reference _shared first; if a term is here, do not duplicate it
+# in a module file.
+#
+# Schema:
+#   en              : canonical English form as it appears in generated reports
+#   definition      : brief English gloss (for translator + reviewer reference; not rendered)
+#   category        : high-level grouping
+#   used_in         : modules that reference this term
+#   do_not_translate: when true, the EN literal is rendered verbatim in all target languages
+#                     (no zh_CN / ja blocks needed in that case)
+#   zh_CN / ja      : { term, status, reviewed_by, reviewed_on }
+#                     status = draft | approved | deprecated
+#                     reviewed_by / reviewed_on are filled by the human reviewer at sign-off
+
+# ─── SEC forms & filings (do-not-translate; rendered as EN literals) ───
+
+- en: S-1
+  definition: SEC registration statement for an IPO by a US domestic issuer
+  category: securities_law
+  used_in: [gap, ie, dd, valuation]
+  do_not_translate: true
+
+- en: F-1
+  definition: SEC registration statement for an IPO by a foreign private issuer
+  category: securities_law
+  used_in: [gap, ie, dd, valuation]
+  do_not_translate: true
+
+- en: 20-F
+  definition: SEC annual report form for foreign private issuers
+  category: disclosure
+  used_in: [gap, dd]
+  do_not_translate: true
+
+- en: 6-K
+  definition: SEC interim report form for material events filed by foreign private issuers
+  category: disclosure
+  used_in: [gap]
+  do_not_translate: true
+
+- en: 10-K
+  definition: SEC annual report for US domestic issuers
+  category: disclosure
+  used_in: [gap]
+  do_not_translate: true
+
+- en: 10-Q
+  definition: SEC quarterly report for US domestic issuers
+  category: disclosure
+  used_in: [gap]
+  do_not_translate: true
+
+- en: 8-K
+  definition: SEC current report for material events filed by US domestic issuers
+  category: disclosure
+  used_in: [gap]
+  do_not_translate: true
+
+- en: Regulation S-X
+  definition: SEC regulation prescribing form/content of financial statements in registration filings
+  category: securities_law
+  used_in: [gap, dd]
+  do_not_translate: true
+
+- en: Regulation S-K
+  definition: SEC regulation prescribing non-financial disclosure in registration filings
+  category: securities_law
+  used_in: [gap, dd]
+  do_not_translate: true
+
+- en: Regulation FD
+  definition: SEC fair-disclosure rule prohibiting selective disclosure of material non-public info
+  category: securities_law
+  used_in: [gap]
+  do_not_translate: true
+
+# ─── Regulators & standard-setters (translate full name on first reference) ───
+
+- en: SEC
+  definition: US Securities and Exchange Commission
+  category: securities_law
+  used_in: [gap, ie, dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 美国证券交易委员会, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 米国証券取引委員会, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: PCAOB
+  definition: Public Company Accounting Oversight Board
+  category: audit
+  used_in: [gap, dd]
+  do_not_translate: false
+  zh_CN: { term: 美国上市公司会计监督委员会, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 公開会社会計監視委員会, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: IFRS
+  definition: International Financial Reporting Standards
+  category: accounting
+  used_in: [gap, dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 国际财务报告准则, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 国際財務報告基準, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: IASB
+  definition: International Accounting Standards Board
+  category: accounting
+  used_in: [gap]
+  do_not_translate: false
+  zh_CN: { term: 国际会计准则理事会, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 国際会計基準審議会, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: US GAAP
+  definition: US Generally Accepted Accounting Principles
+  category: accounting
+  used_in: [gap, dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 美国公认会计准则, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 米国会計基準, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: SOX
+  definition: Sarbanes-Oxley Act
+  category: controls
+  used_in: [gap, dd]
+  do_not_translate: true
+
+# ─── Nasdaq listing tiers (translate; standard renderings exist) ───
+
+- en: Nasdaq
+  definition: The Nasdaq Stock Market
+  category: ipo_process
+  used_in: [gap, ie, dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 纳斯达克, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ナスダック, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: Nasdaq Capital Market
+  definition: Lowest tier of Nasdaq listing
+  category: ipo_process
+  used_in: [gap]
+  do_not_translate: false
+  zh_CN: { term: 纳斯达克资本市场, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ナスダック・キャピタル・マーケット, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: Nasdaq Global Market
+  definition: Mid-tier Nasdaq listing
+  category: ipo_process
+  used_in: [gap]
+  do_not_translate: false
+  zh_CN: { term: 纳斯达克全球市场, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ナスダック・グローバル・マーケット, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: Nasdaq Global Select Market
+  definition: Top-tier Nasdaq listing
+  category: ipo_process
+  used_in: [gap]
+  do_not_translate: false
+  zh_CN: { term: 纳斯达克全球精选市场, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ナスダック・グローバル・セレクト・マーケット, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Issuer classifications ───
+
+- en: foreign private issuer
+  definition: SEC classification for non-US issuers eligible for the F-1/20-F regime
+  category: securities_law
+  used_in: [gap, ie, dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 外国私人发行人, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 外国私募発行体, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: FPI
+  definition: Acronym for foreign private issuer
+  category: securities_law
+  used_in: [gap, ie, dd, valuation]
+  do_not_translate: true
+
+# ─── Core profitability / earnings primitives (acronyms kept as EN) ───
+
+- en: EBITDA
+  definition: Earnings before interest, taxes, depreciation and amortization
+  category: financial_analysis
+  used_in: [ie, dd, valuation]
+  do_not_translate: true
+
+- en: EBIT
+  definition: Earnings before interest and taxes; operating profit
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: true
+
+- en: EBITDA margin
+  definition: EBITDA as a percentage of revenue
+  category: financial_analysis
+  used_in: [ie, dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: EBITDA 利润率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: EBITDAマージン, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: gross margin
+  definition: Gross profit as a percentage of revenue
+  category: financial_analysis
+  used_in: [gap, ie, dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 毛利率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 売上総利益率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: net income
+  definition: Profit after all expenses, taxes and interest
+  category: accounting
+  used_in: [gap, ie]
+  do_not_translate: false
+  zh_CN: { term: 净利润, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 当期純利益, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: cost of goods sold
+  definition: Direct costs attributable to production of goods or delivery of services
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 销货成本, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 売上原価, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: COGS
+  definition: Acronym for cost of goods sold
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: true
+
+# ─── Working capital, capex, cash ───
+
+- en: working capital
+  definition: Current assets less current liabilities
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 营运资金, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 運転資本, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: net working capital
+  definition: Operating current assets less operating current liabilities, excluding cash and debt
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 净营运资金, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 純運転資本, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: NWC
+  definition: Acronym for net working capital
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: true
+
+- en: capital expenditure
+  definition: Cash outflows for acquisition or improvement of long-lived assets
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 资本支出, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 設備投資, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: capex
+  definition: Common abbreviation for capital expenditure
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: true
+
+- en: maintenance capex
+  definition: Capex required to sustain existing operating capacity
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 维持性资本支出, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 維持設備投資, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: growth capex
+  definition: Capex deployed for capacity expansion or new initiatives
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 增长性资本支出, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 成長設備投資, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: depreciation and amortization
+  definition: Non-cash charges for tangible PPE (D) and intangibles (A)
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 折旧与摊销, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 減価償却費及び償却費, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: D&A
+  definition: Acronym for depreciation and amortization
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: true
+
+- en: net debt
+  definition: Total interest-bearing debt less cash and cash equivalents
+  category: equity_bridge
+  used_in: [dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 净债务, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 純有利子負債, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: cash runway
+  definition: Months/period for which existing cash will sustain operations at current burn
+  category: financial_analysis
+  used_in: [gap, dd]
+  do_not_translate: false
+  zh_CN: { term: 现金存续期, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: キャッシュランウェイ, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Period bases (kept as EN acronyms in reports) ───
+
+- en: LTM
+  definition: Last twelve months — rolling 12-month period
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: true
+
+- en: TTM
+  definition: Trailing twelve months — synonym for LTM
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: true
+
+- en: NTM
+  definition: Next twelve months — forward 12-month period
+  category: financial_analysis
+  used_in: [valuation]
+  do_not_translate: true
+
+- en: CAGR
+  definition: Compound annual growth rate
+  category: market_sizing
+  used_in: [ie, valuation]
+  do_not_translate: true
+
+# ─── Revenue & accounting policy (recurring across gap/DD/valuation) ───
+
+- en: revenue recognition
+  definition: Accounting principles governing when and how revenue is recorded (IFRS 15 / ASC 606)
+  category: accounting
+  used_in: [gap, dd]
+  do_not_translate: false
+  zh_CN: { term: 收入确认, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 収益認識, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: deferred revenue
+  definition: Cash collected for goods/services not yet delivered; balance-sheet liability
+  category: accounting
+  used_in: [gap, dd]
+  do_not_translate: false
+  zh_CN: { term: 递延收入, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 繰延収益, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: principal vs agent
+  definition: Revenue-recognition determination of gross vs net reporting
+  category: accounting
+  used_in: [gap, dd]
+  do_not_translate: false
+  zh_CN: { term: 主要责任人与代理人, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 本人と代理人, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: transfer pricing
+  definition: Pricing of transactions between related entities across tax jurisdictions
+  category: accounting
+  used_in: [gap, dd]
+  do_not_translate: false
+  zh_CN: { term: 转让定价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 移転価格, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: related-party transaction
+  definition: Transaction between the reporting entity and a related party requiring disclosure
+  category: accounting
+  used_in: [gap, dd]
+  do_not_translate: false
+  zh_CN: { term: 关联方交易, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 関連当事者取引, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: impairment testing
+  definition: Procedure determining whether carrying amount exceeds recoverable amount
+  category: accounting
+  used_in: [dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 减值测试, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 減損テスト, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Leases (IFRS 16 / ASC 842) ───
+
+- en: lease liability
+  definition: Lessee's obligation to make lease payments, recognized on the balance sheet
+  category: accounting
+  used_in: [dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 租赁负债, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: リース負債, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: right-of-use asset
+  definition: Lessee's right to use an underlying leased asset, recognized on the balance sheet
+  category: accounting
+  used_in: [dd]
+  do_not_translate: false
+  zh_CN: { term: 使用权资产, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 使用権資産, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: lease classification
+  definition: Determination of finance vs operating lease under IFRS 16 / ASC 842
+  category: accounting
+  used_in: [dd]
+  do_not_translate: false
+  zh_CN: { term: 租赁分类, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: リース分類, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Capital structure & instruments ───
+
+- en: convertible instrument
+  definition: Debt or preferred security convertible into equity at a defined ratio
+  category: capital_structure
+  used_in: [gap, dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 可转换工具, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 転換証券, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Subscription / unit economics ───
+
+- en: ARPU
+  definition: Average revenue per user
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: true
+
+- en: churn
+  definition: Rate at which customers cancel or fail to renew
+  category: financial_analysis
+  used_in: [dd, valuation]
+  do_not_translate: false
+  zh_CN: { term: 客户流失率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: チャーン率, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Governance ───
+
+- en: audit committee
+  definition: Board committee overseeing financial reporting, internal controls, and the auditor
+  category: governance
+  used_in: [gap, dd]
+  do_not_translate: false
+  zh_CN: { term: 审计委员会, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 監査委員会, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: independent director
+  definition: Board director with no material relationship to the company
+  category: governance
+  used_in: [gap, dd]
+  do_not_translate: false
+  zh_CN: { term: 独立董事, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 独立取締役, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Return ratios ───
+
+- en: ROE
+  definition: Return on equity — net income divided by shareholders' equity
+  category: financial_analysis
+  used_in: [ie, valuation]
+  do_not_translate: true
+
+- en: ROA
+  definition: Return on assets — net income divided by total assets
+  category: financial_analysis
+  used_in: [valuation]
+  do_not_translate: true
+
+- en: ROCE
+  definition: Return on capital employed — operating profit divided by capital employed
+  category: financial_analysis
+  used_in: [ie]
+  do_not_translate: true
+
+# ─── DD/valuation crossover: due diligence basics ───
+
+- en: due diligence
+  definition: Independent investigation of a target company's financial, operational, legal position
+  category: transaction
+  used_in: [gap, dd]
+  do_not_translate: false
+  zh_CN: { term: 尽职调查, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: デュー・ディリジェンス, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: contingent liability
+  definition: Possible obligation arising from past events, contingent on uncertain future events
+  category: accounting
+  used_in: [dd]
+  do_not_translate: false
+  zh_CN: { term: 或有负债, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 偶発債務, status: draft, reviewed_by: null, reviewed_on: null }

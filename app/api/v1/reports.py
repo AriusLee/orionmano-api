@@ -133,16 +133,22 @@ async def update_section(
 async def export_report_pdf(
     company_id: UUID,
     report_id: UUID,
+    lang: str = "en",
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     from app.services.report.pdf_export import generate_report_pdf
     try:
-        pdf_bytes = await generate_report_pdf(db, company_id, report_id)
+        pdf_bytes = await generate_report_pdf(db, company_id, report_id, lang=lang)
     except ValueError as e:
+        # Lang validation and "report not found" both raise ValueError;
+        # use 400 for the lang case (it's a bad query param).
+        if "lang" in str(e).lower():
+            raise HTTPException(status_code=400, detail=str(e))
         raise HTTPException(status_code=404, detail=str(e))
+    suffix = f"-{lang}" if lang != "en" else ""
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="report.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="report{suffix}.pdf"'},
     )

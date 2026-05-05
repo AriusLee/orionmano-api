@@ -1,8 +1,11 @@
 """Generate branded PDF reports using WeasyPrint.
 
 Brand (Orionmano vs MVPI) is selected per report_type — see app.services.branding.
+Multi-language: pass lang='zh-CN' or 'ja' to translate section titles, body, and
+chrome via the cached translation service before rendering.
 """
 
+import asyncio
 import os
 from uuid import UUID
 from datetime import datetime
@@ -15,6 +18,7 @@ import markdown
 from app.models.report import Report, ReportSection
 from app.models.company import Company
 from app.services.branding import brand_for, brand_logo_data_uri
+from app.services.translation import translate_segment, translate_document, SUPPORTED_LANGS
 
 
 REPORT_TYPE_LABELS = {
@@ -37,8 +41,11 @@ REPORT_ICONS = {
 }
 
 def _page_css(brand_name: str, brand_subtitle: str) -> str:
+    # Inter for Latin; Noto Sans SC / JP cover CJK glyphs as fallback. CSS picks
+    # per-glyph from the stack, so EN-only output uses Inter; translated output
+    # falls through to the appropriate Noto family.
     return (
-        "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');\n"
+        "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;600;700&display=swap');\n"
         "@page {\n"
         "  size: A4;\n"
         "  margin: 25mm 20mm 30mm 20mm;\n"
@@ -60,7 +67,7 @@ _STATIC_CSS = """
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: 'Inter', sans-serif; font-size: 10pt; color: #1E293B; line-height: 1.6; }
+body { font-family: 'Inter', 'Noto Sans SC', 'Noto Sans JP', sans-serif; font-size: 10pt; color: #1E293B; line-height: 1.6; }
 
 .cover {
   width: 210mm; height: 297mm; display: flex; flex-direction: column;
@@ -182,7 +189,59 @@ def _md_to_html(text: str) -> str:
     )
 
 
-async def generate_report_pdf(db: AsyncSession, company_id: UUID, report_id: UUID) -> bytes:
+# Static chrome strings translated alongside report content. Cached per glossary
+# version, so each string only hits DeepSeek once per language per glossary edit.
+_CHROME_STRINGS = {
+    "transaction_services": "Transaction Services",
+    "strictly_confidential": "Strictly Private and Confidential",
+    "contents": "Contents",
+    "notice_heading": "Important Notice and Disclaimer",
+    "confidentiality_heading": "Confidentiality Notice",
+    "liability_heading": "Limitation of Liability",
+    "authenticity_heading": "Document Authenticity",
+    "authenticity_body": (
+        "For your convenience, this report may have been made available to you in "
+        "electronic and hardcopy format. Multiple copies and versions of this report "
+        "may, therefore, exist in different media. Only a final signed copy of this "
+        "report should be regarded as definitive."
+    ),
+}
+
+
+def _confidentiality_body(company_name: str) -> str:
+    return (
+        f"This report is strictly private and confidential to {company_name} in "
+        "accordance with the terms of our engagement agreement. Save as expressly "
+        "provided for in the Contract, this report must not be recited or referred "
+        "to in any document, or copied or made available (in whole or in part) to "
+        "any other party."
+    )
+
+
+def _liability_body(company_name: str) -> str:
+    return (
+        "No party is entitled to rely on this report for any purpose whatsoever, "
+        "and we accept no responsibility or liability for the contents of this "
+        f"report to any party other than {company_name}."
+    )
+
+
+async def _localize(text: str, lang: str, db: AsyncSession) -> str:
+    """Translate a single string for non-EN langs; passthrough for en."""
+    if lang == "en":
+        return text
+    return await translate_segment(text, lang, db)
+
+
+async def generate_report_pdf(
+    db: AsyncSession,
+    company_id: UUID,
+    report_id: UUID,
+    lang: str = "en",
+) -> bytes:
+    if lang != "en" and lang not in SUPPORTED_LANGS:
+        raise ValueError(f"Unsupported lang: {lang!r}; must be 'en' or one of {SUPPORTED_LANGS}")
+
     result = await db.execute(
         select(Report).options(selectinload(Report.sections)).where(Report.id == report_id, Report.company_id == company_id)
     )
@@ -194,7 +253,7 @@ async def generate_report_pdf(db: AsyncSession, company_id: UUID, report_id: UUI
     company = comp_result.scalar_one_or_none()
 
     company_name = company.name if company else "Company"
-    report_type_label = REPORT_TYPE_LABELS.get(report.report_type, report.report_type)
+    report_type_label_en = REPORT_TYPE_LABELS.get(report.report_type, report.report_type)
     icon = REPORT_ICONS.get(report.report_type, "&#128196;")
     date_str = datetime.now().strftime("%d %B %Y")
     brand = brand_for(report.report_type)
@@ -203,6 +262,12 @@ async def generate_report_pdf(db: AsyncSession, company_id: UUID, report_id: UUI
         f'<img class="brand-logo" src="{brand_logo}" alt="{brand.name} logo" />'
         if brand_logo else ""
     )
+
+    # Localize chrome + dynamic disclaimer paragraphs.
+    chrome = {k: await _localize(v, lang, db) for k, v in _CHROME_STRINGS.items()}
+    report_type_label = await _localize(report_type_label_en, lang, db)
+    confidentiality_body = await _localize(_confidentiality_body(company_name), lang, db)
+    liability_body = await _localize(_liability_body(company_name), lang, db)
 
     # Build company logo HTML — use fetched logo or fallback to icon
     logo_html = f'<div class="icon">{icon}</div>'
@@ -214,13 +279,27 @@ async def generate_report_pdf(db: AsyncSession, company_id: UUID, report_id: UUI
         mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "ico": "image/x-icon", "webp": "image/webp"}.get(ext, "image/png")
         logo_html = f'<img class="company-logo" src="data:{mime};base64,{logo_b64}" alt="{company_name} logo" />'
 
-    # Build sections HTML
+    # Build sections HTML — translate title + body in parallel per section.
+    ordered = sorted(report.sections, key=lambda s: s.sort_order)
+
+    async def localize_section(section: ReportSection) -> tuple[str, str]:
+        title = await _localize(section.section_title, lang, db)
+        if not section.content:
+            body_md = "*Content pending*"
+        elif lang == "en":
+            body_md = section.content
+        else:
+            body_md = await translate_document(section.content, lang, db)
+        return title, body_md
+
+    localized = await asyncio.gather(*(localize_section(s) for s in ordered))
+
     sections_html = ""
     toc_html = ""
-    for i, section in enumerate(sorted(report.sections, key=lambda s: s.sort_order)):
-        content_html = _md_to_html(section.content) if section.content else "<p><em>Content pending</em></p>"
-        sections_html += f'<div class="section"><h2>{section.section_title}</h2><div class="content">{content_html}</div></div>'
-        toc_html += f'<div class="toc-item"><span>{section.section_title}</span></div>'
+    for title, body_md in localized:
+        content_html = _md_to_html(body_md)
+        sections_html += f'<div class="section"><h2>{title}</h2><div class="content">{content_html}</div></div>'
+        toc_html += f'<div class="toc-item"><span>{title}</span></div>'
 
     css = _page_css(brand.name, brand.subtitle) + _STATIC_CSS
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>{css}</style></head><body>
@@ -233,25 +312,25 @@ async def generate_report_pdf(db: AsyncSession, company_id: UUID, report_id: UUI
   {logo_html}
   <h1>{company_name}</h1>
   <div class="report-type">{report_type_label}</div>
-  <div class="date">Transaction Services | {date_str}</div>
-  <div class="conf">Strictly Private and Confidential</div>
+  <div class="date">{chrome["transaction_services"]} | {date_str}</div>
+  <div class="conf">{chrome["strictly_confidential"]}</div>
 </div>
 
 <!-- TABLE OF CONTENTS -->
 <div class="toc">
-  <h2>Contents</h2>
+  <h2>{chrome["contents"]}</h2>
   {toc_html}
 </div>
 
 <!-- IMPORTANT NOTICE -->
 <div class="notice">
-  <h2>Important Notice and Disclaimer</h2>
-  <p><strong>Confidentiality Notice</strong></p>
-  <p>This report is strictly private and confidential to {company_name} in accordance with the terms of our engagement agreement. Save as expressly provided for in the Contract, this report must not be recited or referred to in any document, or copied or made available (in whole or in part) to any other party.</p>
-  <p><strong>Limitation of Liability</strong></p>
-  <p>No party is entitled to rely on this report for any purpose whatsoever, and we accept no responsibility or liability for the contents of this report to any party other than {company_name}.</p>
-  <p><strong>Document Authenticity</strong></p>
-  <p>For your convenience, this report may have been made available to you in electronic and hardcopy format. Multiple copies and versions of this report may, therefore, exist in different media. Only a final signed copy of this report should be regarded as definitive.</p>
+  <h2>{chrome["notice_heading"]}</h2>
+  <p><strong>{chrome["confidentiality_heading"]}</strong></p>
+  <p>{confidentiality_body}</p>
+  <p><strong>{chrome["liability_heading"]}</strong></p>
+  <p>{liability_body}</p>
+  <p><strong>{chrome["authenticity_heading"]}</strong></p>
+  <p>{chrome["authenticity_body"]}</p>
 </div>
 
 <!-- REPORT SECTIONS -->

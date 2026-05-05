@@ -1,0 +1,541 @@
+# Industry-Expert (IE) module glossary — Orionmano Nasdaq-IPO advisory platform.
+# Cross-cutting terms (SEC forms, EBITDA, CAGR, FPI, ROE, etc.) live in _shared.yaml;
+# do NOT duplicate them here. Schema mirrors _shared.yaml — see that file for full field docs.
+#
+# Schema:
+#   en              : canonical English form as it appears in generated reports
+#   definition      : brief English gloss (for translator + reviewer reference; not rendered)
+#   category        : market_sizing | competitive | macro | regulatory | strategy | classification
+#   do_not_translate: when true, EN literal is rendered verbatim; no zh_CN / ja blocks
+#   zh_CN / ja      : { term, status, reviewed_by, reviewed_on }
+#                     status = draft | approved | deprecated
+
+# ─── Market sizing ───
+
+- en: industry expert report
+  definition: Independent third-party industry research report included or referenced in an IPO prospectus to validate the market opportunity
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 行业专家报告, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 業界専門家レポート, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: total addressable market
+  definition: The total revenue opportunity available if 100% market share were achieved
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 总潜在市场, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 総対応可能市場, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: TAM
+  definition: Acronym for total addressable market
+  category: market_sizing
+  do_not_translate: true
+
+- en: serviceable addressable market
+  definition: The portion of TAM reachable given the company's business model and geography
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 可服务目标市场, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: サービス提供可能市場, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: SAM
+  definition: Acronym for serviceable addressable market
+  category: market_sizing
+  do_not_translate: true
+
+- en: serviceable obtainable market
+  definition: The realistic share of SAM the company can capture in the near term
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 实际可获取市场, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 獲得可能市場, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: SOM
+  definition: Acronym for serviceable obtainable market
+  category: market_sizing
+  do_not_translate: true
+
+- en: market size
+  definition: Total revenue or volume of a defined market in a given period
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 市场规模, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 市場規模, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: dual CAGR
+  definition: Reporting both historical and forecast CAGRs side-by-side for the same market series
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 双重复合年增长率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: TBD, status: draft, reviewed_by: null, reviewed_on: null }  # no standard JP rendering — translator to consider "実績・予測CAGR併記" or similar
+
+- en: top-down approach
+  definition: Market sizing method that starts from a global figure and narrows down
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 自上而下法, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: トップダウン・アプローチ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: bottom-up validation
+  definition: Market sizing method estimating demand from individual customer counts and average spend
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 自下而上验证法, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ボトムアップ検証, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: penetration rate
+  definition: Share of potential customers that have actually adopted a product or service
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 市场渗透率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 普及率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: adoption rate
+  definition: Speed and extent to which customers take up a new product or technology
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 采用率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 採用率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: addressable market
+  definition: The portion of total demand that the company is positioned to serve
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 目标市场, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 対応可能市場, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: GMV
+  definition: Gross merchandise value
+  category: market_sizing
+  do_not_translate: true
+
+- en: ex-factory
+  definition: Pricing or sales measured at the factory gate before distribution costs
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 出厂价口径, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 出荷時点基準, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: retail sales
+  definition: Final sales to end consumers, used as a market-sizing unit
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 零售销售额, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 小売販売額, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: triangulation
+  definition: Cross-referencing data from multiple independent sources to validate estimates
+  category: market_sizing
+  do_not_translate: false
+  zh_CN: { term: 三角验证法, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: トライアンギュレーション, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: YoY growth
+  definition: Year-over-year change in a metric
+  category: market_sizing
+  do_not_translate: true
+
+# ─── Competitive landscape ───
+
+- en: market share
+  definition: A company's revenue or unit sales as a percentage of total market sales
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 市场份额, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 市場シェア, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: competitive landscape
+  definition: The overall structure and identities of competing firms in an industry
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 竞争格局, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 競争環境, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: tier structure
+  definition: Stratification of competitors into tiers (Tier 1 leaders, Tier 2 specialists, Tier 3 fragmented)
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 梯队划分, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 階層構造, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: market leader
+  definition: The firm with the largest market share in a defined market
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 市场龙头, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 市場リーダー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: industry consolidation
+  definition: Process by which market share concentrates among fewer, larger players, often via M&A
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 行业整合, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 業界再編・集約, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: market concentration
+  definition: Degree to which market share is held by a small number of firms
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 市场集中度, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 市場集中度, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: barriers to entry
+  definition: Structural factors that prevent or deter new firms from entering a market
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 进入壁垒, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 参入障壁, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: threat of new entrants
+  definition: Risk that new competitors will enter and erode incumbents' returns
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 新进入者威胁, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 新規参入者の脅威, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: bargaining power of suppliers
+  definition: Suppliers' ability to extract value via pricing, terms, or input control
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 供应商议价能力, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 供給者の交渉力, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: bargaining power of buyers
+  definition: Customers' ability to push prices down or demand more value
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 买方议价能力, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 買い手の交渉力, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: threat of substitutes
+  definition: Risk that alternative products or technologies displace the industry's offering
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 替代品威胁, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 代替品の脅威, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: competitive rivalry
+  definition: Intensity of competition among existing firms in an industry
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 同业竞争强度, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 業界内競争の激しさ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: switching costs
+  definition: Real or perceived costs a customer incurs when changing suppliers
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 转换成本, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: スイッチングコスト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: economies of scale
+  definition: Cost advantages obtained from producing at larger volumes
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 规模经济, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 規模の経済, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: time-to-market
+  definition: Speed with which a firm can move a product from concept to commercial sale
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 上市速度, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 市場投入までの期間, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: financial benchmarking
+  definition: Comparing a company's financial metrics against named peer companies
+  category: competitive
+  do_not_translate: false
+  zh_CN: { term: 财务标杆分析, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 財務ベンチマーキング, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: PAT margin
+  definition: Profit after tax as a percentage of revenue
+  category: competitive
+  do_not_translate: true
+
+# ─── Industry classification ───
+
+- en: SIC code
+  definition: Standard Industrial Classification code
+  category: classification
+  do_not_translate: true
+
+- en: NAICS code
+  definition: North American Industry Classification System code
+  category: classification
+  do_not_translate: true
+
+- en: GICS code
+  definition: Global Industry Classification Standard code used by S&P/MSCI
+  category: classification
+  do_not_translate: true
+
+- en: OEM
+  definition: Original equipment manufacturer
+  category: classification
+  do_not_translate: true
+
+- en: ODM
+  definition: Original design manufacturer
+  category: classification
+  do_not_translate: true
+
+- en: white-label
+  definition: Generic product or service rebranded and sold by another company
+  category: classification
+  do_not_translate: false
+  zh_CN: { term: 白牌产品, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ホワイトラベル, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: end-customer segment
+  definition: Defined group of final buyers targeted by an industry's products or services
+  category: classification
+  do_not_translate: false
+  zh_CN: { term: 终端客户细分, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: エンド顧客セグメント, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: SME
+  definition: Small and medium-sized enterprise
+  category: classification
+  do_not_translate: true
+
+# ─── Macro environment ───
+
+- en: structural tailwind
+  definition: Long-lasting force that supports market growth, as opposed to a cyclical boost
+  category: macro
+  do_not_translate: false
+  zh_CN: { term: 结构性顺风因素, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 構造的追い風, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: headwind
+  definition: Factor that constrains or reverses market growth
+  category: macro
+  do_not_translate: false
+  zh_CN: { term: 逆风因素, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 向かい風要因, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: cyclicality
+  definition: Tendency of an industry's performance to track the macroeconomic cycle
+  category: macro
+  do_not_translate: false
+  zh_CN: { term: 周期性, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 景気循環性, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: macroeconomic sensitivity
+  definition: Degree to which industry results respond to GDP, rates, FX, geopolitics
+  category: macro
+  do_not_translate: false
+  zh_CN: { term: 宏观经济敏感度, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: マクロ経済感応度, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: GDP growth
+  definition: Year-over-year change in gross domestic product
+  category: macro
+  do_not_translate: false
+  zh_CN: { term: GDP 增速, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: GDP成長率, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: interest rates
+  definition: Cost of borrowing in the economy; a key macro driver of demand and capex
+  category: macro
+  do_not_translate: false
+  zh_CN: { term: 利率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 金利, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: inflation
+  definition: General rise in price levels eroding purchasing power
+  category: macro
+  do_not_translate: false
+  zh_CN: { term: 通货膨胀, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: インフレーション, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: exchange rates
+  definition: Relative prices of currencies; affect cross-border revenue and costs
+  category: macro
+  do_not_translate: false
+  zh_CN: { term: 汇率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 為替レート, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: disposable income
+  definition: Household income available for spending or saving after taxes
+  category: macro
+  do_not_translate: false
+  zh_CN: { term: 可支配收入, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 可処分所得, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: urbanization
+  definition: Demographic shift of population from rural to urban areas
+  category: macro
+  do_not_translate: false
+  zh_CN: { term: 城镇化, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 都市化, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: PESTEL analysis
+  definition: Framework for assessing Political, Economic, Social, Technological, Environmental, Legal macro factors
+  category: macro
+  do_not_translate: false
+  zh_CN: { term: PESTEL 分析, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: PESTEL分析, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Regulatory & ESG ───
+
+- en: ESG
+  definition: Environmental, Social, Governance criteria
+  category: regulatory
+  do_not_translate: true
+
+- en: circular economy
+  definition: Economic model emphasizing reuse, recycling, resource efficiency
+  category: regulatory
+  do_not_translate: false
+  zh_CN: { term: 循环经济, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 循環型経済, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: GDPR
+  definition: EU General Data Protection Regulation
+  category: regulatory
+  do_not_translate: true
+
+- en: CCPA
+  definition: California Consumer Privacy Act
+  category: regulatory
+  do_not_translate: true
+
+- en: tariffs
+  definition: Government-imposed duties on imported goods
+  category: regulatory
+  do_not_translate: false
+  zh_CN: { term: 关税, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 関税, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: regulatory environment
+  definition: The set of laws, rules, and supervisory practices governing an industry
+  category: regulatory
+  do_not_translate: false
+  zh_CN: { term: 监管环境, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 規制環境, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: forward-looking statement
+  definition: Projection or forecast that is inherently uncertain and may differ from actual results
+  category: regulatory
+  do_not_translate: false
+  zh_CN: { term: 前瞻性陈述, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 将来予測に関する記述, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Strategy & positioning ───
+
+- en: Porter's Five Forces
+  definition: Framework analyzing industry attractiveness through entry, supplier power, buyer power, substitutes, rivalry
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 波特五力模型, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ポーターのファイブフォース, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: value chain
+  definition: Sequence of activities from raw inputs to end-customer delivery through which value is added
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 价值链, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: バリューチェーン, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: upstream
+  definition: Earliest value-chain stages such as raw materials and components
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 上游, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 川上, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: midstream
+  definition: Middle value-chain stages such as manufacturing, assembly, integration
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 中游, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 中流, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: downstream
+  definition: Late value-chain stages including distribution, retail, after-sales service
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 下游, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 川下, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: vertical integration
+  definition: Combining successive value-chain stages within a single firm
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 垂直整合, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 垂直統合, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: horizontal integration
+  definition: Expanding within the same value-chain stage, typically by acquiring competitors
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 横向整合, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 水平統合, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: market segmentation
+  definition: Dividing a market into distinct groups by product, geography, customer type, channel
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 市场细分, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 市場セグメンテーション, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: growth driver
+  definition: Underlying factor that propels market expansion
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 增长驱动因素, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 成長ドライバー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: supply chain diversification
+  definition: Reducing reliance on a single geography or supplier to mitigate concentration risk
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 供应链多元化, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: サプライチェーン分散化, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: differentiation
+  definition: Strategy of distinguishing offerings on attributes other than price
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 差异化, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 差別化, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: competitive positioning
+  definition: How a firm is placed relative to peers along chosen strategic dimensions
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 竞争定位, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 競争ポジショニング, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: distribution channel
+  definition: Pathway through which products reach end customers
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 分销渠道, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 販売チャネル, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Forecasting & scenarios ───
+
+- en: base-case scenario
+  definition: The central forecast trajectory absent material upside or downside catalysts
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 基准情景, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ベースケースシナリオ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: upside scenario
+  definition: Forecast pathway assuming favorable catalysts materialize
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 乐观情景, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: アップサイドシナリオ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: downside scenario
+  definition: Forecast pathway assuming adverse risks materialize
+  category: strategy
+  do_not_translate: false
+  zh_CN: { term: 悲观情景, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ダウンサイドシナリオ, status: draft, reviewed_by: null, reviewed_on: null }

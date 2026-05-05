@@ -1,0 +1,432 @@
+# Gap-analysis-specific terms. Cross-cutting terms (S-1, FPI, EBITDA, etc.) live in _shared.yaml —
+# do not duplicate here. Schema mirrors _shared.yaml; see that file for full schema docs.
+
+# ─── Listing eligibility & feasibility ───
+
+- en: listing eligibility
+  definition: Whether a company technically meets exchange quantitative and qualitative listing requirements
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 上市资格, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 上場適格性, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: transaction feasibility
+  definition: Whether underwriters/auditors/lawyers will work the deal and institutional investors will buy the story
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 交易可行性, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 取引実行可能性, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: IPO readiness
+  definition: State of preparedness across financial, governance, controls and disclosure dimensions
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: IPO 准备度, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: IPO準備態勢, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: pre-IPO cleanup
+  definition: Remediation of cap table, related-party balances and structural issues prior to filing
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: IPO 前整理, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: IPO前整理, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: pre-filing
+  definition: Period before submission of the registration statement to the SEC
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 申报前阶段, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 申請前段階, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: registration statement
+  definition: Document filed with the SEC to register securities for public offering
+  category: securities_law
+  do_not_translate: false
+  zh_CN: { term: 注册声明, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 登録届出書, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: Nasdaq Listing Rule
+  definition: Rules governing listing standards and ongoing obligations on Nasdaq
+  category: securities_law
+  do_not_translate: false
+  zh_CN: { term: 纳斯达克上市规则, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ナスダック上場規則, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: investor protection
+  definition: Regulatory standard underlying exchange and SEC discretion to deny or condition listings
+  category: securities_law
+  do_not_translate: false
+  zh_CN: { term: 投资者保护, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 投資家保護, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: material disclosure
+  definition: Disclosure of information that would influence a reasonable investor's decision
+  category: disclosure
+  do_not_translate: false
+  zh_CN: { term: 重大事项披露, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 重要事項開示, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── FPI qualification tests & exemptions ───
+
+- en: ownership test
+  definition: FPI qualification test measuring percentage of voting securities held by US residents
+  category: securities_law
+  do_not_translate: false
+  zh_CN: { term: 所有权测试, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 所有権テスト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: business contacts test
+  definition: FPI qualification test measuring degree of US-based management, assets and operations
+  category: securities_law
+  do_not_translate: false
+  zh_CN: { term: 业务联系测试, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 事業関連性テスト, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: home country practice exemption
+  definition: Allowance for FPIs to follow home-jurisdiction governance rules in lieu of certain Nasdaq rules
+  category: governance
+  do_not_translate: false
+  zh_CN: { term: 母国惯例豁免, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 本国慣行免除, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Listing pathways & alternatives ───
+
+- en: direct listing
+  definition: Listing existing shares without an underwritten offering of new capital
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 直接上市, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 直接上場, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: firm commitment
+  definition: Underwriting where underwriter purchases the entire offering and bears resale risk
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 包销, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 買取引受, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: best efforts
+  definition: Underwriting where underwriter agrees to use reasonable efforts without guaranteeing proceeds
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 代销, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 募集の取扱い, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: de-SPAC
+  definition: Business combination of a private operating company with a SPAC to become public
+  category: ipo_process
+  do_not_translate: true
+
+# ─── Pre-listing structuring ───
+
+- en: topco restructure
+  definition: Inserting a new top-level holding company above existing entities for listing
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 顶层公司重组, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: トップ会社再編, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: holdco insertion
+  definition: Inserting an intermediate holding company into the corporate structure
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 控股公司插入, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ホールディングカンパニー挿入, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: redomicile
+  definition: Changing the jurisdiction of incorporation, often for listing or tax reasons
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 重新注册, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 設立法域変更, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: VIE structure
+  definition: Variable Interest Entity structure used to consolidate operating entities in restricted jurisdictions
+  category: securities_law
+  do_not_translate: false
+  zh_CN: { term: VIE 结构, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: VIEストラクチャー, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Cap table & equity instruments ───
+
+- en: cap table
+  definition: Capitalization table listing all securities issued, ownership stakes, and dilution
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 股本结构表, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 資本政策表, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: shareholders' equity
+  definition: Net asset value attributable to shareholders on the balance sheet
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 股东权益, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 株主資本, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: fully diluted ownership
+  definition: Ownership including all convertible securities, options, warrants on as-exercised basis
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 全面摊薄持股, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 完全希薄化後持分, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: warrants
+  definition: Securities granting holder a right to purchase shares at a specified price within a period
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 认股权证, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 新株予約権, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: SAFE
+  definition: Simple Agreement for Future Equity, a convertible instrument used in early-stage financing
+  category: ipo_process
+  do_not_translate: true
+
+- en: ESOP
+  definition: Employee Stock Ownership/Option Plan
+  category: governance
+  do_not_translate: true
+
+- en: liquidation preference
+  definition: Right of preferred shareholders to receive proceeds before common shareholders in a liquidation
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 清算优先权, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 清算優先権, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: anti-dilution
+  definition: Provision protecting investors from dilution in subsequent down-round financings
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 反稀释, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 希釈化防止, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: ratchet
+  definition: Anti-dilution mechanism that resets conversion price to a lower subsequent-round price
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 棘轮条款, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ラチェット条項, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: voting rights
+  definition: Rights of shareholders to vote on corporate matters; may be tiered in dual-class structures
+  category: governance
+  do_not_translate: false
+  zh_CN: { term: 表决权, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 議決権, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Distribution & float metrics ───
+
+- en: public float
+  definition: Portion of shares freely available for trading by the public, excluding insider holdings
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 公众持股, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 浮動株, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: market value of public float
+  definition: Aggregate market value of shares held by non-affiliates
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 公众持股市值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 浮動株時価総額, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: publicly held shares
+  definition: Shares held by non-affiliates, counted toward Nasdaq distribution requirements
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 公众持有股份, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 公衆保有株式, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: round lot holders
+  definition: Shareholders holding at least 100 shares; counted toward Nasdaq distribution requirements
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 整手股东, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 単元株主, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: market makers
+  definition: Broker-dealers committed to providing two-sided quotes for a listed security
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 做市商, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: マーケットメーカー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: minimum bid price
+  definition: Lowest per-share trading price required to maintain Nasdaq listing
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 最低报价, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 最低株価, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: market capitalisation
+  definition: Total market value of a company's outstanding shares
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 市值, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 時価総額, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: operating history
+  definition: Number of years a company has been in continuous operation, used in listing standards
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 经营年限, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 営業履歴, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Financial position primitives (gap-specific subset) ───
+
+- en: gross profit
+  definition: Revenue minus cost of goods sold
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 毛利润, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 売上総利益, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: operating income
+  definition: Profit from core business operations before interest and tax
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 营业利润, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 営業利益, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: total assets
+  definition: Sum of all current and non-current assets on the balance sheet
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 总资产, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 総資産, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: cash and equivalents
+  definition: Cash plus highly liquid short-term investments on the balance sheet
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 现金及等价物, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 現金及び現金同等物, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: monthly burn rate
+  definition: Net cash outflow per month, used to assess runway for unprofitable companies
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 月度现金消耗率, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 月次バーンレート, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: financial bridge
+  definition: Step-by-step reconciliation showing how current equity reaches the listing threshold via fundraising, costs, restructuring and operations
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 财务过桥, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 財務ブリッジ, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: pro forma equity
+  definition: Adjusted equity figure reflecting transactions assumed to occur, presented for comparison
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 备考权益, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: プロフォーマ自己資本, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: going concern
+  definition: Auditor and accounting concept addressing whether an entity can continue operations
+  category: audit
+  do_not_translate: false
+  zh_CN: { term: 持续经营, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 継続企業, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: consolidation
+  definition: Combining financial statements of parent and subsidiaries into one set
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 合并报表, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 連結, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── SOX & internal controls (gap-level introduction; deeper terms in dd.yaml) ───
+
+- en: SOX 302
+  definition: Sarbanes-Oxley Section 302 requiring CEO/CFO certification of financial reports
+  category: controls
+  do_not_translate: true
+
+- en: SOX 404
+  definition: Sarbanes-Oxley Section 404 requiring management assessment and auditor attestation of ICFR
+  category: controls
+  do_not_translate: true
+
+- en: internal controls
+  definition: Processes and procedures designed to ensure reliable financial reporting and compliance
+  category: controls
+  do_not_translate: false
+  zh_CN: { term: 内部控制, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 内部統制, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Cap-table cleanup categories ───
+
+- en: nominee holdings
+  definition: Shares held by a nominee on behalf of the beneficial owner
+  category: governance
+  do_not_translate: false
+  zh_CN: { term: 代名持股, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 名義株, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: dormant entity
+  definition: Legal entity registered but not currently conducting business operations
+  category: governance
+  do_not_translate: false
+  zh_CN: { term: 休眠实体, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 休眠会社, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: founder loans
+  definition: Loans extended by founders to the company, typically requiring cleanup pre-IPO
+  category: governance
+  do_not_translate: false
+  zh_CN: { term: 创始人贷款, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 創業者貸付, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: intercompany balances
+  definition: Receivables and payables between entities within the same group
+  category: accounting
+  do_not_translate: false
+  zh_CN: { term: 集团内部往来余额, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: グループ会社間残高, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: concentration risk
+  definition: Risk arising from significant ownership or revenue concentration in few holders or customers
+  category: risk
+  do_not_translate: false
+  zh_CN: { term: 集中度风险, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 集中リスク, status: draft, reviewed_by: null, reviewed_on: null }
+
+# ─── Underwriting & deal mechanics ───
+
+- en: underwriter
+  definition: Investment bank that arranges and assumes risk for an IPO offering
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 承销商, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 引受会社, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: bankability
+  definition: Whether a deal is sufficiently attractive and structurally sound for investment banks to underwrite
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 可承销性, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: TBD, status: draft, reviewed_by: null, reviewed_on: null }  # no fixed JP rendering — translator to pick "引受可能性" or descriptive
+
+- en: institutional narrative
+  definition: Equity story crafted to attract institutional investor demand
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 机构投资者故事, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 機関投資家向けストーリー, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: peer comparables
+  definition: Group of listed companies used as benchmarks for valuation and positioning
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 同业可比公司, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: 同業比較会社, status: draft, reviewed_by: null, reviewed_on: null }
+
+- en: roadshow
+  definition: Marketing tour of an IPO to institutional investors prior to pricing
+  category: ipo_process
+  do_not_translate: false
+  zh_CN: { term: 路演, status: draft, reviewed_by: null, reviewed_on: null }
+  ja:    { term: ロードショー, status: draft, reviewed_by: null, reviewed_on: null }
