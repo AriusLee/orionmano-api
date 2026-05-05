@@ -226,11 +226,11 @@ def _liability_body(company_name: str) -> str:
     )
 
 
-async def _localize(text: str, lang: str, db: AsyncSession) -> str:
+async def _localize(text: str, lang: str) -> str:
     """Translate a single string for non-EN langs; passthrough for en."""
     if lang == "en":
         return text
-    return await translate_segment(text, lang, db)
+    return await translate_segment(text, lang)
 
 
 async def generate_report_pdf(
@@ -264,10 +264,10 @@ async def generate_report_pdf(
     )
 
     # Localize chrome + dynamic disclaimer paragraphs.
-    chrome = {k: await _localize(v, lang, db) for k, v in _CHROME_STRINGS.items()}
-    report_type_label = await _localize(report_type_label_en, lang, db)
-    confidentiality_body = await _localize(_confidentiality_body(company_name), lang, db)
-    liability_body = await _localize(_liability_body(company_name), lang, db)
+    chrome = {k: await _localize(v, lang) for k, v in _CHROME_STRINGS.items()}
+    report_type_label = await _localize(report_type_label_en, lang)
+    confidentiality_body = await _localize(_confidentiality_body(company_name), lang)
+    liability_body = await _localize(_liability_body(company_name), lang)
 
     # Build company logo HTML — use fetched logo or fallback to icon
     logo_html = f'<div class="icon">{icon}</div>'
@@ -283,13 +283,13 @@ async def generate_report_pdf(
     ordered = sorted(report.sections, key=lambda s: s.sort_order)
 
     async def localize_section(section: ReportSection) -> tuple[str, str]:
-        title = await _localize(section.section_title, lang, db)
+        title = await _localize(section.section_title, lang)
         if not section.content:
             body_md = "*Content pending*"
         elif lang == "en":
             body_md = section.content
         else:
-            body_md = await translate_document(section.content, lang, db)
+            body_md = await translate_document(section.content, lang)
         return title, body_md
 
     localized = await asyncio.gather(*(localize_section(s) for s in ordered))

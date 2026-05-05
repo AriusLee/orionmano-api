@@ -9,8 +9,6 @@ Per the design discussion: same EN content + same target lang + same glossary_ve
 cached separately as intended."""
 import asyncio
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.services.ai.client import generate_text, DEEPSEEK_MODEL
 from app.services.translation import cache, glossary, segmenter
 
@@ -42,11 +40,7 @@ def _build_system_prompt(target_lang: str, glossary_block: str) -> str:
     )
 
 
-async def translate_segment(
-    en_text: str,
-    target_lang: str,
-    db: AsyncSession,
-) -> str:
+async def translate_segment(en_text: str, target_lang: str) -> str:
     if target_lang not in SUPPORTED_LANGS:
         raise ValueError(f"Unsupported target_lang: {target_lang!r}; must be one of {SUPPORTED_LANGS}")
     if not segmenter.is_translatable(en_text):
@@ -56,7 +50,7 @@ async def translate_segment(
     seg_hash = segmenter.segment_hash(normalized)
     ver = glossary.glossary_version()
 
-    hit = await cache.get(db, seg_hash, target_lang, ver)
+    hit = await cache.get(seg_hash, target_lang, ver)
     if hit is not None:
         return hit
 
@@ -70,23 +64,18 @@ async def translate_segment(
         max_tokens=max(2048, len(en_text) * 2),
     )).strip()
 
-    await cache.store(db, seg_hash, target_lang, ver, translation, model=DEEPSEEK_MODEL)
+    await cache.store(seg_hash, target_lang, ver, translation, model=DEEPSEEK_MODEL)
     return translation
 
 
-async def translate_document(
-    en_text: str,
-    target_lang: str,
-    db: AsyncSession,
-    concurrency: int = 5,
-) -> str:
+async def translate_document(en_text: str, target_lang: str, concurrency: int = 5) -> str:
     """Translate a full markdown document by paragraphs in parallel."""
     segments = segmenter.split_paragraphs(en_text)
     sem = asyncio.Semaphore(concurrency)
 
     async def one(seg: str) -> str:
         async with sem:
-            return await translate_segment(seg, target_lang, db)
+            return await translate_segment(seg, target_lang)
 
     results = await asyncio.gather(*(one(s) for s in segments))
     return "\n\n".join(results)
