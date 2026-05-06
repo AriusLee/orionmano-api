@@ -33,6 +33,13 @@ FILENAME_KEYWORDS: list[tuple[str, str]] = [
     ("management accounts", "management_accounts"),
     ("management account", "management_accounts"),
     ("mgmt account", "management_accounts"),
+    # financial statements (extracts from audited FS, typically used as valuation/DD inputs)
+    # — distinct from audit_report (no auditor opinion / notes) and from management_accounts
+    # (those are interim unaudited; this is compiled FS line-items)
+    ("financial statements", "financial_statements"),
+    ("fs for valuation", "financial_statements"),
+    ("fs", "financial_statements"),
+    ("financials", "financial_statements"),
     # prospectus
     ("prospectus", "prospectus"),
     ("offering memorandum", "prospectus"),
@@ -103,6 +110,38 @@ def classify_by_filename(filename: str | None) -> str | None:
     return None
 
 
+def _reconcile_categories(
+    llm_cats: list[str] | None,
+    filename: str | None,
+) -> tuple[list[str], str]:
+    """Combine LLM-derived categories with the filename keyword classifier.
+
+    Filename keywords are a curated, high-precision allowlist — when one fires,
+    it beats a conflicting LLM choice. (LLM has known failure modes on file
+    content alone, e.g. mistaking a DCF projection workpaper for management
+    accounts because it sees Profit-before-tax line items.) The LLM's pick is
+    preserved as a secondary entry so multi-slot rendering still works.
+
+    Returns (categories, classification_source)."""
+    llm_clean = [c.strip().lower() for c in (llm_cats or []) if isinstance(c, str) and c.strip()]
+    # Dedup while preserving order
+    seen: set[str] = set()
+    llm_clean = [c for c in llm_clean if not (c in seen or seen.add(c))]
+
+    guessed = classify_by_filename(filename)
+
+    if guessed and guessed != "other":
+        if not llm_clean or llm_clean[0] != guessed:
+            secondaries = [c for c in llm_clean if c != guessed and c != "other"]
+            return [guessed] + secondaries, "filename_priority"
+        return llm_clean, "llm"
+
+    if llm_clean and llm_clean != ["other"]:
+        return llm_clean, "llm"
+
+    return ["other"], "default"
+
+
 def extract_text_from_pdf(file_path: str, max_pages: int = 50) -> str:
     doc = fitz.open(file_path)
     text_parts = []
@@ -125,16 +164,11 @@ async def extract_document(file_path: str, filename: str | None = None) -> dict:
 
         try:
             v = await classify_image_file(file_path)
-            cats = v.get("categories") or []
-            if not cats or cats == ["other"]:
-                # Vision said nothing useful — fall back to filename hint
-                guessed = classify_by_filename(fname)
-                if guessed:
-                    cats = [guessed]
+            cats, source = _reconcile_categories(v.get("categories"), fname)
             return {
-                "document_type": cats[0] if cats else "other",
-                "categories": cats or ["other"],
-                "classification_source": "vision",
+                "document_type": cats[0],
+                "categories": cats,
+                "classification_source": source if source != "llm" else "vision",
                 "summary": v.get("summary", ""),
             }
         except Exception as e:
@@ -160,15 +194,11 @@ async def extract_document(file_path: str, filename: str | None = None) -> dict:
 
             try:
                 v = await classify_pdf_via_vision(file_path, max_pages=2)
-                cats = v.get("categories") or []
-                if not cats or cats == ["other"]:
-                    guessed = classify_by_filename(fname)
-                    if guessed:
-                        cats = [guessed]
+                cats, source = _reconcile_categories(v.get("categories"), fname)
                 return {
-                    "document_type": cats[0] if cats else "other",
-                    "categories": cats or ["other"],
-                    "classification_source": "vision_pdf",
+                    "document_type": cats[0],
+                    "categories": cats,
+                    "classification_source": source if source != "llm" else "vision_pdf",
                     "summary": v.get("summary", ""),
                     "raw_text": "",
                 }
@@ -197,6 +227,7 @@ category (the first / most representative of the list).
 Valid slugs for `document_type` and `categories`:
 - audit_report — audited financial statements, auditor's opinion, PCAOB/MIA statutory audit reports
 - management_accounts — interim/management P&L, balance sheet, unaudited financials
+- financial_statements — historical P&L / balance sheet / cash flow extracts compiled from audited statements (no auditor opinion/notes), typically as inputs to valuation or DD modeling. Use this for files like "FS for valuation" or "Historical financials" that show line-item financials across multiple periods without being a full audit report or interim management accounts.
 - tax_return — tax returns, tax filings, tax computations, CP204/LHDN filings
 - org_chart — organization chart, corporate structure chart, group holding diagram
 - cap_table — cap table, shareholder register, shareholding structure, share ledger
@@ -211,7 +242,7 @@ Valid slugs for `document_type` and `categories`:
 - other — anything that does not clearly match the above
 
 {
-  "document_type": "audit_report|management_accounts|tax_return|org_chart|cap_table|board_minutes|shareholder_agreement|material_contract|company_profile|projections|legal|prospectus|interview|other",
+  "document_type": "audit_report|management_accounts|financial_statements|tax_return|org_chart|cap_table|board_minutes|shareholder_agreement|material_contract|company_profile|projections|legal|prospectus|interview|other",
   "categories": ["audit_report"],
   "company_info": {
     "name": "",
@@ -307,15 +338,8 @@ For financial data, use the period as key (e.g. {"FY2023": 7522, "FY2024": 15291
         if not cats and doc_type and doc_type != "other":
             cats = [doc_type]
 
-        if not cats or cats == ["other"]:
-            guessed = classify_by_filename(fname)
-            if guessed:
-                cats = [guessed]
-                parsed["classification_source"] = "filename_fallback"
-
-        if not cats:
-            cats = ["other"]
-
+        cats, source = _reconcile_categories(cats, fname)
         parsed["categories"] = cats
         parsed["document_type"] = cats[0]
+        parsed["classification_source"] = source
     return parsed
