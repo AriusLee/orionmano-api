@@ -35,6 +35,7 @@ _COLUMN_UPGRADES: list[str] = [
     # successor coexistence. Drop it if present, keep an index for lookup.
     "ALTER TABLE published_articles DROP CONSTRAINT IF EXISTS published_articles_fact_hash_key",
     "CREATE INDEX IF NOT EXISTS ix_published_articles_fact_hash ON published_articles (fact_hash)",
+    "ALTER TABLE reports ADD COLUMN IF NOT EXISTS lint_findings JSONB",
 ]
 
 

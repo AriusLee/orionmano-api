@@ -7,6 +7,7 @@ from app.models.memory import Memory
 from app.models.published_article import PublishedArticle
 from app.models.translation import TranslationCache
 from app.models.usage_log import UsageLog
+from app.models.web_search_cache import WebSearchCache
 
 __all__ = [
     "User",
@@ -20,4 +21,5 @@ __all__ = [
     "PublishedArticle",
     "TranslationCache",
     "UsageLog",
+    "WebSearchCache",
 ]

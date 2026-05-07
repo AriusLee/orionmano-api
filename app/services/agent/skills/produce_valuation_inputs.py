@@ -18,6 +18,7 @@ import anthropic
 from app.config import settings
 from app.services.agent.context import AgentContext
 from app.services.agent.skill import Skill, SkillResult
+from app.services.agent.skills.valuation_inputs_schema import validate as validate_inputs
 
 
 # Resolve from backend/ root (parents[4]) so the path holds in deploys that ship
@@ -125,7 +126,9 @@ class ProduceValuationInputsSkill(Skill):
 
         client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
-        # System prompt: instruction + schema doc (cached — large + stable)
+        # System prompt: instruction + schema doc (cached — large + stable).
+        # Both attempts (initial + retry) reuse the same system; cache_read on
+        # attempt 2 is essentially free.
         system_prompt = [
             {"type": "text", "text": SYSTEM_INSTRUCTION},
             {
@@ -135,56 +138,90 @@ class ProduceValuationInputsSkill(Skill):
             },
         ]
 
-        try:
-            async with client.messages.stream(
-                model="claude-opus-4-7",
-                max_tokens=32000,
-                system=system_prompt,
-                messages=[
-                    {"role": "user", "content": _build_user_prompt(company_context)}
-                ],
-            ) as stream:
-                response = await stream.get_final_message()
-        except anthropic.APIError as e:
-            return SkillResult.failed(f"Anthropic API error: {e}")
+        # Attempt loop: initial + 1 retry on validation failure, where the retry
+        # appends the formatted Pydantic errors so the model can self-correct.
+        # Bounded at 2 attempts to cap cost; if retry also fails we surface the
+        # error to the caller rather than burning more Opus calls.
+        MAX_ATTEMPTS = 2
+        last_payload: dict | None = None
+        last_validation_error: str | None = None
+        usage_totals = {"input_tokens": 0, "output_tokens": 0,
+                        "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        attempts_made = 0
 
-        # Extract text
-        text_blocks = [b.text for b in response.content if b.type == "text"]
-        if not text_blocks:
-            return SkillResult.failed("Model returned no text content")
-        text = text_blocks[0]
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            attempts_made = attempt
+            user_prompt = _build_user_prompt(company_context)
+            if attempt > 1 and last_validation_error:
+                user_prompt += (
+                    f"\n\n# VALIDATION ERRORS FROM PREVIOUS ATTEMPT (FIX THESE)\n\n"
+                    f"Your last response failed schema validation. Re-emit the full JSON, "
+                    f"correcting these specific issues:\n\n{last_validation_error}\n\n"
+                    f"Output the COMPLETE corrected JSON object, not a diff."
+                )
 
-        payload = _parse_json_response(text)
-        if payload is None:
-            return SkillResult.failed(
-                f"Could not parse JSON from model response. First 500 chars: {text[:500]}"
-            )
+            try:
+                async with client.messages.stream(
+                    model="claude-opus-4-7",
+                    max_tokens=32000,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                ) as stream:
+                    response = await stream.get_final_message()
+            except anthropic.APIError as e:
+                return SkillResult.failed(f"Anthropic API error (attempt {attempt}): {e}")
 
-        # Capture cache + token usage for visibility
-        usage = getattr(response, "usage", None)
-        usage_summary = {}
-        if usage is not None:
-            usage_summary = {
-                "input_tokens": getattr(usage, "input_tokens", 0),
-                "output_tokens": getattr(usage, "output_tokens", 0),
-                "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0),
-                "cache_creation_input_tokens": getattr(
-                    usage, "cache_creation_input_tokens", 0
-                ),
-            }
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                for k in usage_totals:
+                    usage_totals[k] += getattr(usage, k, 0) or 0
 
-        return SkillResult.success(
-            data=payload,
-            message=(
-                f"Produced valuation inputs JSON ({len(json.dumps(payload))} bytes; "
-                f"cache_read={usage_summary.get('cache_read_input_tokens', 0)} tokens)"
-            ),
+            text_blocks = [b.text for b in response.content if b.type == "text"]
+            if not text_blocks:
+                return SkillResult.failed(f"Model returned no text content (attempt {attempt})")
+            text = text_blocks[0]
+
+            payload = _parse_json_response(text)
+            if payload is None:
+                # JSON parse failure — retry with a hint
+                last_validation_error = (
+                    "Your response could not be parsed as JSON. Output ONLY a single "
+                    "JSON object — no markdown fences, no prose, no leading/trailing text."
+                )
+                last_payload = None
+                continue
+
+            last_payload = payload
+
+            model, error = validate_inputs(payload)
+            if model is not None:
+                # Success — usage_summary is the cumulative across attempts
+                return SkillResult.success(
+                    data=payload,
+                    message=(
+                        f"Produced valuation inputs JSON ({len(json.dumps(payload))} bytes; "
+                        f"validated on attempt {attempt}/{MAX_ATTEMPTS}; "
+                        f"cache_read={usage_totals['cache_read_input_tokens']} tokens)"
+                    ),
+                    artifacts={
+                        "valuation_inputs": payload,
+                        "usage": usage_totals,
+                        "validation_attempts": attempt,
+                    },
+                    token_usage=usage_totals["input_tokens"] + usage_totals["output_tokens"],
+                )
+
+            last_validation_error = error
+            # loop into retry
+
+        # Both attempts failed validation. Surface the errors plus the last
+        # payload so the analyst can inspect / repair manually.
+        return SkillResult.failed(
+            f"Valuation inputs failed schema validation after {attempts_made} attempts. "
+            f"Last errors:\n{last_validation_error}",
             artifacts={
-                "valuation_inputs": payload,
-                "usage": usage_summary,
+                "last_payload": last_payload,
+                "usage": usage_totals,
+                "validation_attempts": attempts_made,
             },
-            token_usage=(
-                usage_summary.get("input_tokens", 0)
-                + usage_summary.get("output_tokens", 0)
-            ),
         )

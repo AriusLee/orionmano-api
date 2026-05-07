@@ -1582,6 +1582,23 @@ Tier: {tier.upper()} — {tier_instruction}
             db.add(ref_section)
             await db.commit()
 
+        # Cross-section lint pass — runs on narrative reports where parallel
+        # generation can produce contradictions. Skipped for decks/teaser/
+        # valuation_report (structured/numeric — different beast). Failures
+        # never fail the report (lint.py swallows exceptions internally).
+        if report_type in {"gap_analysis", "dd_report", "industry_report"}:
+            report.progress_message = "Lint pass — checking for cross-section contradictions"
+            await db.commit()
+            from app.services.report.lint import lint_report
+            # Re-fetch sections so lint sees the final committed content
+            await db.refresh(report)
+            findings = await lint_report(
+                report_id=report.id,
+                company_id=report.company_id,
+                sections=sorted(report.sections, key=lambda s: s.sort_order),
+            )
+            report.lint_findings = findings
+
         report.status = "draft"
         report.progress_message = None
         await db.commit()

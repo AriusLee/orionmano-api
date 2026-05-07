@@ -36,6 +36,7 @@ class ReportResponse(BaseModel):
     version: int
     progress_message: str | None = None
     error_message: str | None = None
+    lint_findings: list[dict] | None = None
     created_at: datetime
     updated_at: datetime | None = None
     sections: list[ReportSectionResponse] = []

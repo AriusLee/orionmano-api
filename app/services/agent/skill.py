@@ -52,11 +52,16 @@ class SkillResult:
         )
 
     @staticmethod
-    def failed(message: str, data: Any = None) -> SkillResult:
+    def failed(
+        message: str,
+        data: Any = None,
+        artifacts: dict[str, Any] | None = None,
+    ) -> SkillResult:
         return SkillResult(
             status=SkillStatus.FAILED,
             data=data,
             message=message,
+            artifacts=artifacts or {},
         )
 
 
