@@ -20,8 +20,11 @@ from app.services.agent.context import AgentContext
 from app.services.agent.skill import Skill, SkillResult
 
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
-SCHEMA_PATH = REPO_ROOT / "knowledge-base" / "04-valuation" / "inputs-sheet-schema.md"
+# Resolve from backend/ root (parents[4]) so the path holds in deploys that ship
+# only the backend tree (e.g. Render). knowledge-base/ was moved into backend/
+# for this reason — see also generate_valuation_workpaper.py and report/generator.py.
+BACKEND_ROOT = Path(__file__).resolve().parents[4]
+SCHEMA_PATH = BACKEND_ROOT / "knowledge-base" / "04-valuation" / "inputs-sheet-schema.md"
 
 
 SYSTEM_INSTRUCTION = (

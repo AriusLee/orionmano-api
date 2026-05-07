@@ -4,6 +4,7 @@ import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -152,6 +153,32 @@ async def reclassify_documents(
     if updated:
         await db.commit()
     return {"scanned": len(docs), "updated": updated}
+
+
+@router.get("/{document_id}/raw")
+async def get_document_raw(
+    company_id: UUID,
+    document_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Stream the original file. Auth-gated via the standard JWT bearer.
+    Frontend fetches as Blob (via apiFetch) and renders in a modal — iframes
+    can't carry custom auth headers, so the file isn't loaded via direct URL."""
+    result = await db.execute(
+        select(Document).where(Document.id == document_id, Document.company_id == company_id)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=404, detail="File missing on disk")
+    return FileResponse(
+        doc.file_path,
+        media_type=doc.mime_type or "application/octet-stream",
+        filename=doc.filename,
+        content_disposition_type="inline",
+    )
 
 
 @router.delete("/{document_id}")

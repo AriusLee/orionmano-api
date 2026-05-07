@@ -259,8 +259,10 @@ def _load_template(report_type: str) -> str:
         "teaser": "06-company-teaser.md",
         "company_deck": "07-company-deck.md",
     }
+    # knowledge-base/ lives inside backend/ (one ".." fewer than the old layout)
+    # so the path holds in deploys that ship only the backend tree.
     kb_path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "..", "..", "knowledge-base", "05-report-templates", template_map.get(report_type, "")
+        os.path.dirname(__file__), "..", "..", "..", "knowledge-base", "05-report-templates", template_map.get(report_type, "")
     )
     try:
         with open(kb_path, "r") as f:
@@ -1394,7 +1396,7 @@ async def generate_report_bg(
         extra_knowledge = ""
         if report_type == "valuation_report":
             val_ref_path = os.path.join(
-                os.path.dirname(__file__), "..", "..", "..", "..", "knowledge-base", "04-valuation", "valuation-model-reference.md"
+                os.path.dirname(__file__), "..", "..", "..", "knowledge-base", "04-valuation", "valuation-model-reference.md"
             )
             try:
                 with open(val_ref_path, "r") as f:
@@ -1406,7 +1408,7 @@ async def generate_report_bg(
         gap_knowledge = ""
         if report_type == "gap_analysis":
             gap_framework_path = os.path.join(
-                os.path.dirname(__file__), "..", "..", "..", "..", "knowledge-base", "02-due-diligence", "gap-analysis.md"
+                os.path.dirname(__file__), "..", "..", "..", "knowledge-base", "02-due-diligence", "gap-analysis.md"
             )
             try:
                 with open(gap_framework_path, "r") as f:

@@ -28,11 +28,14 @@ from app.services.agent.registry import registry
 from app.services.agent.skill import Skill, SkillResult, SkillStatus
 
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
-DEFAULT_SKELETON = REPO_ROOT / "materials" / "templates" / "orionmano-valuation-template-v1.xlsx"
+# Resolve from backend/ root (parents[4]) so paths hold in deploys that ship
+# only the backend tree. materials/templates/ and the valuation/ module both
+# live inside backend/ now — see also produce_valuation_inputs.py.
+BACKEND_ROOT = Path(__file__).resolve().parents[4]
+DEFAULT_SKELETON = BACKEND_ROOT / "materials" / "templates" / "orionmano-valuation-template-v1.xlsx"
 
 # Make the standalone valuation module importable
-_VAL_DIR = REPO_ROOT / "backend" / "valuation"
+_VAL_DIR = BACKEND_ROOT / "valuation"
 if str(_VAL_DIR) not in sys.path:
     sys.path.insert(0, str(_VAL_DIR))
 
