@@ -1276,6 +1276,9 @@ async def _generate_gap_parallel(
             user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble.{gap_user_suffix}\n{section_instruction}',
             max_tokens=max_tokens,
             use_reasoner=use_reasoner,
+            skill="generate_report:gap_pass1",
+            company_id=report.company_id,
+            report_id=report.id,
         )
 
         section = ReportSection(
@@ -1307,6 +1310,9 @@ async def _generate_gap_parallel(
                 user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble.{gap_user_suffix}\n{section_instruction}',
                 max_tokens=max_tokens,
                 use_reasoner=use_reasoner,
+                skill="generate_report:gap_pass2",
+                company_id=report.company_id,
+                report_id=report.id,
             )
             return ReportSection(
                 report_id=report.id,
@@ -1541,6 +1547,9 @@ Tier: {tier.upper()} — {tier_instruction}
                     user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble.{gap_user_suffix}\n{section_instruction}',
                     max_tokens=max_tokens_per_section,
                     use_reasoner=use_reasoner,
+                    skill=f"generate_report:{report_type}",
+                    company_id=report.company_id,
+                    report_id=report.id,
                 )
 
                 # Industry reports: resolve <cite/> tags into GFM footnotes and

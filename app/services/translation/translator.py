@@ -62,6 +62,7 @@ async def translate_segment(en_text: str, target_lang: str) -> str:
         system_prompt=system_prompt,
         user_prompt=en_text,
         max_tokens=max(2048, len(en_text) * 2),
+        skill=f"translate:{target_lang}",
     )).strip()
 
     await cache.store(seg_hash, target_lang, ver, translation, model=DEEPSEEK_MODEL)

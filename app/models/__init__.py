@@ -6,6 +6,7 @@ from app.models.chat import ChatConversation, ChatMessage
 from app.models.memory import Memory
 from app.models.published_article import PublishedArticle
 from app.models.translation import TranslationCache
+from app.models.usage_log import UsageLog
 
 __all__ = [
     "User",
@@ -18,4 +19,5 @@ __all__ = [
     "Memory",
     "PublishedArticle",
     "TranslationCache",
+    "UsageLog",
 ]
