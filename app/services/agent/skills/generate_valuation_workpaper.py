@@ -49,20 +49,35 @@ class GenerateValuationWorkpaperSkill(Skill):
     parameters = []
 
     async def execute(self, ctx: AgentContext, **kwargs: Any) -> SkillResult:
-        # 1. Produce inputs JSON via the producer skill
-        producer = registry.get("produce_valuation_inputs")
-        if producer is None:
-            return SkillResult.failed("produce_valuation_inputs skill not registered")
+        # 1a. If the caller passed an explicit `inputs` payload (user-edited JSON
+        # re-uploaded after a prior run — Eric 2026-05-08 item 8), skip the LLM
+        # producer entirely and use the uploaded inputs verbatim. The endpoint
+        # should have validated against the schema before passing them in.
+        inputs_override = kwargs.get("inputs")
+        producer_token_usage = 0
+        if inputs_override is not None:
+            if not isinstance(inputs_override, dict):
+                return SkillResult.failed("Override inputs must be a JSON object")
+            payload = inputs_override
+        else:
+            # 1b. Standard path: produce inputs JSON via the producer skill.
+            producer = registry.get("produce_valuation_inputs")
+            if producer is None:
+                return SkillResult.failed("produce_valuation_inputs skill not registered")
 
-        producer_result = await producer.execute(ctx)
-        if producer_result.status != SkillStatus.SUCCESS:
-            return SkillResult.failed(
-                f"Producer skill failed: {producer_result.message}",
-                data=producer_result.data,
-            )
-        payload = producer_result.data
-        if not isinstance(payload, dict):
-            return SkillResult.failed("Producer skill returned non-dict payload")
+            # Forward per-valuation run-config kwargs (e.g. target_valuation from
+            # the UI run-config box) so the producer can inject them into the LLM
+            # context and authoritatively override the payload after validation.
+            producer_result = await producer.execute(ctx, **kwargs)
+            if producer_result.status != SkillStatus.SUCCESS:
+                return SkillResult.failed(
+                    f"Producer skill failed: {producer_result.message}",
+                    data=producer_result.data,
+                )
+            payload = producer_result.data
+            if not isinstance(payload, dict):
+                return SkillResult.failed("Producer skill returned non-dict payload")
+            producer_token_usage = producer_result.token_usage
 
         # 2. Resolve output path under the configured upload dir, exposed at /uploads/...
         upload_root = Path(settings.UPLOAD_DIR).resolve()
@@ -144,7 +159,7 @@ class GenerateValuationWorkpaperSkill(Skill):
                     f"and {len(vr.warnings)} warnings"
                 ),
                 artifacts={"xlsx_path": str(output_path), "valuation_inputs": payload},
-                token_usage=producer_result.token_usage,
+                token_usage=producer_token_usage,
             )
 
         return SkillResult.success(

@@ -550,6 +550,17 @@ def export(json_path: Path, skeleton_path: Path, output_path: Path) -> Validatio
     n_table = populate_tables(wb, payload, vr)
     n_hist = populate_historical_fs(wb, payload, vr)
     n_coco = populate_coco_metrics(wb, payload, vr)
+    # Eric 2026-05-08 item 8 — stash the full inputs JSON in a hidden sheet so
+    # the re-upload parser can use it as a high-fidelity baseline and only
+    # overlay the visible-cell edits the user made. Without this, fields not
+    # rendered in the visible Inputs sheet (rationales, segments, new schema
+    # additions) would be lost across a download → edit → upload cycle.
+    if "_meta" in wb.sheetnames:
+        del wb["_meta"]
+    meta_ws = wb.create_sheet("_meta")
+    meta_ws.sheet_state = "hidden"
+    meta_ws["A1"] = "inputs_json_baseline"
+    meta_ws["A2"] = json.dumps(payload, default=str)
     wb.save(output_path)
 
     print(f"Scalars written:    {n_scalar}")

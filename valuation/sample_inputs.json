@@ -5,6 +5,8 @@
     "company_industry_us": "Software (Internet)",
     "company_industry_global": "Software (Internet)",
     "valuation_date": "2026-03-31",
+    "target_valuation": 500000,
+    "exchange_platform": "NASDAQ",
     "report_purpose": "IPO pricing",
     "accounting_standard": "IFRS",
     "engagement_team": {
@@ -114,6 +116,9 @@
       "include": true,
       "company": "Atlassian",
       "ticker": "NASDAQ:TEAM",
+      "exchange": "NASDAQ",
+      "business_description": "Team collaboration and productivity software (Jira, Confluence)",
+      "selected_for_wacc": true,
       "country": "AU",
       "accounting": "US GAAP",
       "market_cap_usd_mm": 50000,
@@ -126,6 +131,9 @@
       "include": true,
       "company": "Datadog",
       "ticker": "NASDAQ:DDOG",
+      "exchange": "NASDAQ",
+      "business_description": "Cloud observability and monitoring platform",
+      "selected_for_wacc": true,
       "country": "US",
       "accounting": "US GAAP",
       "market_cap_usd_mm": 38000,
@@ -138,11 +146,29 @@
       "include": true,
       "company": "MongoDB",
       "ticker": "NASDAQ:MDB",
+      "exchange": "NASDAQ",
+      "business_description": "Document-oriented NoSQL database (Atlas managed service)",
+      "selected_for_wacc": true,
       "country": "US",
       "accounting": "US GAAP",
       "market_cap_usd_mm": 22000,
       "d_to_e": 0.08,
       "raw_beta": 1.25,
+      "tax_rate": 0.21
+    },
+    {
+      "tier": 3,
+      "include": true,
+      "company": "Box",
+      "ticker": "NASDAQ:BOX",
+      "exchange": "NASDAQ",
+      "business_description": "Cloud content management and file sharing for enterprise",
+      "selected_for_wacc": false,
+      "country": "US",
+      "accounting": "US GAAP",
+      "market_cap_usd_mm": 4500,
+      "d_to_e": 0.35,
+      "raw_beta": 1.1,
       "tax_rate": 0.21
     }
   ],
@@ -205,6 +231,34 @@
       "detail": "EL dated 2026-03-15",
       "notes": ""
     },
+    "revenue_y0": {
+      "source": "Audited FS",
+      "detail": "FY2025 Audited FS, Consolidated P&L, p.34",
+      "notes": "Last full reported year",
+      "rationale": "Y0 revenue is taken from the most recently audited full fiscal year. This is the cascade base — every projected year multiplies forward from this number, so accuracy here matters more than any single growth assumption downstream."
+    },
+    "nwc_y0": {
+      "source": "Audited FS",
+      "detail": "FY2025 Audited FS, Balance Sheet, p.36 (current assets ex-cash − current liabilities ex-debt)",
+      "notes": ""
+    },
+    "unlevered_beta_per_mgmt": {
+      "source": "Calculated",
+      "detail": "Median unlevered beta of comparable companies marked selected_for_wacc, re-levered to target capital structure",
+      "notes": "",
+      "rationale": "Built from the three Tier-1/2 SaaS comps marked selected_for_wacc (Atlassian, Datadog, MongoDB). Each comp's levered beta is unlevered via Hamada using the comp's own D/E and tax rate, then the median is re-levered at the target's planned capital structure inside the DCF. This produces a beta that reflects the target's industry risk and the chosen post-IPO leverage profile, rather than an arbitrary industry-average number."
+    },
+    "shares_outstanding": {
+      "source": "Prospectus",
+      "detail": "Draft prospectus, share capital section",
+      "notes": "Basic — diluted figure tracked separately"
+    },
+    "terminal_growth_rate": {
+      "source": "Manual",
+      "detail": "Long-run global GDP growth proxy for software industry maturity",
+      "notes": "",
+      "rationale": "3.0% chosen as the long-run sustainable growth rate — sits inside the 2–4% band typical for mature SaaS and just below long-run US nominal GDP. Anything higher implies the company outgrows the economy indefinitely, which collapses Gordon-growth defensibility under Big-4 review."
+    },
     "tax_rate_high": {
       "source": "Manual",
       "detail": "Singapore corporate tax rate 17% flat",
@@ -213,12 +267,14 @@
     "risk_free_rate": {
       "source": "Manual",
       "detail": "10y UST yield 2026-04-29 close",
-      "notes": ""
+      "notes": "",
+      "rationale": "Anchored to the 10-year UST yield because the target is pricing a Nasdaq listing; equity-cost build follows US-rate convention regardless of the SG operating base. Refreshed close to the valuation date so we are not pricing off stale-rate residuals."
     },
     "equity_risk_premium": {
       "source": "Damodaran",
       "detail": "Damodaran ERP 2024 implied",
-      "notes": ""
+      "notes": "",
+      "rationale": "Damodaran's implied ERP is the standard reference for US public valuations and lines up with the cost-of-equity surveys used by Big-4 fairness opinions. Chosen over historical excess returns to reflect the forward-looking risk premium investors are demanding today."
     },
     "country_risk_premium": {
       "source": "Damodaran",
@@ -228,12 +284,14 @@
     "dlom_pct": {
       "source": "Manual",
       "detail": "Restricted stock studies median, 2024",
-      "notes": "Pre-IPO"
+      "notes": "Pre-IPO",
+      "rationale": "20% DLOM reflects the median of recent restricted-stock and pre-IPO studies for software companies 6–18 months from a planned listing. Applied because the holdings being valued today cannot be freely traded until lockup expiry post-listing."
     },
     "dloc_pct": {
       "source": "Manual",
       "detail": "Mergerstat control premium inverse",
-      "notes": ""
+      "notes": "",
+      "rationale": "15% DLOC inverts the median control premium observed in Mergerstat's recent dataset. Applied because the valuation is for a minority stake; a controlling holder would not absorb the same discount."
     }
   },
   "historical_fs": {

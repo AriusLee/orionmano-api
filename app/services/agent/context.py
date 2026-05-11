@@ -81,7 +81,11 @@ class AgentContext:
             ]
 
     def get_company_context_str(self) -> str:
-        """Build a concise company context string for prompts."""
+        """Build a concise company context string for prompts.
+
+        Legacy path — uses raw extracted_data summaries. Prefer
+        get_kb_context_str() (or both, see get_best_context_str) so skills
+        consume pre-compiled canonical pages instead of re-deriving facts."""
         if not self.company:
             return ""
 
@@ -109,6 +113,50 @@ class AgentContext:
                     if summary:
                         parts.append(summary[:2000])
 
+        return "\n".join(parts)
+
+    async def get_kb_context_str(self, slugs: list[str] | None = None) -> str:
+        """Return the compiled-knowledge-base pages for this company, formatted
+        for prompt injection. Empty string if no pages compiled yet (cold start
+        — caller should fall back to get_company_context_str)."""
+        if self.company_id is None:
+            return ""
+        from app.services.kb.reader import get_kb_pages, format_kb_pages_for_prompt
+
+        pages = await get_kb_pages(self.db, self.company_id, slugs=slugs)
+        return format_kb_pages_for_prompt(pages)
+
+    async def get_best_context_str(self, slugs: list[str] | None = None) -> str:
+        """Preferred prompt-context builder: returns kb pages if any exist,
+        otherwise falls back to the legacy raw-extracted-data flatten. Skills
+        should call THIS rather than the two underlying methods directly so
+        the cold-start path is handled transparently."""
+        kb = await self.get_kb_context_str(slugs=slugs)
+        if kb:
+            # Always pair the compiled pages with the company header (name,
+            # country, etc.) — the kb pages don't repeat that.
+            header_only = self._company_header_only()
+            return f"{header_only}\n\n{kb}" if header_only else kb
+        # No compiled pages yet — full legacy fallback.
+        return self.get_company_context_str()
+
+    def _company_header_only(self) -> str:
+        """Just the company-row fields (name, industry, country, etc.) without
+        the document-data flatten. Used when kb pages cover the docs."""
+        if not self.company:
+            return ""
+        c = self.company
+        parts = [f"Company: {c.name}"]
+        if c.industry:
+            parts.append(f"Industry: {c.industry}")
+        if c.country:
+            parts.append(f"Country: {c.country}")
+        if c.description:
+            parts.append(f"Description: {c.description[:500]}")
+        if c.engagement_type:
+            parts.append(f"Engagement: {c.engagement_type}")
+        if c.target_exchange:
+            parts.append(f"Target Exchange: {c.target_exchange}")
         return "\n".join(parts)
 
     def get_memory_prompt(self) -> str:

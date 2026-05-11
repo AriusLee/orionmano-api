@@ -65,6 +65,7 @@ async def _extract_bg(doc_id: UUID, file_path: str, filename: str | None = None)
     from app.services.ai.document_parser import extract_document
     from app.services.company_intelligence import auto_fill_company
 
+    company_id_for_recompile: UUID | None = None
     async with async_session() as session:
         result = await session.execute(select(Document).where(Document.id == doc_id))
         doc = result.scalar_one_or_none()
@@ -91,10 +92,28 @@ async def _extract_bg(doc_id: UUID, file_path: str, filename: str | None = None)
             await session.commit()
             # Auto-fill company profile from extracted data
             await auto_fill_company(session, doc.company_id)
+            company_id_for_recompile = doc.company_id
         except Exception as e:
             doc.extraction_status = "failed"
             doc.extraction_error = str(e)
             await session.commit()
+
+    # After extraction completes (and the session above commits), kick a
+    # fire-and-forget recompile of the company's kb pages. Held outside the
+    # session block so the recompile can open its own short-lived sessions
+    # without contention. Failures inside recompile are swallowed.
+    if company_id_for_recompile is not None:
+        from app.services.kb.compile import recompile_company
+
+        async def _recompile_safe(cid: UUID) -> None:
+            try:
+                await recompile_company(cid)
+            except Exception:
+                pass
+
+        task = asyncio.create_task(_recompile_safe(company_id_for_recompile))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
 
 @router.get("", response_model=list[DocumentResponse])

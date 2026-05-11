@@ -103,6 +103,98 @@ def _parse_findings(raw: str) -> list[dict[str, Any]]:
     return out
 
 
+_AUTOFIX_SYSTEM_PROMPT = """You are an editor patching a financial advisory report. Two sections of the same report contradict each other. Produce minimal-change replacements so they no longer contradict.
+
+RULES:
+1. Output ONLY a JSON object of the exact shape: {"section_a_content": "<full markdown>", "section_b_content": "<full markdown>"}. No prose, no markdown fences, nothing else.
+2. Both replacements must be COMPLETE markdown for that section — preserve everything that was not part of the contradiction. Headings, lists, tables, ordering, wording all stay the same except for the contradicting claim.
+3. Change ONLY the words that constitute the contradiction. Do not rewrite, restructure, or reword unaffected paragraphs.
+4. If a "Ground truth" block is provided below, both sections must align to those canonical figures. Otherwise pick the more substantiated value (the one citing a specific document, the more conservative figure for IPO contexts) and use it in both.
+5. Numbers, dates, currencies, percentages, ticker symbols, proper nouns — preserve verbatim except for the specific values being corrected."""
+
+
+async def apply_lint_fix(
+    *,
+    report_id: uuid.UUID,
+    company_id: uuid.UUID | None,
+    finding: dict[str, Any],
+    section_a: Any,
+    section_b: Any,
+    ground_truth: str | None = None,
+) -> tuple[str | None, str | None, str | None]:
+    """Ask the LLM to patch two sections so they no longer contradict.
+
+    Returns (new_a_content, new_b_content, error). On any failure (LLM error,
+    invalid JSON, suspicious length drift) returns (None, None, error_msg) —
+    the caller MUST NOT update the sections in that case.
+    """
+    a_content = (section_a.content or "").strip()
+    b_content = (section_b.content or "").strip()
+    if not a_content or not b_content:
+        return None, None, "one or both sections have no content to patch"
+
+    user_prompt = (
+        "# The contradiction\n"
+        f"- Severity: {finding.get('severity', 'unknown')}\n"
+        f"- Kind: {finding.get('kind', 'unknown')}\n"
+        f"- Issue: {finding.get('issue', '')}\n"
+        f"- Section A name: {finding.get('section_a', section_a.section_title)}\n"
+        f"- Claim A (verbatim): \"{finding.get('claim_a', '')}\"\n"
+        f"- Section B name: {finding.get('section_b', section_b.section_title)}\n"
+        f"- Claim B (verbatim): \"{finding.get('claim_b', '')}\"\n"
+        f"- Suggested fix: {finding.get('suggested_fix', '')}\n"
+    )
+    if ground_truth:
+        user_prompt += f"\n# Ground truth (canonical — both sections must align to this)\n\n{ground_truth}\n"
+
+    user_prompt += (
+        f"\n# Section A — \"{section_a.section_title}\" — current content\n\n{a_content}\n"
+        f"\n# Section B — \"{section_b.section_title}\" — current content\n\n{b_content}\n"
+    )
+
+    try:
+        raw = await generate_text(
+            system_prompt=_AUTOFIX_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            max_tokens=8192,
+            skill="lint_autofix",
+            company_id=company_id,
+            report_id=report_id,
+        )
+    except Exception as e:
+        return None, None, f"LLM error: {type(e).__name__}: {str(e)[:200]}"
+
+    text = raw.strip()
+    fence = re.search(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    if not text.startswith("{"):
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if m:
+            text = m.group(0)
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError as e:
+        return None, None, f"could not parse LLM response as JSON: {e}"
+
+    new_a = obj.get("section_a_content")
+    new_b = obj.get("section_b_content")
+    if not isinstance(new_a, str) or not isinstance(new_b, str) or not new_a.strip() or not new_b.strip():
+        return None, None, "LLM response missing section_a_content or section_b_content"
+
+    # Sanity: reject suspiciously large length changes (over-rewrite signal).
+    # Allow ±60% drift — fixing a number can legitimately add or drop a sentence.
+    for orig, new, label in ((a_content, new_a, "A"), (b_content, new_b, "B")):
+        ratio = len(new) / max(len(orig), 1)
+        if ratio < 0.4 or ratio > 1.6:
+            return None, None, (
+                f"section {label} length drift {ratio:.2f}× (orig {len(orig)} → new {len(new)}); "
+                "rejecting to avoid over-rewrite. Edit manually instead."
+            )
+
+    return new_a.strip(), new_b.strip(), None
+
+
 async def lint_report(
     report_id: uuid.UUID,
     company_id: uuid.UUID | None,

@@ -8,6 +8,7 @@ from app.models.published_article import PublishedArticle
 from app.models.translation import TranslationCache
 from app.models.usage_log import UsageLog
 from app.models.web_search_cache import WebSearchCache
+from app.models.client_kb_page import ClientKbPage, ClientKbPageHistory
 
 __all__ = [
     "User",
@@ -22,4 +23,6 @@ __all__ = [
     "TranslationCache",
     "UsageLog",
     "WebSearchCache",
+    "ClientKbPage",
+    "ClientKbPageHistory",
 ]

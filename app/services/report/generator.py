@@ -271,7 +271,22 @@ def _load_template(report_type: str) -> str:
         return ""
 
 
-def _build_company_context(company: Company, documents: list[Document]) -> str:
+def _build_company_context(
+    company: Company,
+    documents: list[Document],
+    kb_pages: dict[str, str] | None = None,
+) -> str:
+    """Compose the company-context block injected into report-generation prompts.
+
+    Two paths:
+    - **kb_pages provided** (warm path): use the pre-compiled canonical pages
+      (profile, historical-fs, cap-table) instead of dumping every doc's
+      extracted_data JSON. Same facts, much smaller prompt, identical across
+      all sections — eliminates the cross-section disagreements that lint
+      currently catches.
+    - **kb_pages empty** (cold start, before first doc upload completes): fall
+      back to the legacy extracted_data flatten so generation still works on
+      day-1 before the kb compile has run."""
     parts = [f"Company: {company.name}"]
     if company.industry:
         parts.append(f"Industry: {company.industry}")
@@ -288,10 +303,15 @@ def _build_company_context(company: Company, documents: list[Document]) -> str:
     if company.target_exchange:
         parts.append(f"Target Exchange: {company.target_exchange}")
 
-    for doc in documents:
-        if doc.extracted_data and doc.extraction_status == "completed":
-            parts.append(f"\n--- Extracted from {doc.filename} ---")
-            parts.append(json.dumps(doc.extracted_data, indent=1, default=str)[:3000])
+    if kb_pages:
+        parts.append("\n## Company Knowledge Base (compiled from uploaded documents)")
+        for slug, content in kb_pages.items():
+            parts.append(f"\n<!-- page: {slug} -->\n{content}")
+    else:
+        for doc in documents:
+            if doc.extracted_data and doc.extraction_status == "completed":
+                parts.append(f"\n--- Extracted from {doc.filename} ---")
+                parts.append(json.dumps(doc.extracted_data, indent=1, default=str)[:3000])
 
     return "\n".join(parts)
 
@@ -1384,7 +1404,12 @@ async def generate_report_bg(
         await db.commit()
 
         template = _load_template(report_type)
-        company_context = _build_company_context(company, documents)
+        # Warm path: read pre-compiled kb pages (profile / historical-fs /
+        # cap-table). Cold path: empty dict → _build_company_context falls back
+        # to the legacy extracted_data dump.
+        from app.services.kb.reader import get_kb_pages
+        kb_pages = await get_kb_pages(db, company.id)
+        company_context = _build_company_context(company, documents, kb_pages=kb_pages)
         sections = _get_sections(report_type, tier)
         tier_instruction = TIER_INSTRUCTIONS.get(tier, TIER_INSTRUCTIONS["standard"])
 

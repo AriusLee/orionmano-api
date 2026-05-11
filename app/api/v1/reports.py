@@ -129,6 +129,104 @@ async def update_section(
     return section
 
 
+@router.post("/{report_id}/lint/fix")
+async def autofix_lint_finding(
+    company_id: UUID,
+    report_id: UUID,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Auto-patch the two sections involved in a single lint finding.
+
+    Body: {"finding_index": int}.
+    Returns: {"status": "fixed"|"rejected", "lint_findings": [...], "updated_sections": [section_key,...], "message": str}.
+
+    Resolution flow:
+    1. Load report + sections + lint_findings
+    2. Pick finding[finding_index]; locate section_a / section_b by title
+    3. Pull kb pages as ground truth (if any)
+    4. Ask the LLM for minimal-change replacements
+    5. On success: update both sections, re-run lint, persist new findings
+    6. On rejection (over-rewrite, parse failure, etc.): leave sections untouched
+    """
+    from app.services.report.lint import apply_lint_fix, lint_report
+    from app.services.kb.reader import get_kb_pages, format_kb_pages_for_prompt
+
+    finding_index = payload.get("finding_index")
+    if not isinstance(finding_index, int):
+        raise HTTPException(status_code=400, detail="finding_index (int) required")
+
+    result = await db.execute(
+        select(Report).options(selectinload(Report.sections)).where(
+            Report.id == report_id, Report.company_id == company_id,
+        )
+    )
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    findings = report.lint_findings or []
+    if not (0 <= finding_index < len(findings)):
+        raise HTTPException(status_code=400, detail=f"finding_index {finding_index} out of range (0..{len(findings) - 1})")
+
+    finding = findings[finding_index]
+    title_a = (finding.get("section_a") or "").strip().lower()
+    title_b = (finding.get("section_b") or "").strip().lower()
+    section_a = next((s for s in report.sections if (s.section_title or "").strip().lower() == title_a), None)
+    section_b = next((s for s in report.sections if (s.section_title or "").strip().lower() == title_b), None)
+    if section_a is None or section_b is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"could not locate sections by title (a={finding.get('section_a')!r}, b={finding.get('section_b')!r})",
+        )
+    if section_a.id == section_b.id:
+        raise HTTPException(status_code=400, detail="section_a and section_b resolve to the same section")
+
+    kb_pages = await get_kb_pages(db, company_id)
+    ground_truth = format_kb_pages_for_prompt(kb_pages) if kb_pages else None
+
+    new_a, new_b, error = await apply_lint_fix(
+        report_id=report_id,
+        company_id=company_id,
+        finding=finding,
+        section_a=section_a,
+        section_b=section_b,
+        ground_truth=ground_truth,
+    )
+    if error or new_a is None or new_b is None:
+        return {
+            "status": "rejected",
+            "lint_findings": findings,
+            "updated_sections": [],
+            "message": error or "auto-fix produced no replacement",
+        }
+
+    section_a.content = new_a
+    section_a.is_ai_generated = False
+    section_a.last_edited_by = user.id
+    section_b.content = new_b
+    section_b.is_ai_generated = False
+    section_b.last_edited_by = user.id
+    await db.commit()
+
+    # Re-lint the updated report so the panel shows fresh findings
+    await db.refresh(report)
+    new_findings = await lint_report(
+        report_id=report.id,
+        company_id=report.company_id,
+        sections=sorted(report.sections, key=lambda s: s.sort_order),
+    )
+    report.lint_findings = new_findings
+    await db.commit()
+
+    return {
+        "status": "fixed",
+        "lint_findings": new_findings,
+        "updated_sections": [section_a.section_key, section_b.section_key],
+        "message": f"patched {section_a.section_title} + {section_b.section_title}; lint re-ran",
+    }
+
+
 @router.get("/{report_id}/pdf")
 async def export_report_pdf(
     company_id: UUID,

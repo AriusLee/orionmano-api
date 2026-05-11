@@ -84,8 +84,61 @@ def _scenario_wacc(inputs: dict, scenario: str) -> dict[str, float]:
     }
 
 
+def _segment_series(seg: dict, n_years: int) -> tuple[list[float], list[float]]:
+    """For one segment, return (revenue, gross_profit) arrays of length n_years+1
+    indexed by y_index 0..n_years (0=Y0). Inactive years are zero. Eric
+    2026-05-08 item 2: a segment may start mid-projection via start_year > 0."""
+    start = int(seg.get("start_year") or 0)
+    if start == 0:
+        r0 = float(seg.get("revenue_y0") or 0)
+    else:
+        r0 = float(seg.get("initial_revenue") or 0)
+    growth = seg.get("revenue_growth") or []
+    gm_arr = seg.get("gross_margin")
+    cogs_arr = seg.get("cogs_pct")
+
+    def at(arr, idx):
+        if not arr:
+            return 0.0
+        if idx < 0:
+            return 0.0
+        if idx >= len(arr):
+            v = arr[-1]
+        else:
+            v = arr[idx]
+        return float(v) if v is not None else 0.0
+
+    revenue = [0.0] * (n_years + 1)
+    gross_profit = [0.0] * (n_years + 1)
+    for y in range(n_years + 1):
+        if y < start:
+            continue
+        if y == start:
+            revenue[y] = r0
+        else:
+            g = at(growth, (y - start) - 1)
+            revenue[y] = revenue[y - 1] * (1 + g)
+        # Gross margin indexed from segment-local year 0 = start year
+        if gm_arr:
+            gm = at(gm_arr, y - start)
+        elif cogs_arr:
+            gm = 1 - at(cogs_arr, y - start)
+        else:
+            gm = 0.0
+        gross_profit[y] = revenue[y] * gm
+    return revenue, gross_profit
+
+
 def _projections(inputs: dict) -> dict[str, list[float]]:
-    """Build year-by-year revenue / EBITDA / FCFF lines from drivers."""
+    """Build year-by-year revenue / EBITDA / FCFF lines from drivers.
+
+    Revenue & gross-profit can come from one of two paths:
+      (a) Flat: top-level revenue_y0 + revenue_growth[] + gross_margin[].
+      (b) Segmented (Eric 2026-05-08 item 2): projections.segments[] each with
+          its own revenue/COGS trajectory and start_year. Totals are summed
+          across segments per year; the rest of the cascade (opex %, capex %,
+          NWC %, depreciation %) is unchanged and applies to total revenue.
+    Path (b) wins when segments is non-empty; otherwise (a) is used."""
     p = _g(inputs, "projections", default={}) or {}
     tax = _g(inputs, "tax", default={}) or {}
 
@@ -97,8 +150,6 @@ def _projections(inputs: dict) -> dict[str, list[float]]:
         arr = p.get(key) or []
         return [float(x) if x is not None else 0.0 for x in arr[:n_years]] + [0.0] * max(0, n_years - len(arr or []))
 
-    growth = vec("revenue_growth")
-    gm = vec("gross_margin")
     opex = vec("opex_pct_revenue")
     capex = vec("capex_pct_revenue")
     dep = vec("dep_pct_revenue")
@@ -109,12 +160,27 @@ def _projections(inputs: dict) -> dict[str, list[float]]:
         eff_tax = float(tax.get("rate_high") or 0)
     eff_tax = float(eff_tax)
 
-    revenue = [rev_y0]
-    for y in range(n_years):
-        revenue.append(revenue[-1] * (1 + growth[y]))
-    # revenue[0] = Y0, revenue[1..n] = Y1..Yn
+    segments = p.get("segments") or []
+    if segments:
+        # Path (b): aggregate per-segment revenue + gross_profit across all segments
+        seg_revs = []
+        seg_gps = []
+        for s in segments:
+            r, gp = _segment_series(s, n_years)
+            seg_revs.append(r)
+            seg_gps.append(gp)
+        revenue = [sum(sr[y] for sr in seg_revs) for y in range(n_years + 1)]
+        gross_profit = [sum(sg[y] for sg in seg_gps) for y in range(1, n_years + 1)]
+    else:
+        # Path (a): existing flat cascade
+        growth = vec("revenue_growth")
+        gm = vec("gross_margin")
+        revenue = [rev_y0]
+        for y in range(n_years):
+            revenue.append(revenue[-1] * (1 + growth[y]))
+        gross_profit = [revenue[y + 1] * gm[y] for y in range(n_years)]
+    # revenue[0] = Y0, revenue[1..n] = Y1..Yn; gross_profit indexed 0..n-1 = Y1..Yn
 
-    gross_profit = [revenue[y + 1] * gm[y] for y in range(n_years)]
     opex_amt = [-revenue[y + 1] * opex[y] for y in range(n_years)]
     ebitda = [gross_profit[y] + opex_amt[y] for y in range(n_years)]
     da = [-revenue[y + 1] * dep[y] for y in range(n_years)]
@@ -235,9 +301,16 @@ def _historical_net_debt(inputs: dict) -> float:
 
 
 def _coco_stats(inputs: dict) -> dict[str, dict[str, float]]:
-    """For each multiple metric, compute Q1/Median/Q3 across included CoCos."""
+    """For each multiple metric, compute Q1/Median/Q3 across included CoCos.
+
+    Filters: (1) include flag, (2) exchange match against
+    engagement.exchange_platform when both are populated (Eric 2026-05-08 item 5
+    — comps listed on a different exchange must not pollute the multiples).
+    Comps with no exchange field are kept (backward-compat for older data;
+    new LLM-produced data always carries the exchange field)."""
     cocos = _g(inputs, "cocos", default=[]) or []
     multiples = _g(inputs, "coco_multiples", default=[]) or []
+    exchange_platform = _g(inputs, "engagement", "exchange_platform", default=None)
     n = min(len(cocos), len(multiples))
     metrics = ["ev_sales_ltm", "ev_sales_ntm", "ev_ebitda_ltm",
                "ev_ebitda_ntm", "pe_ltm", "pe_ntm"]
@@ -247,6 +320,10 @@ def _coco_stats(inputs: dict) -> dict[str, dict[str, float]]:
         for i in range(n):
             if not cocos[i].get("include", True):
                 continue
+            if exchange_platform:
+                comp_exchange = cocos[i].get("exchange")
+                if comp_exchange and comp_exchange != exchange_platform:
+                    continue
             v = (multiples[i] or {}).get(m)
             if v is None:
                 continue
@@ -410,6 +487,8 @@ def compute_summary(inputs: dict) -> dict[str, Any]:
             "country": eng.get("company_country"),
             "industry": eng.get("company_industry_us"),
             "report_purpose": eng.get("report_purpose"),
+            "target_valuation": eng.get("target_valuation"),
+            "exchange_platform": eng.get("exchange_platform"),
         },
         "currency": {
             "primary": cu.get("primary"),

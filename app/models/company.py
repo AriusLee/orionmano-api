@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date
 
-from sqlalchemy import String, Text, Date, DateTime, ForeignKey, func
+from sqlalchemy import Float, String, Text, Date, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,6 +26,7 @@ class Company(Base):
     enterprise_stage: Mapped[str | None] = mapped_column(String(50))
     engagement_type: Mapped[str | None] = mapped_column(String(50))
     target_exchange: Mapped[str | None] = mapped_column(String(50))
+    target_valuation: Mapped[float | None] = mapped_column(Float)  # saved default for valuation runs; same currency × unit as the workpaper
     report_tier: Mapped[str] = mapped_column(String(20), default="standard")  # essential, standard, premium
     logo_path: Mapped[str | None] = mapped_column(String(500))
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))

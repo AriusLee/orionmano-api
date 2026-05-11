@@ -33,6 +33,8 @@ class Engagement(_Permissive):
     company_industry_us: str | None = None
     company_industry_global: str | None = None
     valuation_date: str  # ISO date string; not parsed strictly
+    target_valuation: float | None = None  # client's target valuation; same currency × unit as workpaper
+    exchange_platform: str | None = None  # exchange comparable-company pool is drawn from (e.g. NASDAQ, NYSE)
     report_purpose: str | None = None
     accounting_standard: str | None = None
     engagement_team_partner: str | None = None
@@ -65,6 +67,19 @@ class Tax(_Permissive):
 
 # ─── Section D: Projections (Y1-Y5 arrays + Y0 base) ─────────────────────────
 
+class Segment(_Permissive):
+    """One business segment of the target's revenue. Eric 2026-05-08 item 2:
+    revenue & COGS broken out by segment, with the option to introduce new
+    revenue streams mid-projection (start_year > 0)."""
+    name: str
+    start_year: int | None = 0  # 0 = Y0 (already running); k = first appears at projection year k
+    revenue_y0: float | None = None  # initial revenue if start_year == 0
+    initial_revenue: float | None = None  # revenue at start_year (required when start_year > 0)
+    revenue_growth: list[float | None] | None = None  # growth rates from start_year onward
+    gross_margin: list[float | None] | None = None  # per-year GM; either this OR cogs_pct
+    cogs_pct: list[float | None] | None = None  # alternative to gross_margin (cogs_pct = 1 − gross_margin)
+
+
 class Projections(_Permissive):
     years: int | None = None
     revenue_growth_method: str | None = None
@@ -76,6 +91,7 @@ class Projections(_Permissive):
     capex_pct_revenue: list[float | None]
     dep_pct_revenue: list[float | None]
     nwc_pct_sales: list[float | None]
+    segments: list[Segment] | None = None  # if non-empty, segment series aggregate into total revenue & gross_profit; top-level revenue_growth + gross_margin are ignored
 
     @model_validator(mode="after")
     def _check_array_lengths(self) -> "Projections":
@@ -172,6 +188,9 @@ class CoCo(_Permissive):
     include: bool | None = None
     company: str
     ticker: str | None = None
+    exchange: str | None = None  # e.g. "NASDAQ", "NYSE"; used to filter against engagement.exchange_platform
+    business_description: str | None = None  # short one-liner shown on the Comps sheet
+    selected_for_wacc: bool | None = None  # one of the 5–6 comps chosen for WACC calc out of the ~20 screened pool
 
 
 class CoCoMultiples(_Permissive):
