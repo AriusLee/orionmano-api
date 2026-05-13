@@ -60,7 +60,8 @@ def _latest_summary_for(company_id: UUID) -> dict | None:
 
 class GenerateWorkpaperRequest(BaseModel):
     """Per-valuation run-config knobs supplied by the user at Generate/Regenerate time."""
-    target_valuation: float | None = None  # Eric 2026-05-08 item 1; same currency × unit as the workpaper
+    target_valuation: float | None = None  # Eric 2026-05-08 item 1; actual currency units
+    valuation_date: str | None = None  # Eric 2026-05-08 item 6; ISO date string (YYYY-MM-DD)
 
 
 @router.post("/generate-workpaper")
@@ -89,7 +90,12 @@ async def generate_workpaper(
 
     ctx = AgentContext(db=db, company_id=company_id, user_id=user.id)
     target_valuation = body.target_valuation if body else None
-    result = await skill.execute(ctx, target_valuation=target_valuation)
+    valuation_date = body.valuation_date if body else None
+    result = await skill.execute(
+        ctx,
+        target_valuation=target_valuation,
+        valuation_date=valuation_date,
+    )
 
     if result.status == SkillStatus.FAILED:
         raise HTTPException(status_code=500, detail=result.message)

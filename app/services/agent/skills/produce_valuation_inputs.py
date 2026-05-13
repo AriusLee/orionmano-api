@@ -36,19 +36,41 @@ if str(_VAL_DIR) not in sys.path:
     sys.path.insert(0, str(_VAL_DIR))
 
 
-def _implied_dcf_ev(payload: dict) -> float | None:
-    """Run compute_summary on the payload and return the per-management DCF EV,
-    or None on any failure. Used for the goal-seek convergence check —
-    failures here must not block the producer from succeeding."""
+_UNIT_MULTIPLIERS = {
+    "": 1.0,
+    "'000": 1_000.0,
+    "000": 1_000.0,
+    "'mm": 1_000_000.0,
+    "mm": 1_000_000.0,
+    "'000000": 1_000_000.0,
+    "million": 1_000_000.0,
+    "m": 1_000_000.0,
+}
+
+
+def _unit_multiplier(unit: str | None) -> float:
+    """Convert a `currency.unit` string ('000 / 'mm / etc.) to its multiplier.
+    Falls back to 1.0 on unknown units."""
+    if not unit:
+        return 1.0
+    return _UNIT_MULTIPLIERS.get(unit.strip().lower(), 1.0)
+
+
+def _implied_dcf_ev_actual(payload: dict) -> float | None:
+    """Run compute_summary on the payload and return the per-management DCF EV
+    scaled to ACTUAL currency units (multiplied by the workpaper's unit factor).
+    target_valuation is in actual currency too, so this is the comparable value
+    for the goal-seek convergence check. Returns None on any failure."""
     try:
         from compute import compute_summary  # type: ignore
         summary = compute_summary(payload)
         ev = summary.get("dcf", {}).get("per_management", {}).get("ev")
-        if isinstance(ev, (int, float)) and ev > 0:
-            return float(ev)
+        if not isinstance(ev, (int, float)) or ev <= 0:
+            return None
+        unit = (payload.get("currency") or {}).get("unit")
+        return float(ev) * _unit_multiplier(unit)
     except Exception:
         return None
-    return None
 
 
 SYSTEM_INSTRUCTION = (
@@ -67,7 +89,7 @@ def _build_user_prompt(context: str, target_valuation: float | None = None) -> s
 
 # Goal-seek mode (target valuation is the GOAL, not a reference)
 
-The client has provided a target valuation of **{target_valuation}** (in the workpaper's currency × unit). Your job is to produce an assumption set whose DCF Enterprise Value (per-management scenario) lands within ±10% of this target.
+The client has provided a target valuation of **{target_valuation}** in **ACTUAL currency units** (literally that many dollars/ringgit/etc. — NOT scaled by the workpaper unit). The pipeline scales the DCF Enterprise Value (per-management scenario) — which is stored in workpaper-unit thousands — up to actual currency before comparing to this target. Your job is to produce an assumption set whose actual-currency DCF EV lands within ±10% of the target.
 
 This is NOT free-form reference — the client is paying for a workpaper that DEFENDS this valuation. Treat the target as a hard goal and back-solve the levers below within their defensible bands. The client has already done their own analysis and submitted a realistic figure; your job is to support it with rigorous numbers, not to second-guess it.
 
@@ -122,7 +144,7 @@ Every assumption above must have a `sources.<id>` entry whose `source` + `detail
 
 Every section listed below MUST be present in the output:
 
-- `engagement` — all 13 fields (company_name, company_country, company_industry_us, company_industry_global, valuation_date, target_valuation, exchange_platform, report_purpose, accounting_standard, engagement_team{{partner,manager,department}}, client_name). `target_valuation` is the client's stated target valuation (same currency × unit as the workpaper); leave null if not provided by the user. `exchange_platform` is the exchange the comparable-company pool must be drawn from (e.g. "NASDAQ", "NYSE"); default to "NASDAQ" if not specified — comps not listed on this exchange must be excluded.
+- `engagement` — all 13 fields (company_name, company_country, company_industry_us, company_industry_global, valuation_date, target_valuation, exchange_platform, report_purpose, accounting_standard, engagement_team{{partner,manager,department}}, client_name). `target_valuation` is the client's stated target valuation in **ACTUAL currency units** — NOT scaled by `currency.unit`. A $1B target is written as `1000000000`, NOT `1000000` (even when the workpaper unit is `'000`). Leave null if not provided by the user. `exchange_platform` is the exchange the comparable-company pool must be drawn from (e.g. "NASDAQ", "NYSE"); default to "NASDAQ" if not specified — comps not listed on this exchange must be excluded.
 - `currency` — primary, unit, alt, fx_rate_alt
 - `tax` — jurisdiction, type ("flat"/"two_tier"/"progressive"), rate_low, rate_high, threshold, effective_rate_override
 - `projections` — years (typically 5), revenue_growth_method, **revenue_y0** (last reported full-year revenue, in the same currency × unit as the workpaper), **nwc_y0** (audited Y0 NWC = current assets ex-cash − current liabilities ex-debt), and Y1-Y5 arrays for revenue_growth, gross_margin, opex_pct_revenue, capex_pct_revenue, dep_pct_revenue, nwc_pct_sales (all 6 arrays, each length-5). **revenue_y0 is the cascade base — without it the workpaper math is dead.**
@@ -267,6 +289,13 @@ class ProduceValuationInputsSkill(Skill):
             except (TypeError, ValueError):
                 target_valuation_run = None
 
+        # Eric 2026-05-08 item 6: per-run valuation date. Forecasts, market data,
+        # and comp metrics must be anchored to this date.
+        valuation_date_kw = kwargs.get("valuation_date")
+        valuation_date_run: str | None = None
+        if isinstance(valuation_date_kw, str) and valuation_date_kw.strip():
+            valuation_date_run = valuation_date_kw.strip()
+
         # Load company + extracted docs. get_best_context_str prefers the
         # pre-compiled kb pages (profile / historical-fs / cap-table) and falls
         # back to the raw extracted_data flatten on cold start.
@@ -300,6 +329,16 @@ class ProduceValuationInputsSkill(Skill):
                 f"Saved target valuation on the company record: {target_valuation_company} "
                 f"(in the same currency × unit you select for the workpaper). "
                 f"Use this as engagement.target_valuation unless the documents contradict it.\n\n"
+                f"{company_context}"
+            )
+
+        if valuation_date_run is not None:
+            company_context = (
+                f"User-supplied valuation date for this run: {valuation_date_run} (ISO YYYY-MM-DD). "
+                f"All forecasts, market data, risk-free / ERP observations, comparable-company "
+                f"multiples, and precedent transaction screens MUST be anchored to this date. "
+                f"Set engagement.valuation_date to this value; do NOT infer a different date "
+                f"from documents — the user's input is authoritative.\n\n"
                 f"{company_context}"
             )
 
@@ -398,6 +437,11 @@ class ProduceValuationInputsSkill(Skill):
                 eng = payload.setdefault("engagement", {})
                 eng["target_valuation"] = target_valuation_effective
 
+            # Eric 2026-05-08 item 6: per-run valuation date override.
+            if valuation_date_run is not None:
+                eng = payload.setdefault("engagement", {})
+                eng["valuation_date"] = valuation_date_run
+
             # Eric 2026-05-08 item 5: WACC β must come from the comps the LLM
             # marked selected_for_wacc, not from its own gut feel. Override only
             # when ≥3 selected comps yielded a valid unlevered beta (else
@@ -429,8 +473,10 @@ class ProduceValuationInputsSkill(Skill):
                 continue  # retry with schema-error feedback
 
             # Schema validation passed. If a target is set, check DCF EV vs target.
+            # Both sides are in actual currency units (the helper scales the
+            # workpaper-unit EV up by currency.unit multiplier before returning).
             if target_valuation_effective is not None:
-                implied_ev = _implied_dcf_ev(payload)
+                implied_ev = _implied_dcf_ev_actual(payload)
                 last_implied_ev = implied_ev
                 if implied_ev is not None and implied_ev > 0:
                     target = float(target_valuation_effective)

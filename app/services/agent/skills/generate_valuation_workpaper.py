@@ -4,6 +4,7 @@ populated xlsx. Returns a downloadable URL.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import sys
@@ -124,6 +125,8 @@ class GenerateValuationWorkpaperSkill(Skill):
         # Compute summary + persist alongside the xlsx so the dashboard endpoint
         # can fetch the latest run without rerunning Claude.
         summary: dict[str, Any] | None = None
+        summary_path: Path | None = None
+        summary_payload: dict[str, Any] | None = None
         try:
             from compute import compute_summary  # type: ignore
             summary = compute_summary(payload)
@@ -143,6 +146,68 @@ class GenerateValuationWorkpaperSkill(Skill):
             # Summary failure shouldn't block the workpaper download
             summary = {"error": f"Summary computation failed: {type(e).__name__}: {e}"}
 
+        # Eric 2026-05-13 — every workpaper deliverable must be accompanied by a
+        # written report explaining its assumptions and inputs. Create the
+        # Report row + schedule background generation; the report reads the
+        # .summary.json we just wrote for its authoritative context. Wrapped in
+        # try/except so a Report-creation failure doesn't fail the workpaper.
+        report_id: str | None = None
+        if (
+            getattr(ctx, "db", None) is not None
+            and getattr(ctx, "company_id", None) is not None
+            and getattr(ctx, "user_id", None) is not None
+            and summary is not None
+            and not (isinstance(summary, dict) and "error" in summary)
+        ):
+            try:
+                from app.models.report import Report
+                tier = getattr(ctx.company, "report_tier", None) or "standard"
+                company_name = getattr(ctx.company, "name", None) or "Valuation"
+                report = Report(
+                    company_id=ctx.company_id,
+                    report_type="valuation_report",
+                    tier=tier,
+                    title=f"{company_name} — Valuation Report",
+                    status="pending",
+                    created_by=ctx.user_id,
+                )
+                ctx.db.add(report)
+                await ctx.db.commit()
+                await ctx.db.refresh(report)
+                report_id = str(report.id)
+
+                # Surface the linked report in the .summary.json so the dashboard
+                # can render a 'View Report' link bound to this workpaper run.
+                if summary_payload is not None and summary_path is not None:
+                    summary_payload["report_id"] = report_id
+                    summary_path.write_text(json.dumps(summary_payload, default=str))
+
+                # Schedule generation on a fresh DB session so the bg task isn't
+                # tied to the request-scoped session lifetime.
+                rid_uuid = report.id
+                cid_uuid = ctx.company_id
+                async def _kickoff_report() -> None:
+                    from app.database import async_session
+                    from app.services.report.generator import generate_report_bg
+                    try:
+                        async with async_session() as session:
+                            await generate_report_bg(
+                                session, cid_uuid, "valuation_report", rid_uuid,
+                            )
+                    except Exception:
+                        # Bg task failures shouldn't crash the worker; the Report
+                        # row's status will reflect the failure if the generator
+                        # got far enough to set it.
+                        pass
+                asyncio.create_task(_kickoff_report())
+            except Exception:
+                # Reset the session state if the Report-row write failed mid-flight
+                try:
+                    await ctx.db.rollback()
+                except Exception:
+                    pass
+                report_id = None
+
         if vr.errors:
             return SkillResult(
                 status=SkillStatus.PARTIAL,
@@ -153,6 +218,7 @@ class GenerateValuationWorkpaperSkill(Skill):
                     "warnings": vr.warnings,
                     "inputs_json": payload,
                     "summary": summary,
+                    "report_id": report_id,
                 },
                 message=(
                     f"Workpaper generated with {len(vr.errors)} validation errors "
@@ -169,10 +235,12 @@ class GenerateValuationWorkpaperSkill(Skill):
                 "warnings": vr.warnings,
                 "inputs_json": payload,
                 "summary": summary,
+                "report_id": report_id,
             },
             message=(
                 f"Workpaper generated at {output_path.name} "
                 f"({len(vr.warnings)} warnings)"
+                + (f"; written report {report_id} kicked off" if report_id else "")
             ),
             artifacts={"xlsx_path": str(output_path), "valuation_inputs": payload},
         )

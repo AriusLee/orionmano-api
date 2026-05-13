@@ -271,6 +271,149 @@ def _load_template(report_type: str) -> str:
         return ""
 
 
+def _load_workpaper_context_for_report(company_id: UUID) -> str:
+    """Eric 2026-05-13: every workpaper deliverable must be accompanied by a
+    written report that explains the assumptions and inputs. This helper loads
+    the most recent valuation workpaper's inputs JSON + computed summary off
+    disk and formats it as a markdown context block to inject into the
+    valuation_report prompt. Empty string if no workpaper exists yet."""
+    from pathlib import Path
+    from app.config import settings
+
+    upload_root = Path(settings.UPLOAD_DIR).resolve()
+    val_dir = upload_root / "valuations"
+    if not val_dir.exists():
+        return ""
+
+    cid = str(company_id)
+    candidates: list[tuple[float, dict]] = []
+    for p in val_dir.glob("valuation-*.summary.json"):
+        if not p.is_file():
+            continue
+        try:
+            data = json.loads(p.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("company_id") != cid:
+            continue
+        candidates.append((p.stat().st_mtime, data))
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    data = candidates[0][1]
+
+    inputs = data.get("inputs") or {}
+    summary = data.get("summary") or {}
+    sources = inputs.get("sources") or {}
+
+    parts: list[str] = []
+    parts.append("\n\n## Valuation Workpaper Context (AUTHORITATIVE — this is the financial model the report must explain)")
+    parts.append(f"Generated at: {data.get('generated_at')}")
+    parts.append(f"Workpaper file: {data.get('xlsx_filename')}")
+
+    eng = inputs.get("engagement") or {}
+    if eng:
+        parts.append("\n### Engagement parameters")
+        for k in ("company_name", "valuation_date", "company_country", "company_industry_us",
+                  "report_purpose", "accounting_standard", "target_valuation",
+                  "exchange_platform", "client_name"):
+            v = eng.get(k)
+            if v not in (None, ""):
+                parts.append(f"- **{k}**: {v}")
+
+    cu = inputs.get("currency") or {}
+    if cu:
+        parts.append("\n### Reporting currency & units")
+        parts.append(f"- Primary: {cu.get('primary')}, Unit: {cu.get('unit')}")
+
+    proj = inputs.get("projections") or {}
+    if proj:
+        parts.append("\n### Projection drivers (Y0 base + Y1-Y5 arrays)")
+        parts.append(f"- revenue_y0: {proj.get('revenue_y0')}, nwc_y0: {proj.get('nwc_y0')}")
+        for k in ("revenue_growth", "gross_margin", "opex_pct_revenue",
+                  "capex_pct_revenue", "dep_pct_revenue", "nwc_pct_sales"):
+            arr = proj.get(k)
+            if arr:
+                parts.append(f"- {k}: {arr}")
+        segs = proj.get("segments")
+        if segs:
+            parts.append(f"- segments: {len(segs)} business lines breaking out revenue/COGS")
+            for s in segs:
+                parts.append(f"  - {s.get('name')} (start_year={s.get('start_year', 0)})")
+
+    term = inputs.get("terminal") or {}
+    if term:
+        parts.append("\n### Terminal value")
+        parts.append(f"- method: {term.get('method')}, growth_rate: {term.get('growth_rate')}")
+
+    wacc = inputs.get("wacc") or {}
+    if wacc:
+        sh = wacc.get("shared") or {}
+        pm = wacc.get("per_management") or {}
+        parts.append("\n### WACC inputs")
+        parts.append(f"- shared: rf={sh.get('risk_free_rate')}, erp={sh.get('equity_risk_premium')}, crp={sh.get('country_risk_premium')}")
+        parts.append(f"- per_management: β_unl={pm.get('unlevered_beta')}, D/E={pm.get('target_debt_to_equity')}, size_prem={pm.get('size_premium')}, spec_risk={pm.get('specific_risk_premium')}, pretax_kd={pm.get('pretax_cost_of_debt')}")
+
+    cocos = inputs.get("cocos") or []
+    if cocos:
+        parts.append(f"\n### Comparable companies ({len(cocos)} screened)")
+        for c in cocos:
+            if not isinstance(c, dict):
+                continue
+            flag = " [selected for WACC]" if c.get("selected_for_wacc") else ""
+            parts.append(
+                f"- **{c.get('company')}** ({c.get('ticker')}, {c.get('exchange')}){flag}: "
+                f"{c.get('business_description', '')}"
+            )
+
+    bridge = inputs.get("bridge") or {}
+    if bridge:
+        parts.append("\n### EV → Equity bridge")
+        parts.append(f"- surplus_assets: {bridge.get('surplus_assets')}, net_debt_override: {bridge.get('net_debt_override')}")
+        parts.append(f"- dlom_pct: {bridge.get('dlom_pct')}, dloc_pct: {bridge.get('dloc_pct')}")
+        parts.append(f"- shares_outstanding: {bridge.get('shares_outstanding')}")
+
+    if sources:
+        parts.append("\n### Assumption rationales (Eric item 7 — embed these verbatim in the relevant report sections)")
+        for sid, entry in sources.items():
+            if not isinstance(entry, dict):
+                continue
+            rationale = entry.get("rationale")
+            if not rationale:
+                continue
+            src = entry.get("source", "")
+            detail = entry.get("detail", "")
+            parts.append(f"\n**{sid}** _(source: {src})_")
+            parts.append(f"- Rationale: {rationale}")
+            if detail:
+                parts.append(f"- Detail: {detail}")
+
+    dcf_pm = (summary.get("dcf") or {}).get("per_management") or {}
+    bridge_pm = (summary.get("bridge") or {}).get("per_management") or {}
+    pps_pm = (summary.get("per_share") or {}).get("per_management") or {}
+    if dcf_pm or bridge_pm:
+        parts.append("\n### Computed valuation outputs (per-management scenario)")
+        if dcf_pm.get("ev") is not None:
+            parts.append(f"- DCF Enterprise Value: {dcf_pm.get('ev'):.0f}")
+            parts.append(f"- Sum PV explicit: {dcf_pm.get('sum_pv_explicit'):.0f}, PV terminal: {dcf_pm.get('pv_terminal'):.0f}")
+        if bridge_pm.get("after_dloc") is not None:
+            parts.append(f"- Equity value after DLOM/DLOC: {bridge_pm.get('after_dloc'):.0f}")
+        if pps_pm.get("basic") is not None:
+            parts.append(f"- Implied per-share (basic): {pps_pm.get('basic')}")
+
+    target_val = eng.get("target_valuation")
+    if target_val and dcf_pm.get("ev"):
+        gap = (dcf_pm["ev"] - target_val) / target_val * 100
+        parts.append(f"\n### Target vs implied")
+        parts.append(f"- Client target: {target_val}")
+        parts.append(f"- Model implied DCF EV: {dcf_pm['ev']:.0f}")
+        parts.append(f"- Gap: {gap:+.1f}% (positive = model above target)")
+
+    parts.append("\n**Report writing rule:** quote the specific assumption values above when explaining each section. Where a rationale is provided, use it as the basis for the section's narrative — that's how the workpaper defends the number. Do NOT invent alternative assumptions in the report; the model is the source of truth.")
+
+    return "\n".join(parts)
+
+
 def _build_company_context(
     company: Company,
     documents: list[Document],
@@ -1434,6 +1577,11 @@ async def generate_report_bg(
                     extra_knowledge = f"\n\n## Orionmano Valuation Model Reference\n{f.read()[:3000]}"
             except FileNotFoundError:
                 pass
+            # Eric 2026-05-13 — the written report explains the financial model
+            # the analyst just produced. Inject the workpaper's authoritative
+            # inputs + assumption rationales so each report section can quote
+            # the exact numbers instead of re-inventing them.
+            extra_knowledge += _load_workpaper_context_for_report(company_id)
 
         # Load gap analysis framework for gap_analysis reports
         gap_knowledge = ""
