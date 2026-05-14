@@ -1694,6 +1694,12 @@ Tier: {tier.upper()} — {tier_instruction}
                 " IMPORTANT: Cite all data points and claims using inline [n] references to the numbered sources provided."
             )
 
+        # Track every article cited by this report (across sections) so the
+        # post-generation heal step can retry orphaned-pending stubs that
+        # Tier-1/2 reuse pulled in from older reports. Populated only on the
+        # industry_report sequential path below; left empty for everything else.
+        all_cited_article_ids: set[UUID] = set()
+
         # --- Two-pass generation for gap analysis (parallel batches) ---
         if report_type == "gap_analysis" and len(sections) > 5:
             await _generate_gap_parallel(
@@ -1726,12 +1732,18 @@ Tier: {tier.upper()} — {tier_instruction}
                 )
 
                 # Industry reports: resolve <cite/> tags into GFM footnotes and
-                # create PublishedArticle stubs for later body generation.
+                # create PublishedArticle stubs for later body generation. We
+                # accumulate every cited article id (including Tier-1/2 reuses
+                # of orphaned-pending stubs) so the final heal step can retry
+                # any that are still pending — Eric 2026-05 fix for the
+                # 404 backlog.
                 if report_type == "industry_report":
                     from app.services.report.citations import process_cite_tags
-                    content, _ = await process_cite_tags(
+                    content, cited_articles = await process_cite_tags(
                         db, content, report_id=report.id
                     )
+                    for a in cited_articles:
+                        all_cited_article_ids.add(a.id)
 
                 section = ReportSection(
                     report_id=report.id,
@@ -1777,11 +1789,15 @@ Tier: {tier.upper()} — {tier_instruction}
         await db.commit()
 
         # Industry reports: kick off background article-body generation for
-        # every PublishedArticle stub this report created. Detached from the
-        # current session so the report is returned to the UI immediately.
+        # EVERY article cited (including stubs reused from prior reports that
+        # never finished generating). After heal, snapshot every cited
+        # article's status into report.citation_health so the analyst sees
+        # broken citations before delivering the report to a client.
         if report_type == "industry_report":
-            from app.services.article.generator import generate_pending_articles_for_report
-            asyncio.create_task(generate_pending_articles_for_report(report.id))
+            from app.services.article.generator import heal_and_validate_citations
+            asyncio.create_task(
+                heal_and_validate_citations(report.id, list(all_cited_article_ids))
+            )
 
     except Exception as e:
         report.status = "failed"

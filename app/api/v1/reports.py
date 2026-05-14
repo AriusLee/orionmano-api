@@ -103,6 +103,54 @@ async def get_report(
     return report
 
 
+@router.post("/{report_id}/validate-citations")
+async def validate_citations(
+    company_id: UUID,
+    report_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Re-run the citation-health snapshot for an industry report. Useful
+    after the analyst manually regenerates a broken article: the snapshot on
+    report.citation_health needs to refresh so the 'broken' list clears.
+
+    The article_ids are read from the existing citation_health.article_ids
+    (populated during report generation). If no snapshot exists yet, returns
+    a 400 — the report's initial heal pass hasn't completed."""
+    result = await db.execute(
+        select(Report).where(Report.id == report_id, Report.company_id == company_id)
+    )
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    existing = report.citation_health or {}
+    article_ids = existing.get("article_ids") if isinstance(existing, dict) else None
+    if not article_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No citation snapshot available yet. The initial heal pass after report generation hasn't completed.",
+        )
+    # Validate without re-running heal (the manual /articles/{id}/regenerate
+    # flow already kicked off any retries).
+    from uuid import UUID as _UUID
+    typed_ids = []
+    for aid in article_ids:
+        try:
+            typed_ids.append(_UUID(aid))
+        except (TypeError, ValueError):
+            continue
+    from app.services.article.generator import heal_and_validate_citations
+    # Pass empty list to skip the heal step, then call the validate-only path.
+    # Simpler: call heal_and_validate_citations — heal_articles no-ops on
+    # already-published rows, so it's cheap on a fully-healthy snapshot.
+    asyncio.create_task(heal_and_validate_citations(report_id, typed_ids))
+    return {
+        "status": "queued",
+        "article_ids": [str(i) for i in typed_ids],
+        "message": "Re-validation kicked off. Refresh the report in a moment to see the updated snapshot.",
+    }
+
+
 @router.patch("/{report_id}/sections/{section_key}", response_model=ReportSectionResponse)
 async def update_section(
     company_id: UUID,

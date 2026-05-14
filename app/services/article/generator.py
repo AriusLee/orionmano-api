@@ -411,6 +411,22 @@ async def generate_article_body(db: AsyncSession, article_id: UUID) -> None:
     await db.commit()
 
 
+async def _generate_articles_sequentially(ids: list[UUID]) -> None:
+    """Generate body for each article id one at a time. `generate_article_body`
+    already no-ops on articles that aren't in pending/failed status, so the
+    caller can pass a heterogeneous list (e.g. a report's full cite chain
+    including already-published reuses). Per-article failures are swallowed
+    so the batch always completes."""
+    for aid in ids:
+        async with async_session() as db:
+            try:
+                await generate_article_body(db, aid)
+            except Exception:
+                # Individual article failure must not halt the batch.
+                pass
+            await asyncio.sleep(0.5)
+
+
 async def generate_pending_articles_for_report(report_id: UUID) -> None:
     """Fill body_md for every pending article first cited by this report.
 
@@ -425,13 +441,92 @@ async def generate_pending_articles_for_report(report_id: UUID) -> None:
             )
         )
         ids = [row[0] for row in result.all()]
+    await _generate_articles_sequentially(ids)
 
-    # Generate sequentially to avoid rate-limiting the LLM provider.
-    for aid in ids:
+
+async def heal_and_validate_citations(report_id: UUID, article_ids: list[UUID]) -> None:
+    """Eric 2026-05 'ping before deliver': run heal_articles, then snapshot
+    every cited article's status into report.citation_health.
+
+    This is the gate the analyst's UI consults to surface 404-bound citations
+    before the report is delivered to a client. Three terminal outcomes per
+    article are surfaced — published (good), pending/generating (still in
+    flight, likely retryable), failed (broken until manually regenerated)."""
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from app.database import async_session
+    from app.models.report import Report
+
+    await heal_articles(article_ids)
+
+    if not article_ids:
+        snapshot = {
+            "total": 0,
+            "published": 0,
+            "broken_count": 0,
+            "broken": [],
+            "all_ok": True,
+            "article_ids": [],
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+    else:
         async with async_session() as db:
-            try:
-                await generate_article_body(db, aid)
-            except Exception:
-                # Individual article failure must not halt the batch.
-                continue
-            await asyncio.sleep(0.5)
+            result = await db.execute(
+                select(PublishedArticle).where(PublishedArticle.id.in_(article_ids))
+            )
+            arts = list(result.scalars())
+        broken = [
+            {
+                "id": str(a.id),
+                "slug": a.slug,
+                "title": a.title,
+                "status": a.status,
+                "error": (a.generation_error or "")[:200] or None,
+            }
+            for a in arts
+            if a.status != "published"
+        ]
+        snapshot = {
+            "total": len(arts),
+            "published": sum(1 for a in arts if a.status == "published"),
+            "broken_count": len(broken),
+            "broken": broken[:50],
+            "all_ok": len(broken) == 0,
+            "article_ids": [str(i) for i in article_ids],
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    async with async_session() as db:
+        result = await db.execute(select(Report).where(Report.id == report_id))
+        rep = result.scalar_one_or_none()
+        if rep is not None:
+            rep.citation_health = snapshot
+            await db.commit()
+
+
+async def heal_articles(article_ids: list[UUID]) -> None:
+    """Retry generation for any of the given articles that are still pending.
+
+    Eric 2026-05 root cause of broken citation links: Tier 1 dedup used to
+    return stale-pending articles from old reports. Their owning report's
+    `generate_pending_articles_for_report` had long since run and skipped them
+    (status was already `pending` at finish time but its retry loop only
+    covered first_cited_by_report_id matches). They stayed pending forever
+    while new citations bound to them → 404 on industries.omassurance.com.
+
+    This function is the broader heal: the report loop now calls it with
+    every article cited (including Tier-1/2 reuses), so every report run
+    drains its own slice of the backlog. `generate_article_body` itself
+    no-ops on non-(pending|failed) statuses, so already-published reuses
+    cost nothing here."""
+    if not article_ids:
+        return
+    async with async_session() as db:
+        result = await db.execute(
+            select(PublishedArticle.id).where(
+                PublishedArticle.id.in_(article_ids),
+                PublishedArticle.status == "pending",
+            )
+        )
+        ids = [row[0] for row in result.all()]
+    await _generate_articles_sequentially(ids)

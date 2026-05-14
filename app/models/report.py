@@ -24,6 +24,11 @@ class Report(Base):
     # Cross-section contradiction findings from app.services.report.lint.
     # List of {severity, kind, section_a, section_b, claim_a, claim_b, issue, suggested_fix}.
     lint_findings: Mapped[list | None] = mapped_column(JSONB)
+    # Snapshot of citation-link health, written after the post-generation heal
+    # step. Shape: {total, published, broken_count, broken: [{id, slug, title,
+    # status, error}], all_ok, article_ids, checked_at}. Surfaces 404-bound
+    # citations to the analyst before delivering the report to a client.
+    citation_health: Mapped[dict | None] = mapped_column(JSONB)
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())

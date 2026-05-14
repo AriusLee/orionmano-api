@@ -19,10 +19,19 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from app.models.published_article import PublishedArticle
 from app.config import settings
+
+
+# Articles created within this window are considered "in-flight" — another
+# section of the same report (or a concurrent report) is still generating
+# their body. Reusing them keeps the same fact on one footnote target across
+# the run. Outside this window, a still-`pending` article is a stuck orphan
+# whose generation never completed; reusing it propagates a 404 on
+# industries.omassurance.com (the public endpoint only serves status=published).
+IN_FLIGHT_PENDING_MINUTES = 30
 
 
 # Rotated bylines so citations don't all trace to one analyst. Deterministic
@@ -140,14 +149,34 @@ async def resolve_citation(
     """
     topic_norm = topic.strip().lower()
     fh = _fact_hash(topic_norm, claim)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.ARTICLE_REUSE_DAYS)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=settings.ARTICLE_REUSE_DAYS)
+    in_flight_cutoff = now - timedelta(minutes=IN_FLIGHT_PENDING_MINUTES)
 
-    # Tier 1 — exact fact match within the freshness window.
+    # Tier 1 — exact fact match within the freshness window. To keep new
+    # citations from inheriting dead links (root cause of the 2026-05 batch
+    # of 404s on industries.omassurance.com), the candidate must be EITHER:
+    #   (a) status=published with body_md set — the public site can render it; or
+    #   (b) status=pending/generating AND created within the in-flight window —
+    #       another section/concurrent report is still generating it, so we
+    #       share the footnote target until it lands.
+    # Stale pending (older than the in-flight window) and any `failed` rows
+    # are intentionally NOT reused — they are dead links.
     result = await db.execute(
         select(PublishedArticle)
         .where(
             PublishedArticle.fact_hash == fh,
             PublishedArticle.created_at >= cutoff,
+            or_(
+                and_(
+                    PublishedArticle.status == "published",
+                    PublishedArticle.body_md.is_not(None),
+                ),
+                and_(
+                    PublishedArticle.status.in_(("pending", "generating")),
+                    PublishedArticle.created_at >= in_flight_cutoff,
+                ),
+            ),
         )
         .order_by(PublishedArticle.created_at.desc())
         .limit(1)
@@ -156,16 +185,16 @@ async def resolve_citation(
     if fresh_exact:
         return fresh_exact
 
-    # Tier 2 — same topic, fresh, with a real body. Reuse as the canonical
-    # topic-level resource for any new citation in the same industry. We
-    # require body_md to avoid binding new reports to a still-pending or
-    # failed generation.
+    # Tier 2 — same topic, fresh, published with a real body. Previously also
+    # accepted `draft` status, but the public endpoint only serves `published`,
+    # so any Tier-2 reuse of a draft would 404 in production. Locked to
+    # `published` to keep new citation links resolvable.
     result = await db.execute(
         select(PublishedArticle)
         .where(
             PublishedArticle.topic == topic_norm,
             PublishedArticle.created_at >= cutoff,
-            PublishedArticle.status.in_(("draft", "published")),
+            PublishedArticle.status == "published",
             PublishedArticle.body_md.is_not(None),
         )
         .order_by(PublishedArticle.created_at.desc())

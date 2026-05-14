@@ -11,6 +11,7 @@ Public (for the future industries.omassurance.com site):
 """
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -241,6 +242,63 @@ async def get_article(
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
     return _to_detail(article)
+
+
+@router.get("/admin/pending-stats")
+async def pending_stats(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Snapshot of how many articles are stuck in pending/generating/failed.
+    Citation links resolve to 404 on industries.omassurance.com until the
+    article transitions to status=published."""
+    from sqlalchemy import func
+    result = await db.execute(
+        select(PublishedArticle.status, func.count(PublishedArticle.id))
+        .group_by(PublishedArticle.status)
+    )
+    counts = {row[0]: row[1] for row in result.all()}
+    return {
+        "by_status": counts,
+        "total_pending": counts.get("pending", 0) + counts.get("generating", 0),
+        "total_published": counts.get("published", 0),
+        "total_failed": counts.get("failed", 0),
+    }
+
+
+@router.post("/admin/heal-pending")
+async def heal_pending_articles(
+    older_than_minutes: int = Query(default=30, ge=0, description="Only retry articles whose status hasn't changed for this many minutes"),
+    limit: int = Query(default=20, ge=1, le=200, description="Cap the batch so we don't hammer the LLM API in one go"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Drain the backlog of stuck-pending articles. Each call processes up to
+    `limit` of the oldest pending articles in the background. Run repeatedly
+    to work through the queue; the underlying generator throttles to 0.5s
+    between articles to avoid LLM rate limits."""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
+    result = await db.execute(
+        select(PublishedArticle.id)
+        .where(
+            PublishedArticle.status == "pending",
+            PublishedArticle.created_at < cutoff,
+        )
+        .order_by(PublishedArticle.created_at.asc())
+        .limit(limit)
+    )
+    ids = [row[0] for row in result.all()]
+    if ids:
+        from app.services.article.generator import heal_articles
+        asyncio.create_task(heal_articles(ids))
+    return {
+        "queued": len(ids),
+        "ids": [str(i) for i in ids],
+        "message": (
+            f"Queued {len(ids)} article(s) for body generation. "
+            f"Re-call this endpoint to process the next batch."
+        ),
+    }
 
 
 @router.post("/{article_id}/publish", response_model=PublishedArticleDetail)
