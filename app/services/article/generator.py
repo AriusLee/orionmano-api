@@ -444,64 +444,146 @@ async def generate_pending_articles_for_report(report_id: UUID) -> None:
     await _generate_articles_sequentially(ids)
 
 
-async def heal_and_validate_citations(report_id: UUID, article_ids: list[UUID]) -> None:
-    """Eric 2026-05 'ping before deliver': run heal_articles, then snapshot
-    every cited article's status into report.citation_health.
+def extract_cited_article_slugs(content: str, base_url: str) -> list[str]:
+    """Pull the article slugs out of the markdown footnote links in a report
+    section. Used to bootstrap citation_health for reports generated before
+    the snapshot flow shipped. Matches `](BASE/<slug>)` where the slug is
+    kebab-case ASCII."""
+    import re
+    if not content:
+        return []
+    base = base_url.rstrip("/")
+    pattern = re.compile(rf"\]\({re.escape(base)}/([a-z0-9][a-z0-9-]*)\)")
+    return list(dict.fromkeys(pattern.findall(content)))  # preserve order, dedupe
 
-    This is the gate the analyst's UI consults to surface 404-bound citations
-    before the report is delivered to a client. Three terminal outcomes per
-    article are surfaced — published (good), pending/generating (still in
-    flight, likely retryable), failed (broken until manually regenerated)."""
+
+async def _snapshot_citation_health(
+    article_ids: list[UUID],
+    in_flight: bool,
+) -> dict:
+    """Read current status of every article in `article_ids` and shape a
+    citation_health payload. `in_flight=True` means heal is still running, so
+    the snapshot is a progress indicator rather than the final delivery gate."""
     from datetime import datetime, timezone
     from sqlalchemy import select
     from app.database import async_session
-    from app.models.report import Report
-
-    await heal_articles(article_ids)
 
     if not article_ids:
-        snapshot = {
+        return {
             "total": 0,
             "published": 0,
             "broken_count": 0,
             "broken": [],
             "all_ok": True,
             "article_ids": [],
+            "in_flight": in_flight,
             "checked_at": datetime.now(timezone.utc).isoformat(),
         }
-    else:
-        async with async_session() as db:
-            result = await db.execute(
-                select(PublishedArticle).where(PublishedArticle.id.in_(article_ids))
-            )
-            arts = list(result.scalars())
-        broken = [
-            {
-                "id": str(a.id),
-                "slug": a.slug,
-                "title": a.title,
-                "status": a.status,
-                "error": (a.generation_error or "")[:200] or None,
-            }
-            for a in arts
-            if a.status != "published"
-        ]
-        snapshot = {
-            "total": len(arts),
-            "published": sum(1 for a in arts if a.status == "published"),
-            "broken_count": len(broken),
-            "broken": broken[:50],
-            "all_ok": len(broken) == 0,
-            "article_ids": [str(i) for i in article_ids],
-            "checked_at": datetime.now(timezone.utc).isoformat(),
+    async with async_session() as db:
+        result = await db.execute(
+            select(PublishedArticle).where(PublishedArticle.id.in_(article_ids))
+        )
+        arts = list(result.scalars())
+    broken = [
+        {
+            "id": str(a.id),
+            "slug": a.slug,
+            "title": a.title,
+            "status": a.status,
+            "error": (a.generation_error or "")[:200] or None,
         }
+        for a in arts
+        if a.status != "published"
+    ]
+    return {
+        "total": len(arts),
+        "published": sum(1 for a in arts if a.status == "published"),
+        "broken_count": len(broken),
+        "broken": broken[:50],
+        "all_ok": len(broken) == 0 and not in_flight,
+        "article_ids": [str(i) for i in article_ids],
+        "in_flight": in_flight,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
 
+
+async def _save_citation_snapshot(report_id: UUID, snapshot: dict) -> None:
+    from sqlalchemy import select
+    from app.database import async_session
+    from app.models.report import Report
     async with async_session() as db:
         result = await db.execute(select(Report).where(Report.id == report_id))
         rep = result.scalar_one_or_none()
         if rep is not None:
             rep.citation_health = snapshot
             await db.commit()
+
+
+async def heal_and_validate_citations(report_id: UUID, article_ids: list[UUID]) -> None:
+    """Eric 2026-05 'ping before deliver': run heal_articles, then snapshot
+    every cited article's status into report.citation_health.
+
+    Live-progress variant: writes a partial snapshot to report.citation_health
+    BEFORE the heal starts (so the frontend banner can show "0 of N healed
+    yet") and AFTER each article completes (so the analyst sees the counter
+    tick). The final write flips `in_flight=False` and sets `all_ok` honestly.
+
+    Also resets stuck-`generating` articles (>10 min since updated_at) back to
+    `pending` so they're picked up by the heal pass — without this, an article
+    whose generation crashed mid-task never recovers."""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import select, update
+    from app.database import async_session
+    from app.models.published_article import PublishedArticle as _PA
+
+    # 0. Reset stuck-generating articles back to pending so heal can retry.
+    if article_ids:
+        stuck_cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+        async with async_session() as db:
+            await db.execute(
+                update(_PA)
+                .where(
+                    _PA.id.in_(article_ids),
+                    _PA.status == "generating",
+                    _PA.updated_at < stuck_cutoff,
+                )
+                .values(status="pending", generation_error=None)
+            )
+            await db.commit()
+
+    # 1. Write the in-flight snapshot up front so the UI immediately stops
+    # showing the indefinite "checking…" spinner.
+    snapshot = await _snapshot_citation_health(article_ids, in_flight=True)
+    await _save_citation_snapshot(report_id, snapshot)
+
+    # 2. Generate each pending article one-by-one. After every article,
+    # refresh the snapshot so the banner ticks "k/N published".
+    async with async_session() as db:
+        result = await db.execute(
+            select(_PA.id).where(
+                _PA.id.in_(article_ids),
+                _PA.status == "pending",
+            )
+        )
+        pending_ids = [row[0] for row in result.all()]
+
+    for idx, aid in enumerate(pending_ids):
+        async with async_session() as db:
+            try:
+                await generate_article_body(db, aid)
+            except Exception:
+                pass
+            await asyncio.sleep(0.5)
+        # Live progress: re-snapshot after each article. Cheap query, big UX win.
+        snapshot = await _snapshot_citation_health(
+            article_ids,
+            in_flight=(idx < len(pending_ids) - 1),
+        )
+        await _save_citation_snapshot(report_id, snapshot)
+
+    # 3. Final snapshot — definitely not in flight, all_ok reflects reality.
+    final_snapshot = await _snapshot_citation_health(article_ids, in_flight=False)
+    await _save_citation_snapshot(report_id, final_snapshot)
 
 
 async def heal_articles(article_ids: list[UUID]) -> None:

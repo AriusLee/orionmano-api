@@ -110,44 +110,77 @@ async def validate_citations(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Re-run the citation-health snapshot for an industry report. Useful
-    after the analyst manually regenerates a broken article: the snapshot on
-    report.citation_health needs to refresh so the 'broken' list clears.
+    """Run / re-run the citation-health snapshot for an industry report.
 
-    The article_ids are read from the existing citation_health.article_ids
-    (populated during report generation). If no snapshot exists yet, returns
-    a 400 — the report's initial heal pass hasn't completed."""
+    Article IDs are sourced from (in priority order):
+      1. The existing `report.citation_health.article_ids` if populated.
+      2. Parsed from the report's section content — matches every markdown
+         footnote link whose URL begins with `settings.ARTICLE_SITE_BASE_URL`,
+         then looks up the article by slug. Lets us bootstrap a snapshot for
+         reports that finished before the citation-health flow shipped."""
     result = await db.execute(
-        select(Report).where(Report.id == report_id, Report.company_id == company_id)
+        select(Report)
+        .options(selectinload(Report.sections))
+        .where(Report.id == report_id, Report.company_id == company_id)
     )
     report = result.scalar_one_or_none()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+
     existing = report.citation_health or {}
-    article_ids = existing.get("article_ids") if isinstance(existing, dict) else None
-    if not article_ids:
-        raise HTTPException(
-            status_code=400,
-            detail="No citation snapshot available yet. The initial heal pass after report generation hasn't completed.",
-        )
-    # Validate without re-running heal (the manual /articles/{id}/regenerate
-    # flow already kicked off any retries).
+    raw_ids = existing.get("article_ids") if isinstance(existing, dict) else None
+
     from uuid import UUID as _UUID
-    typed_ids = []
-    for aid in article_ids:
-        try:
-            typed_ids.append(_UUID(aid))
-        except (TypeError, ValueError):
-            continue
+    typed_ids: list[_UUID] = []
+    if raw_ids:
+        for aid in raw_ids:
+            try:
+                typed_ids.append(_UUID(aid))
+            except (TypeError, ValueError):
+                continue
+
+    if not typed_ids:
+        # Bootstrap from section content — parse every markdown footnote URL
+        # under the article-site base, look up by slug.
+        from app.config import settings
+        from app.services.article.generator import extract_cited_article_slugs
+        from app.models.published_article import PublishedArticle
+        slugs: list[str] = []
+        for s in report.sections:
+            slugs.extend(extract_cited_article_slugs(s.content or "", settings.ARTICLE_SITE_BASE_URL))
+        # Dedupe preserving order
+        slugs = list(dict.fromkeys(slugs))
+        if slugs:
+            slug_result = await db.execute(
+                select(PublishedArticle.id, PublishedArticle.slug)
+                .where(PublishedArticle.slug.in_(slugs))
+            )
+            id_by_slug = {row[1]: row[0] for row in slug_result.all()}
+            for slug in slugs:
+                if slug in id_by_slug:
+                    typed_ids.append(id_by_slug[slug])
+
+    if not typed_ids:
+        # Genuinely no citations in this report — write an empty all-ok snapshot
+        # so the frontend stops showing the indefinite spinner.
+        from app.services.article.generator import _snapshot_citation_health, _save_citation_snapshot
+        snap = await _snapshot_citation_health([], in_flight=False)
+        await _save_citation_snapshot(report_id, snap)
+        return {
+            "status": "no_citations",
+            "article_ids": [],
+            "message": "No citations found in this report.",
+        }
+
     from app.services.article.generator import heal_and_validate_citations
-    # Pass empty list to skip the heal step, then call the validate-only path.
-    # Simpler: call heal_and_validate_citations — heal_articles no-ops on
-    # already-published rows, so it's cheap on a fully-healthy snapshot.
     asyncio.create_task(heal_and_validate_citations(report_id, typed_ids))
     return {
         "status": "queued",
         "article_ids": [str(i) for i in typed_ids],
-        "message": "Re-validation kicked off. Refresh the report in a moment to see the updated snapshot.",
+        "message": (
+            f"Re-validation kicked off for {len(typed_ids)} citation(s). "
+            f"The banner will show live progress as each article generates."
+        ),
     }
 
 
