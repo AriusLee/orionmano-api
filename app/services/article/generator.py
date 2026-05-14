@@ -519,24 +519,22 @@ async def _save_citation_snapshot(report_id: UUID, snapshot: dict) -> None:
             await db.commit()
 
 
-async def heal_and_validate_citations(report_id: UUID, article_ids: list[UUID]) -> None:
-    """Eric 2026-05 'ping before deliver': run heal_articles, then snapshot
-    every cited article's status into report.citation_health.
+async def initialize_citation_snapshot(report_id: UUID, article_ids: list[UUID]) -> dict:
+    """Synchronous prep step: reset stuck-`generating` articles back to
+    pending, then write the in-flight snapshot to report.citation_health.
 
-    Live-progress variant: writes a partial snapshot to report.citation_health
-    BEFORE the heal starts (so the frontend banner can show "0 of N healed
-    yet") and AFTER each article completes (so the analyst sees the counter
-    tick). The final write flips `in_flight=False` and sets `all_ok` honestly.
-
-    Also resets stuck-`generating` articles (>10 min since updated_at) back to
-    `pending` so they're picked up by the heal pass — without this, an article
-    whose generation crashed mid-task never recovers."""
+    Designed to be awaited from a request handler BEFORE scheduling the
+    long-running heal loop, so the frontend's immediate re-fetch sees the
+    in-flight state and flips the banner from "not checked yet" / "checking"
+    to live-progress without requiring a manual page reload."""
     from datetime import datetime, timedelta, timezone
-    from sqlalchemy import select, update
+    from sqlalchemy import update
     from app.database import async_session
     from app.models.published_article import PublishedArticle as _PA
 
-    # 0. Reset stuck-generating articles back to pending so heal can retry.
+    # Step 0 — reset stuck-generating articles (>10 min since updated_at)
+    # back to pending so heal can retry them. Without this an article whose
+    # generation crashed mid-task never recovers.
     if article_ids:
         stuck_cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
         async with async_session() as db:
@@ -551,13 +549,22 @@ async def heal_and_validate_citations(report_id: UUID, article_ids: list[UUID]) 
             )
             await db.commit()
 
-    # 1. Write the in-flight snapshot up front so the UI immediately stops
-    # showing the indefinite "checking…" spinner.
+    # Step 1 — write the in-flight snapshot. Callers (the endpoint) can
+    # return this directly in the response so the UI flips immediately.
     snapshot = await _snapshot_citation_health(article_ids, in_flight=True)
     await _save_citation_snapshot(report_id, snapshot)
+    return snapshot
 
-    # 2. Generate each pending article one-by-one. After every article,
-    # refresh the snapshot so the banner ticks "k/N published".
+
+async def run_citation_heal_loop(report_id: UUID, article_ids: list[UUID]) -> None:
+    """Generate each pending article sequentially, re-snapshotting after every
+    one so the live-progress counter ticks. Assumes initialize_citation_snapshot
+    already ran (which marked the snapshot as in-flight). The final write flips
+    `in_flight=False` and sets `all_ok` honestly."""
+    from sqlalchemy import select
+    from app.database import async_session
+    from app.models.published_article import PublishedArticle as _PA
+
     async with async_session() as db:
         result = await db.execute(
             select(_PA.id).where(
@@ -574,16 +581,24 @@ async def heal_and_validate_citations(report_id: UUID, article_ids: list[UUID]) 
             except Exception:
                 pass
             await asyncio.sleep(0.5)
-        # Live progress: re-snapshot after each article. Cheap query, big UX win.
         snapshot = await _snapshot_citation_health(
             article_ids,
             in_flight=(idx < len(pending_ids) - 1),
         )
         await _save_citation_snapshot(report_id, snapshot)
 
-    # 3. Final snapshot — definitely not in flight, all_ok reflects reality.
     final_snapshot = await _snapshot_citation_health(article_ids, in_flight=False)
     await _save_citation_snapshot(report_id, final_snapshot)
+
+
+async def heal_and_validate_citations(report_id: UUID, article_ids: list[UUID]) -> None:
+    """Eric 2026-05 'ping before deliver': prep + heal loop in one call.
+    Used by the report-generation path (already background-scheduled at that
+    point). The validate-citations request handler does the same work but
+    splits init from the heal loop so it can return the in-flight snapshot
+    in the HTTP response — see initialize_citation_snapshot + run_citation_heal_loop."""
+    await initialize_citation_snapshot(report_id, article_ids)
+    await run_citation_heal_loop(report_id, article_ids)
 
 
 async def heal_articles(article_ids: list[UUID]) -> None:

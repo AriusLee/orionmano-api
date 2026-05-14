@@ -169,14 +169,23 @@ async def validate_citations(
         return {
             "status": "no_citations",
             "article_ids": [],
+            "citation_health": snap,
             "message": "No citations found in this report.",
         }
 
-    from app.services.article.generator import heal_and_validate_citations
-    asyncio.create_task(heal_and_validate_citations(report_id, typed_ids))
+    from app.services.article.generator import (
+        initialize_citation_snapshot,
+        run_citation_heal_loop,
+    )
+    # Synchronously: reset stuck articles + write the in-flight snapshot so the
+    # response carries an immediately-visible progress state. The heal loop
+    # itself (sequential article generation, ~30-60s each) runs detached.
+    initial_snapshot = await initialize_citation_snapshot(report_id, typed_ids)
+    asyncio.create_task(run_citation_heal_loop(report_id, typed_ids))
     return {
         "status": "queued",
         "article_ids": [str(i) for i in typed_ids],
+        "citation_health": initial_snapshot,
         "message": (
             f"Re-validation kicked off for {len(typed_ids)} citation(s). "
             f"The banner will show live progress as each article generates."
