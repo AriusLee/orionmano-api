@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from uuid import UUID
 
@@ -19,6 +20,8 @@ from app.models.user import User
 from app.services.agent.context import AgentContext
 from app.services.agent.registry import registry
 from app.services.agent.skill import SkillStatus
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/companies/{company_id}/valuation",
@@ -98,6 +101,11 @@ async def generate_workpaper(
     )
 
     if result.status == SkillStatus.FAILED:
+        logger.error(
+            "generate-workpaper FAILED for company=%s target_valuation=%s valuation_date=%s: %s | artifacts=%s",
+            company_id, target_valuation, valuation_date, result.message,
+            {k: type(v).__name__ for k, v in (result.artifacts or {}).items()},
+        )
         raise HTTPException(status_code=500, detail=result.message)
 
     payload = result.data or {}
@@ -168,6 +176,10 @@ async def regenerate_from_inputs(
     result = await skill.execute(ctx, inputs=payload)
 
     if result.status == SkillStatus.FAILED:
+        logger.error(
+            "regenerate-from-inputs FAILED for company=%s: %s",
+            company_id, result.message,
+        )
         raise HTTPException(status_code=500, detail=result.message)
 
     out = result.data or {}
@@ -254,6 +266,10 @@ async def regenerate_from_xlsx(
     result = await skill.execute(ctx, inputs=payload)
 
     if result.status == SkillStatus.FAILED:
+        logger.error(
+            "regenerate-from-xlsx FAILED for company=%s: %s",
+            company_id, result.message,
+        )
         raise HTTPException(status_code=500, detail=result.message)
 
     out = result.data or {}
