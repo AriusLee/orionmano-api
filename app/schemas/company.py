@@ -17,6 +17,7 @@ class CompanyCreate(BaseModel):
     engagement_type: str | None = None
     target_exchange: str | None = None
     target_valuation: float | None = None
+    valuation_date: date | None = None
 
 
 class CompanyUpdate(BaseModel):
@@ -33,6 +34,7 @@ class CompanyUpdate(BaseModel):
     engagement_type: str | None = None
     target_exchange: str | None = None
     target_valuation: float | None = None
+    valuation_date: date | None = None
     report_tier: str | None = None
 
 
@@ -53,6 +55,7 @@ class CompanyResponse(BaseModel):
     engagement_type: str | None = None
     target_exchange: str | None = None
     target_valuation: float | None = None
+    valuation_date: date | None = None
     report_tier: str = "standard"
     logo_path: str | None = None
     created_at: datetime

@@ -133,8 +133,9 @@ SCENARIO_PATHS: dict[str, tuple[str, str]] = {
 
 # CoCo column order matches build_skeleton.py COCO_COLUMNS
 COCO_FIELDS = [
-    "tier", "include", "company", "ticker", "country", "accounting",
-    "market_cap_usd_mm", "d_to_e", "raw_beta", "tax_rate", None,  # last is calculated
+    "tier", "include", "company", "ticker", "business_description",
+    "country", "accounting", "market_cap_usd_mm", "d_to_e", "raw_beta",
+    "tax_rate", None,  # last is calculated (unlevered_beta)
 ]
 PRECEDENT_FIELDS = [
     "include", "date", "acquirer", "target", "ev_usd_mm",
@@ -504,6 +505,38 @@ def populate_tables(wb, payload: dict, vr: ValidationResult) -> int:
                 inputs_ws.cell(row=r, column=col_idx, value=v)
             written += 1
 
+    # Segments table (Eric 2026-05-08 item 2) — optional segmented revenue model.
+    # Layout: col 1=name, 2=start_year, 3=initial revenue (revenue_y0 if start_year=0,
+    # else initial_revenue), 4-8=revenue_growth Y1-Y5, 9-13=gross_margin Y1-Y5.
+    if "segments_table" in wb.defined_names:
+        dn = wb.defined_names["segments_table"]
+        text = dn.attr_text
+        _, range_part = text.rsplit("!", 1)
+        start_addr, _ = range_part.split(":")
+        start_addr = start_addr.replace("$", "")
+        _, start_row = cell_addr_components(start_addr)
+        segs = ((payload.get("projections") or {}).get("segments") or [])[:5]
+        for i, seg in enumerate(segs):
+            r = start_row + i
+            inputs_ws.cell(row=r, column=1, value=seg.get("name"))
+            inputs_ws.cell(row=r, column=2, value=seg.get("start_year"))
+            initial = (
+                seg.get("revenue_y0")
+                if (seg.get("start_year") or 0) == 0
+                else seg.get("initial_revenue")
+            )
+            inputs_ws.cell(row=r, column=3, value=initial)
+            growth = seg.get("revenue_growth") or []
+            for k, g in enumerate(growth[:5]):
+                inputs_ws.cell(row=r, column=4 + k, value=g)
+            gm = seg.get("gross_margin") or []
+            # If gross_margin not given but cogs_pct is, derive (1 - cogs_pct)
+            if not gm and seg.get("cogs_pct"):
+                gm = [None if c is None else 1.0 - c for c in seg["cogs_pct"]]
+            for k, g in enumerate(gm[:5]):
+                inputs_ws.cell(row=r, column=9 + k, value=g)
+            written += 1
+
     # Precedent table
     if "precedents_table" in wb.defined_names:
         dn = wb.defined_names["precedents_table"]
@@ -526,6 +559,55 @@ def populate_tables(wb, payload: dict, vr: ValidationResult) -> int:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
+def _find_soffice() -> str | None:
+    """Locate the LibreOffice headless binary. Returns None if not installed."""
+    import shutil as _sh
+    # macOS cask install path
+    mac_path = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+    if Path(mac_path).exists():
+        return mac_path
+    # Linux / PATH
+    for name in ("soffice", "libreoffice"):
+        p = _sh.which(name)
+        if p:
+            return p
+    return None
+
+
+def _recalc_with_libreoffice(xlsx_path: Path, vr: ValidationResult | None = None) -> bool:
+    """Open xlsx_path in LibreOffice headless, force formula recalc, and write
+    the cached values back into the same file. Returns True on success, False
+    if LibreOffice isn't installed or the recalc errored. Non-fatal — the
+    caller decides whether to warn or fail."""
+    import subprocess as _sp
+    import tempfile as _tmp
+    soffice = _find_soffice()
+    if soffice is None:
+        return False
+    with _tmp.TemporaryDirectory(prefix="lo-recalc-") as td:
+        try:
+            # `--convert-to xlsx --outdir td` opens, recalcs, saves to td/<name>.xlsx
+            proc = _sp.run(
+                [soffice, "--headless", "--calc",
+                 "--convert-to", "xlsx", "--outdir", td, str(xlsx_path)],
+                capture_output=True, text=True, timeout=120,
+            )
+            if proc.returncode != 0:
+                if vr is not None:
+                    vr.warn(f"LibreOffice recalc rc={proc.returncode}: {proc.stderr[:200]}")
+                return False
+            converted = Path(td) / xlsx_path.name
+            if not converted.exists():
+                return False
+            # Replace the original with the recalced copy (preserves cached values).
+            shutil.copy(converted, xlsx_path)
+            return True
+        except (_sp.TimeoutExpired, OSError) as e:
+            if vr is not None:
+                vr.warn(f"LibreOffice recalc failed: {type(e).__name__}: {e}")
+            return False
+
 
 def export(json_path: Path, skeleton_path: Path, output_path: Path) -> ValidationResult:
     if not skeleton_path.exists():
@@ -562,6 +644,20 @@ def export(json_path: Path, skeleton_path: Path, output_path: Path) -> Validatio
     meta_ws["A1"] = "inputs_json_baseline"
     meta_ws["A2"] = json.dumps(payload, default=str)
     wb.save(output_path)
+
+    # Force Excel-formula recalc so the saved xlsx carries cached values for
+    # every formula. Without this, the dashboard (which used to recompute the
+    # DCF in Python) drifts ~1-2% from what the analyst sees when they open
+    # the xlsx — the Python and Excel cascades round differently at the WACC
+    # build step. Now the dashboard reads xlsx-cached values directly so they
+    # always agree.
+    recalc_ok = _recalc_with_libreoffice(output_path, vr)
+    if not recalc_ok:
+        vr.warn(
+            "Skipped Excel formula recalc (LibreOffice unavailable); "
+            "dashboard may show ~1-2% drift from the xlsx until the analyst "
+            "opens the file in Excel and saves it back."
+        )
 
     print(f"Scalars written:    {n_scalar}")
     print(f"Table rows written: {n_table}")

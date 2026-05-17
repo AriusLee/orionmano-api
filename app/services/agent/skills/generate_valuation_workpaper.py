@@ -23,6 +23,70 @@ def _slugify(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
     return s or "company"
 
+
+def _overlay_xlsx_authoritative_values(summary: dict[str, Any], xlsx_path: Path) -> None:
+    """Read cached cell values from the xlsx's `Valuation Summary` sheet (which
+    LibreOffice recalc'd at the end of export()) and overlay them onto the
+    Python-computed summary so the dashboard matches the analyst-visible
+    workpaper. Silent no-op if cells aren't cached (e.g., recalc was skipped)."""
+    try:
+        from openpyxl import load_workbook  # type: ignore
+        wb = load_workbook(xlsx_path, data_only=True, read_only=True)
+        if "Valuation Summary" not in wb.sheetnames:
+            return
+        vs = wb["Valuation Summary"]
+
+        def fnum(r: int, c: int) -> float | None:
+            v = vs.cell(row=r, column=c).value
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                return float(v)
+            return None
+
+        # Row layout from build_valuation_summary_formulas:
+        #   r7=EV, r8=Equity pre, r9=after DLOM, r10=after DLOC, r11=client interest
+        #   r16=per-share basic, r18=per-share diluted, r21=WACC
+        # Col C=Per-Management, Col D=Independent
+        pm_ev, in_ev = fnum(7, 3), fnum(7, 4)
+        pm_eq_pre, in_eq_pre = fnum(8, 3), fnum(8, 4)
+        pm_eq_dlom, in_eq_dlom = fnum(9, 3), fnum(9, 4)
+        pm_eq_dloc, in_eq_dloc = fnum(10, 3), fnum(10, 4)
+        pm_ps_b, in_ps_b = fnum(16, 3), fnum(16, 4)
+        pm_ps_d, in_ps_d = fnum(18, 3), fnum(18, 4)
+        pm_wacc, in_wacc = fnum(21, 3), fnum(21, 4)
+
+        dcf = summary.setdefault("dcf", {})
+        dcf_pm = dcf.setdefault("per_management", {})
+        dcf_in = dcf.setdefault("independent", {})
+        if pm_ev is not None: dcf_pm["ev"] = pm_ev
+        if in_ev is not None: dcf_in["ev"] = in_ev
+
+        bridge = summary.setdefault("bridge", {})
+        br_pm = bridge.setdefault("per_management", {})
+        br_in = bridge.setdefault("independent", {})
+        if pm_eq_pre is not None: br_pm["pre_discount"] = pm_eq_pre
+        if in_eq_pre is not None: br_in["pre_discount"] = in_eq_pre
+        if pm_eq_dlom is not None: br_pm["after_dlom"] = pm_eq_dlom
+        if in_eq_dlom is not None: br_in["after_dlom"] = in_eq_dlom
+        if pm_eq_dloc is not None: br_pm["after_dloc"] = pm_eq_dloc
+        if in_eq_dloc is not None: br_in["after_dloc"] = in_eq_dloc
+
+        per_share = summary.setdefault("per_share", {})
+        ps_pm = per_share.setdefault("per_management", {})
+        ps_in = per_share.setdefault("independent", {})
+        if pm_ps_b is not None: ps_pm["basic"] = pm_ps_b
+        if in_ps_b is not None: ps_in["basic"] = in_ps_b
+        if pm_ps_d is not None: ps_pm["diluted"] = pm_ps_d
+        if in_ps_d is not None: ps_in["diluted"] = in_ps_d
+
+        wacc = summary.setdefault("wacc", {})
+        w_pm = wacc.setdefault("per_management", {})
+        w_in = wacc.setdefault("independent", {})
+        if pm_wacc is not None: w_pm["wacc"] = pm_wacc
+        if in_wacc is not None: w_in["wacc"] = in_wacc
+    except Exception:
+        # Non-fatal — Python-computed summary stays in place.
+        pass
+
 from app.config import settings
 from app.services.agent.context import AgentContext
 from app.services.agent.registry import registry
@@ -130,6 +194,11 @@ class GenerateValuationWorkpaperSkill(Skill):
         try:
             from compute import compute_summary  # type: ignore
             summary = compute_summary(payload)
+            # Overlay xlsx-authoritative cached values (LibreOffice recalc'd
+            # them inside export()) so the dashboard agrees with the workpaper.
+            # If recalc was skipped (LibreOffice unavailable), the overlay
+            # leaves summary as Python-computed — analyst will see ~1-2% drift.
+            _overlay_xlsx_authoritative_values(summary, output_path)
             summary_payload = {
                 "company_id": str(ctx.company_id) if ctx.company_id else None,
                 "generated_at": datetime.utcnow().isoformat() + "Z",

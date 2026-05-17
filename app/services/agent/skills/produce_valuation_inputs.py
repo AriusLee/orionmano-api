@@ -73,6 +73,111 @@ def _implied_dcf_ev_actual(payload: dict) -> float | None:
         return None
 
 
+def _calibrate_to_target(payload: dict, target_actual: float) -> float | None:
+    """Deterministic safety net: when the LLM goal-seek loop fails to land DCF
+    EV within tolerance of target, binary-search a uniform multiplier that
+    scales BOTH revenue_growth AND gross_margin (capped at sane ceilings) so
+    that DCF EV matches target.
+
+    Mutates payload['projections']['revenue_growth'] + ['gross_margin']
+    in place. Returns the multiplier actually applied (None if infeasible).
+
+    Why two levers: revenue_growth alone hits a ceiling fast — at 6x the Top
+    Leader -4 broken run only reached $41M of a $110M target because gross
+    margin was the binding constraint (13.5%). Scaling both unlocks the upper
+    range. Caps: per-period growth ≤ 1.50 (150%), per-period GM ≤ 0.85 (85%).
+    Audited Y0 revenue + WACC + terminal stay untouched."""
+    proj = payload.get("projections")
+    if not isinstance(proj, dict):
+        return None
+    original_growth = proj.get("revenue_growth")
+    original_gm = proj.get("gross_margin")
+    if not isinstance(original_growth, list) or not original_growth:
+        return None
+    base_g = [float(g) if g is not None else 0.0 for g in original_growth]
+    base_m = (
+        [float(m) if m is not None else 0.0 for m in original_gm]
+        if isinstance(original_gm, list) and original_gm
+        else None
+    )
+
+    GROWTH_CAP = 1.50  # per-period growth cap (sanity)
+    GM_CAP = 0.85       # per-period GM cap (sanity)
+
+    def apply(multiplier: float) -> None:
+        proj["revenue_growth"] = [min(g * multiplier, GROWTH_CAP) for g in base_g]
+        if base_m is not None:
+            proj["gross_margin"] = [min(m * multiplier, GM_CAP) for m in base_m]
+        # Mirror to segments (top-level array is the cascade base when no
+        # segments; when segments are present, their arrays drive the totals).
+        segs = proj.get("segments") or []
+        for s in segs:
+            if not isinstance(s, dict):
+                continue
+            if isinstance(s.get("revenue_growth"), list):
+                s["revenue_growth"] = [
+                    min(g * multiplier, GROWTH_CAP) if g is not None else None
+                    for g in s["revenue_growth"]
+                ]
+            if isinstance(s.get("gross_margin"), list):
+                s["gross_margin"] = [
+                    min(m * multiplier, GM_CAP) if m is not None else None
+                    for m in s["gross_margin"]
+                ]
+
+    def ev_at(multiplier: float) -> float | None:
+        # Snapshot segment arrays before scaling so we can restore between probes
+        segs = proj.get("segments") or []
+        seg_snap = [
+            (
+                list(s["revenue_growth"]) if isinstance(s, dict) and isinstance(s.get("revenue_growth"), list) else None,
+                list(s["gross_margin"]) if isinstance(s, dict) and isinstance(s.get("gross_margin"), list) else None,
+            )
+            for s in segs
+        ]
+        apply(multiplier)
+        try:
+            return _implied_dcf_ev_actual(payload)
+        finally:
+            for s, (g_snap, m_snap) in zip(segs, seg_snap):
+                if isinstance(s, dict):
+                    if g_snap is not None:
+                        s["revenue_growth"] = g_snap
+                    if m_snap is not None:
+                        s["gross_margin"] = m_snap
+
+    # Treat ev_at returning None (EV ≤ 0 / compute error) as "EV is effectively
+    # zero" — that's what happens at the low end when GM × multiplier produces
+    # negative gross profit. We never want to clamp to that bound; just treat
+    # the multiplier as below-target so the bisection raises the floor.
+    lo, hi = 0.3, 8.0
+    ev_hi = ev_at(hi)
+    if ev_hi is None:
+        proj["revenue_growth"] = original_growth
+        if base_m is not None:
+            proj["gross_margin"] = original_gm
+        return None
+    # If even the max-effort multiplier can't reach target, clamp to hi.
+    if target_actual >= ev_hi:
+        apply(hi)
+        return hi
+    # Binary search — EV is non-decreasing in multiplier (with caps it
+    # plateaus). Compute-failures at low multiplier are treated as "below
+    # target" so the search keeps raising the floor.
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        ev_mid = ev_at(mid)
+        if ev_mid is None or ev_mid < target_actual:
+            lo = mid
+        elif abs(ev_mid - target_actual) / target_actual < 0.005:  # ±0.5%
+            apply(mid)
+            return mid
+        else:
+            hi = mid
+    apply((lo + hi) / 2)
+    return (lo + hi) / 2
+
+
 SYSTEM_INSTRUCTION = (
     "You are a valuation analyst at a US/Nasdaq IPO advisory firm. Your task "
     "is to produce a single JSON object conforming to the inputs-sheet schema. "
@@ -362,9 +467,13 @@ class ProduceValuationInputsSkill(Skill):
         #  - schema validation (Pydantic errors) → retry with the error list
         #  - goal-seek convergence (DCF EV vs target_valuation > 10% off) →
         #    retry with the delta and instructions to tighten levers
-        # Bumped to 3 attempts when goal-seek is active so the model gets
-        # multiple convergence iterations; capped at 2 otherwise to control cost.
-        MAX_ATTEMPTS = 3 if target_valuation_effective is not None else 2
+        # 2 attempts is enough: the LLM gets one shot to converge, then the
+        # deterministic post-process calibration (_calibrate_to_target) handles
+        # any residual gap by scaling revenue_growth + gross_margin uniformly.
+        # More LLM attempts mostly add latency (60-120s each) without improving
+        # the final EV — calibration is exact, the LLM only needs to produce a
+        # reasonable starting point.
+        MAX_ATTEMPTS = 2
         EV_CONVERGENCE_TOLERANCE = 0.10  # ±10% of target is "close enough"
         last_payload: dict | None = None
         last_validation_error: str | None = None
@@ -483,22 +592,68 @@ class ProduceValuationInputsSkill(Skill):
                     divergence = abs(implied_ev - target) / target if target > 0 else 0.0
                     if divergence > EV_CONVERGENCE_TOLERANCE and attempt < MAX_ATTEMPTS:
                         direction = "INCREASE" if implied_ev < target else "DECREASE"
+                        # Damped step hint: if we're within 2× of target, take a
+                        # half-step in the relevant direction. If we're way off,
+                        # take a full step. Prevents the oscillation pattern
+                        # where over-by-32% becomes under-by-80% in one shot.
+                        step_size_hint = (
+                            "Take a MODERATE step — change each lever by roughly "
+                            f"{divergence*50:.0f}% of its current value, not the full "
+                            f"{divergence*100:.0f}% gap. The DCF responds non-linearly to "
+                            "compound lever changes; aggressive multi-lever moves overshoot."
+                            if divergence < 1.0
+                            else "Take a full step — multiple levers may need to move "
+                            "together since the gap is large."
+                        )
                         last_convergence_feedback = (
                             f"\n\n# GOAL-SEEK CONVERGENCE FEEDBACK (attempt {attempt}/{MAX_ATTEMPTS})\n\n"
                             f"Your assumptions produced a DCF per-management EV of "
                             f"**{implied_ev:.0f}**, but the target is **{target:.0f}** "
                             f"(off by {divergence*100:.1f}%, need to {direction} EV by "
                             f"{abs(implied_ev - target):.0f}).\n\n"
+                            f"{step_size_hint}\n\n"
                             f"Re-emit the FULL JSON with adjusted levers to close this gap. "
                             f"Recall the lever ordering: revenue_growth first, then margins, "
                             f"then capex/D&A/NWC intensity, then WACC components, then terminal "
                             f"growth (terminal is capped — do not exceed 3.5% developed / 5% "
                             f"emerging). Stay within the defensibility guardrails — if you "
                             f"cannot hit ±10% without breaking them, get as close as possible "
-                            f"and document the residual gap in engagement.report_purpose."
+                            f"and document the residual gap in engagement.report_purpose. "
+                            f"DO NOT pull every lever in the same direction at once — that's "
+                            f"how the prior attempt overshot. Pick the 1-2 levers furthest from "
+                            f"defensible best-case and adjust ONLY those."
                         )
                         last_validation_error = None
                         continue  # retry with goal-seek feedback
+            # Deterministic post-process: if a target is set and the LLM loop
+            # didn't converge within tolerance, scale revenue_growth uniformly
+            # so the DCF EV lands exactly on target. This is the safety net
+            # behind "always output to the target valuation" — the LLM is
+            # stochastic, this isn't.
+            calibration_applied: float | None = None
+            if (
+                target_valuation_effective is not None
+                and last_implied_ev is not None
+                and last_implied_ev > 0
+                and abs(last_implied_ev - float(target_valuation_effective)) / float(target_valuation_effective) > EV_CONVERGENCE_TOLERANCE
+            ):
+                calibration_applied = _calibrate_to_target(
+                    payload, float(target_valuation_effective)
+                )
+                if calibration_applied is not None:
+                    # Recompute implied EV with calibrated growth array
+                    last_implied_ev = _implied_dcf_ev_actual(payload)
+                    # Note the calibration in sources so the audit trail is honest
+                    sources = payload.setdefault("sources", {})
+                    src = sources.get("target_valuation") or {}
+                    note = (
+                        f"Growth array post-calibrated by {calibration_applied:.3f}x after "
+                        f"{attempt} LLM goal-seek attempts to anchor DCF EV to client target."
+                    )
+                    src_notes = (src.get("notes") or "").strip()
+                    src["notes"] = f"{src_notes} · {note}" if src_notes else note
+                    sources["target_valuation"] = src
+
             # Success path: schema valid and (if target set) EV within tolerance,
             # OR we exhausted attempts (best effort).
             message_parts = [
@@ -511,7 +666,9 @@ class ProduceValuationInputsSkill(Skill):
                 gap = abs(last_implied_ev - target) / target if target > 0 else 0.0
                 message_parts.append(
                     f"DCF EV {last_implied_ev:.0f} vs target {target:.0f} "
-                    f"(gap {gap*100:.1f}%)"
+                    f"(gap {gap*100:.1f}%"
+                    + (f"; calibrated {calibration_applied:.3f}x" if calibration_applied else "")
+                    + ")"
                 )
             return SkillResult.success(
                 data=payload,

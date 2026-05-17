@@ -26,7 +26,10 @@ from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-OUTPUT = REPO_ROOT / "materials" / "templates" / "orionmano-valuation-template-v1.xlsx"
+# Skeleton has to land where the runtime (generate_valuation_workpaper.py)
+# expects it — under backend/materials/, not the repo-root /materials/.
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = BACKEND_ROOT / "materials" / "templates" / "orionmano-valuation-template-v1.xlsx"
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +169,7 @@ COCO_COLUMNS = [
     ("coco_include", "Include", "boolean"),
     ("coco_company", "Company", "text"),
     ("coco_ticker", "Ticker", "text"),
+    ("coco_business_description", "Business description", "text"),  # Eric 2026-05-08 item 5
     ("coco_country", "Country", "enum"),
     ("coco_accounting", "Accounting standard", "enum"),
     ("coco_market_cap", "Market cap (USD mm)", "currency"),
@@ -395,6 +399,55 @@ def build_inputs_sheet(ws, defined_names: list[tuple[str, str]]):
         "precedents_table",
         f"'{sheet_name}'!$A${prec_first_data_row}:${last_col_letter_p}${prec_last_row}",
     ))
+    row += 1
+
+    # ----- Section I — Revenue segments (Eric 2026-05-08 item 2) -----
+    # Optional segmented revenue model. When non-empty, projections.segments[]
+    # aggregates into total revenue + gross_profit; top-level revenue_growth +
+    # gross_margin are ignored. When empty (single-line business), this table
+    # stands as a placeholder so the analyst can introduce segments via the
+    # xlsx round-trip without re-prompting the LLM.
+    ws.cell(row=row, column=1,
+            value="Section I — Revenue segments  (Optional)").font = SECTION_FONT
+    ws.cell(row=row, column=1).fill = EXTENDED_FILL
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=13)
+    row += 1
+    ws.cell(row=row, column=1, value=(
+        "Optional segmented breakdown. Fill rows below + re-upload to override "
+        "top-level revenue_growth / gross_margin with a segment aggregate. "
+        "start_year=0 means the segment already exists in Y0; start_year>0 "
+        "introduces a new revenue line at that projection year."
+    )).font = SMALL_FONT
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=13)
+    row += 1
+    for i, clabel in enumerate(SEGMENT_HEADERS, 1):
+        c = ws.cell(row=row, column=i, value=clabel)
+        c.font = HEADER_FONT
+        c.fill = HEADER_FILL
+        c.alignment = Alignment(horizontal="center", wrap_text=True)
+        c.border = BORDER
+    row += 1
+    seg_first_data_row = row
+    for r in range(SEGMENT_ROWS):
+        for i in range(1, len(SEGMENT_HEADERS) + 1):
+            ws.cell(row=row, column=i).border = BORDER
+        row += 1
+    seg_last_row = row - 1
+    last_col_letter_s = get_column_letter(len(SEGMENT_HEADERS))
+    defined_names.append((
+        "segments_table",
+        f"'{sheet_name}'!$A${seg_first_data_row}:${last_col_letter_s}${seg_last_row}",
+    ))
+
+
+SEGMENT_HEADERS = [
+    "Segment name",
+    "Start year",
+    "Initial revenue",
+    "Growth Y1", "Growth Y2", "Growth Y3", "Growth Y4", "Growth Y5",
+    "GM Y1", "GM Y2", "GM Y3", "GM Y4", "GM Y5",
+]
+SEGMENT_ROWS = 5  # placeholder rows; raise if a target genuinely has more lines
 
 
 PROJECTION_YEARS = 5  # explicit forecast horizon; matches sample_inputs.json
@@ -1057,7 +1110,7 @@ def build_coco_selection_formulas(ws):
         "Mirror view of the comparable companies table on the Inputs sheet. "
         "Edit values on Inputs; this sheet refreshes automatically."
     )).font = SMALL_FONT
-    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=11)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=12)
 
     HDR = 4
     for i, (cid, clabel, ctype) in enumerate(COCO_COLUMNS, 1):
@@ -1071,6 +1124,7 @@ def build_coco_selection_formulas(ws):
         ws.column_dimensions[letter].width = 14
     ws.column_dimensions["C"].width = 24
     ws.column_dimensions["D"].width = 14
+    ws.column_dimensions["E"].width = 40  # business_description — give it room to breathe
 
     # Data rows mirroring Inputs!A127:K156
     first_data_row = HDR + 2
@@ -1083,15 +1137,17 @@ def build_coco_selection_formulas(ws):
                     value=f"=Inputs!{col_letter}{source_row}")
             ws.cell(row=target_row, column=col_idx).border = BORDER
 
-    # Compute unlevered beta on the LAST column (col 11) for each CoCo:
+    # Compute unlevered beta on the LAST column (col 12) for each CoCo:
     # unlevered = raw_beta / (1 + (1 - tax_rate) * D/E)
-    # Override the simple mirror with the calc since col K on Inputs is blank
+    # Override the simple mirror with the calc since col L on Inputs is blank.
+    # After Eric item 5 inserted business_description at col E, the source
+    # columns shifted: D/E I (was H), raw_beta J (was I), tax_rate K (was J).
     for i in range(COCO_TABLE_ROWS):
         target_row = first_data_row + i
         source_row = COCO_TABLE_FIRST_ROW + i
-        ws.cell(row=target_row, column=11, value=(
-            f"=IFERROR(Inputs!I{source_row}/"
-            f"(1+(1-Inputs!J{source_row})*Inputs!H{source_row}),\"\")"
+        ws.cell(row=target_row, column=12, value=(
+            f"=IFERROR(Inputs!J{source_row}/"
+            f"(1+(1-Inputs!K{source_row})*Inputs!I{source_row}),\"\")"
         ))
 
 

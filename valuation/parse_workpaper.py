@@ -375,6 +375,44 @@ def parse(xlsx_path: str | Path) -> dict[str, Any]:
         if kept_p:
             baseline["precedents"] = kept_p
 
+    # 5. Segments table (Eric 2026-05-08 item 2) — overlay rows from the
+    # optional segmented revenue model. Layout: col 0=name, 1=start_year,
+    # 2=initial revenue, 3-7=revenue_growth Y1-Y5, 8-12=gross_margin Y1-Y5.
+    seg_rows = _range_rows(wb, "segments_table")
+    if seg_rows:
+        kept_seg: list[dict[str, Any]] = []
+        for row in seg_rows:
+            name = row[0] if len(row) > 0 else None
+            if name is None or (isinstance(name, str) and not name.strip()):
+                continue
+            entry: dict[str, Any] = {"name": str(name).strip()}
+            start_year = _coerce(row[1] if len(row) > 1 else None, "number")
+            if start_year is not None:
+                entry["start_year"] = int(start_year)
+            initial = _coerce(row[2] if len(row) > 2 else None, "number")
+            if initial is not None:
+                if (entry.get("start_year") or 0) == 0:
+                    entry["revenue_y0"] = initial
+                else:
+                    entry["initial_revenue"] = initial
+            growth = [_coerce(row[3 + k] if 3 + k < len(row) else None, "percentage") for k in range(5)]
+            # Trim trailing Nones — keep only the contiguous filled prefix.
+            while growth and growth[-1] is None:
+                growth.pop()
+            if growth:
+                entry["revenue_growth"] = growth
+            gm = [_coerce(row[8 + k] if 8 + k < len(row) else None, "percentage") for k in range(5)]
+            while gm and gm[-1] is None:
+                gm.pop()
+            if gm:
+                entry["gross_margin"] = gm
+            kept_seg.append(entry)
+        # Only overlay when the analyst actually filled in segments — otherwise
+        # we'd clobber any segments the LLM produced (which are preserved in the
+        # _meta baseline at parse start).
+        if kept_seg:
+            baseline.setdefault("projections", {})["segments"] = kept_seg
+
     return baseline
 
 
