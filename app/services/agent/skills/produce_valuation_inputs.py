@@ -697,6 +697,33 @@ class ProduceValuationInputsSkill(Skill):
                 eng = payload.setdefault("engagement", {})
                 eng["valuation_date"] = valuation_date_run
 
+            # Eric 2026-05-18 — analyst-pinned CoCo selection. Overlay
+            # include / selected_for_wacc flags onto matching cocos by ticker
+            # BEFORE derived_beta runs, so the β build reflects the analyst's
+            # comp choices (not the LLM's gut feel).
+            pinned_cocos_raw = getattr(company_obj, "pinned_cocos", None) or {}
+            if isinstance(pinned_cocos_raw, dict) and pinned_cocos_raw:
+                cocos = payload.get("cocos") or []
+                if isinstance(cocos, list):
+                    # Build a lookup of ticker -> coco entry (case-insensitive on ticker)
+                    by_ticker = {
+                        str(c.get("ticker") or "").strip().lower(): c
+                        for c in cocos if isinstance(c, dict)
+                    }
+                    for ticker, flags in pinned_cocos_raw.items():
+                        if not isinstance(flags, dict):
+                            continue
+                        target = by_ticker.get(str(ticker).strip().lower())
+                        if target is None:
+                            continue
+                        if "include" in flags:
+                            target["include"] = bool(flags["include"])
+                        if "selected_for_wacc" in flags:
+                            target["selected_for_wacc"] = bool(flags["selected_for_wacc"])
+                            # Selected for WACC implies included
+                            if flags["selected_for_wacc"]:
+                                target["include"] = True
+
             # Eric 2026-05-08 item 5: WACC β must come from the comps the LLM
             # marked selected_for_wacc, not from its own gut feel. Override only
             # when ≥3 selected comps yielded a valid unlevered beta (else

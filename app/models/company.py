@@ -30,6 +30,7 @@ class Company(Base):
     target_valuation: Mapped[float | None] = mapped_column(Float)  # saved default for valuation runs; same currency × unit as the workpaper
     valuation_date: Mapped[date | None] = mapped_column(Date)  # saved default for valuation runs; per-run override still allowed on the page
     pinned_overrides: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=dict)  # Eric 2026-05-17 — analyst-fixed params the LLM must preserve verbatim and that calibration must skip when scaling to target
+    pinned_cocos: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=dict)  # Eric 2026-05-18 — analyst-fixed include/selected_for_wacc per ticker; producer overlays onto payload.cocos after LLM
     report_tier: Mapped[str] = mapped_column(String(20), default="standard")  # essential, standard, premium
     logo_path: Mapped[str | None] = mapped_column(String(500))
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
