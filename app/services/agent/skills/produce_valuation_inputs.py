@@ -177,6 +177,53 @@ def _pinned_array_indices(pinned_keys: list[str], array_key: str) -> set[int]:
     return indices
 
 
+def _find_previous_valuation_payload(company_id: Any, current_exchange: str | None) -> dict | None:
+    """Eric 2026-05-18 — locate the most recent .summary.json for this company
+    AND verify its engagement.exchange_platform matches the current target.
+    Returns the previous run's inputs dict so callers can reuse its cocos
+    section; None if no compatible prior run.
+
+    Why: regenerates should NOT re-screen comps unless the analyst explicitly
+    changes the target exchange. Reusing the comp set keeps the workpaper
+    auditable and lets pinned_cocos toggles + manual edits survive."""
+    if company_id is None:
+        return None
+    try:
+        from app.config import settings as _settings  # type: ignore
+    except Exception:
+        return None
+    val_dir = Path(_settings.UPLOAD_DIR).resolve() / "valuations"
+    if not val_dir.exists():
+        return None
+    cid_str = str(company_id)
+    candidates: list[tuple[float, dict]] = []
+    for p in val_dir.glob("valuation-*.summary.json"):
+        if not p.is_file():
+            continue
+        try:
+            data = json.loads(p.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("company_id") != cid_str:
+            continue
+        candidates.append((p.stat().st_mtime, data))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    latest = candidates[0][1]
+    inputs = latest.get("inputs") or {}
+    prev_exchange = (((inputs.get("engagement") or {}).get("exchange_platform")) or "").strip().upper()
+    cur_exchange = (current_exchange or "").strip().upper()
+    if not prev_exchange or not cur_exchange:
+        return None
+    if prev_exchange != cur_exchange:
+        return None  # exchange changed — trigger fresh search
+    cocos = inputs.get("cocos")
+    if not isinstance(cocos, list) or not cocos:
+        return None
+    return inputs
+
+
 def _calibrate_to_target(payload: dict, target_actual: float, pinned_keys: list[str] | None = None) -> float | None:
     """Deterministic safety net: when the LLM goal-seek loop fails to land DCF
     EV within tolerance of target, binary-search a uniform multiplier that
@@ -567,6 +614,74 @@ class ProduceValuationInputsSkill(Skill):
                 + company_context
             )
 
+        # Eric 2026-05-18 — reuse the previous valuation's comp set when the
+        # target exchange hasn't changed. The LLM still produces a payload but
+        # we force its cocos arrays back to the previous run's identities
+        # post-LLM (preserving any market-data refresh the LLM made per ticker).
+        # Fresh comp search only fires when there's no prior run for this
+        # company or when target_exchange changed.
+        normalized_exchange = _normalize_exchange(
+            getattr(company_obj, "target_exchange", None)
+        )
+        previous_inputs_for_cocos = _find_previous_valuation_payload(
+            getattr(ctx, "company_id", None), normalized_exchange
+        )
+        if previous_inputs_for_cocos is not None:
+            prev_cocos = previous_inputs_for_cocos.get("cocos") or []
+            ticker_list = [str((c or {}).get("ticker") or "").strip() for c in prev_cocos if isinstance(c, dict)]
+            ticker_list = [t for t in ticker_list if t]
+            if ticker_list:
+                company_context = (
+                    "COMP SET LOCK (analyst-anchored; do NOT re-screen comps):\n"
+                    "The previous valuation run for this company used the exact set of "
+                    "comparable companies listed below. The analyst has not changed the "
+                    "target exchange platform, so the comp set is LOCKED — emit EXACTLY "
+                    "these tickers in your `cocos` array, in the same order, with the "
+                    "same `company`, `ticker`, `exchange`, `country`, `accounting`, "
+                    "`business_description`, and `tier` fields. You MAY refresh per-ticker "
+                    "market data (`market_cap_usd_mm`, `d_to_e`, `raw_beta`, `tax_rate`, "
+                    "and the `coco_multiples` / `coco_margins` / `coco_ratios` arrays) "
+                    "with the latest values you know. DO NOT add, drop, reorder, or "
+                    "replace any tickers. The post-LLM step enforces this lock.\n\n"
+                    "Required tickers (in order): "
+                    + ", ".join(ticker_list)
+                    + "\n\n"
+                    + company_context
+                )
+
+        # Eric 2026-05-18 — pinned CoCo selection injected into the prompt
+        # as required tickers, exempt from the exchange filter. The post-LLM
+        # overlay enforces the same flags + injects stubs if the LLM still
+        # drops a pinned ticker.
+        pinned_cocos_for_prompt = getattr(company_obj, "pinned_cocos", None) or {}
+        pinned_cocos_for_prompt = pinned_cocos_for_prompt if isinstance(pinned_cocos_for_prompt, dict) else {}
+        if pinned_cocos_for_prompt:
+            required_lines = []
+            for ticker, flags in pinned_cocos_for_prompt.items():
+                if not isinstance(flags, dict):
+                    continue
+                include = bool(flags.get("include"))
+                wacc = bool(flags.get("selected_for_wacc"))
+                if not include and not wacc:
+                    continue
+                tag = []
+                if include: tag.append("include=true")
+                if wacc:    tag.append("selected_for_wacc=true")
+                required_lines.append(f"  - {ticker} ({', '.join(tag)})")
+            if required_lines:
+                company_context = (
+                    "ANALYST-PINNED COMPARABLE COMPANIES (MUST appear in your cocos array "
+                    "with the exact ticker string shown below; DO NOT drop these even if "
+                    "your exchange filter or comp-screen would normally exclude them — the "
+                    "analyst has explicitly selected them. Populate all comp metadata "
+                    "(company name, country, accounting standard, market cap, D/E, raw_beta, "
+                    "tax rate, business_description) as best you can from your knowledge. "
+                    "The include / selected_for_wacc flags shown will be enforced post-LLM):\n"
+                    + "\n".join(required_lines)
+                    + "\n\n"
+                    + company_context
+                )
+
         if target_valuation_run is not None:
             company_context = (
                 f"User-supplied target valuation for this run: {target_valuation_run} "
@@ -697,32 +812,117 @@ class ProduceValuationInputsSkill(Skill):
                 eng = payload.setdefault("engagement", {})
                 eng["valuation_date"] = valuation_date_run
 
+            # Eric 2026-05-18 — comp-set lock enforcement. If the previous
+            # valuation's comp set is still valid (same exchange), force the
+            # cocos arrays back to that identity even if the LLM tried to
+            # introduce different tickers. Per-ticker market data the LLM
+            # refreshed is preserved when its ticker matches the previous set.
+            if previous_inputs_for_cocos is not None:
+                prev_cocos = previous_inputs_for_cocos.get("cocos") or []
+                prev_mult  = previous_inputs_for_cocos.get("coco_multiples") or []
+                prev_marg  = previous_inputs_for_cocos.get("coco_margins") or []
+                prev_rat   = previous_inputs_for_cocos.get("coco_ratios") or []
+                llm_cocos  = payload.get("cocos") or []
+                llm_mult   = payload.get("coco_multiples") or []
+                llm_marg   = payload.get("coco_margins") or []
+                llm_rat    = payload.get("coco_ratios") or []
+                llm_by_ticker = {
+                    str((c or {}).get("ticker") or "").strip().lower(): i
+                    for i, c in enumerate(llm_cocos) if isinstance(c, dict)
+                }
+                new_cocos: list[dict] = []
+                new_mult: list[dict] = []
+                new_marg: list[dict] = []
+                new_rat: list[dict] = []
+                for prev_idx, prev_c in enumerate(prev_cocos):
+                    if not isinstance(prev_c, dict):
+                        continue
+                    t_lower = str(prev_c.get("ticker") or "").strip().lower()
+                    if t_lower and t_lower in llm_by_ticker:
+                        llm_idx = llm_by_ticker[t_lower]
+                        llm_c = llm_cocos[llm_idx] if isinstance(llm_cocos[llm_idx], dict) else {}
+                        # Merge: prev identity + LLM-refreshed market data.
+                        merged = {**prev_c, **llm_c}
+                        # Force-preserve identity fields from prev so the LLM
+                        # can't rename / re-exchange the comp.
+                        for k in ("ticker", "company", "exchange", "business_description"):
+                            if prev_c.get(k) is not None:
+                                merged[k] = prev_c[k]
+                        new_cocos.append(merged)
+                        new_mult.append(llm_mult[llm_idx] if llm_idx < len(llm_mult) else (prev_mult[prev_idx] if prev_idx < len(prev_mult) else {}))
+                        new_marg.append(llm_marg[llm_idx] if llm_idx < len(llm_marg) else (prev_marg[prev_idx] if prev_idx < len(prev_marg) else {}))
+                        new_rat.append(llm_rat[llm_idx] if llm_idx < len(llm_rat) else (prev_rat[prev_idx] if prev_idx < len(prev_rat) else {}))
+                    else:
+                        # LLM dropped this ticker — keep prev verbatim
+                        new_cocos.append(prev_c)
+                        new_mult.append(prev_mult[prev_idx] if prev_idx < len(prev_mult) else {})
+                        new_marg.append(prev_marg[prev_idx] if prev_idx < len(prev_marg) else {})
+                        new_rat.append(prev_rat[prev_idx] if prev_idx < len(prev_rat) else {})
+                payload["cocos"] = new_cocos
+                payload["coco_multiples"] = new_mult
+                payload["coco_margins"] = new_marg
+                payload["coco_ratios"] = new_rat
+
             # Eric 2026-05-18 — analyst-pinned CoCo selection. Overlay
             # include / selected_for_wacc flags onto matching cocos by ticker
             # BEFORE derived_beta runs, so the β build reflects the analyst's
-            # comp choices (not the LLM's gut feel).
+            # comp choices (not the LLM's gut feel). If a pinned ticker is
+            # MISSING from the LLM's cocos (LLM dropped it via exchange filter
+            # or different comp-screen), INJECT a stub so the analyst's pin
+            # survives across runs — the LLM may have given it metadata in
+            # the prompt-driven path; if not, the analyst fills it via Re-upload.
             pinned_cocos_raw = getattr(company_obj, "pinned_cocos", None) or {}
             if isinstance(pinned_cocos_raw, dict) and pinned_cocos_raw:
-                cocos = payload.get("cocos") or []
-                if isinstance(cocos, list):
-                    # Build a lookup of ticker -> coco entry (case-insensitive on ticker)
-                    by_ticker = {
-                        str(c.get("ticker") or "").strip().lower(): c
-                        for c in cocos if isinstance(c, dict)
-                    }
-                    for ticker, flags in pinned_cocos_raw.items():
-                        if not isinstance(flags, dict):
-                            continue
-                        target = by_ticker.get(str(ticker).strip().lower())
-                        if target is None:
-                            continue
-                        if "include" in flags:
-                            target["include"] = bool(flags["include"])
-                        if "selected_for_wacc" in flags:
-                            target["selected_for_wacc"] = bool(flags["selected_for_wacc"])
-                            # Selected for WACC implies included
-                            if flags["selected_for_wacc"]:
-                                target["include"] = True
+                cocos = payload.setdefault("cocos", [])
+                if not isinstance(cocos, list):
+                    cocos = []
+                    payload["cocos"] = cocos
+                # Build a lookup of ticker -> coco entry (case-insensitive on ticker)
+                by_ticker = {
+                    str(c.get("ticker") or "").strip().lower(): c
+                    for c in cocos if isinstance(c, dict)
+                }
+                # Coco_multiples / margins / ratios arrays must stay aligned
+                # with cocos array length, so we pad them when appending stubs.
+                cm = payload.setdefault("coco_multiples", [])
+                cmg = payload.setdefault("coco_margins", [])
+                cr = payload.setdefault("coco_ratios", [])
+                if not isinstance(cm, list):  cm = []; payload["coco_multiples"] = cm
+                if not isinstance(cmg, list): cmg = []; payload["coco_margins"] = cmg
+                if not isinstance(cr, list):  cr = []; payload["coco_ratios"] = cr
+                for ticker, flags in pinned_cocos_raw.items():
+                    if not isinstance(flags, dict):
+                        continue
+                    target = by_ticker.get(str(ticker).strip().lower())
+                    if target is None:
+                        # Pinned ticker missing — inject a stub so the pin persists.
+                        # exchange parsed from "NASDAQ:GLBE" / "NYSE:WCC" style.
+                        ticker_str = str(ticker).strip()
+                        exchange = (
+                            ticker_str.split(":")[0].upper().strip()
+                            if ":" in ticker_str else None
+                        )
+                        target = {
+                            "tier": 3,
+                            "include": bool(flags.get("include", False)),
+                            "company": ticker_str,  # placeholder — analyst can rename
+                            "ticker": ticker_str,
+                            "exchange": exchange,
+                            "selected_for_wacc": bool(flags.get("selected_for_wacc", False)),
+                            "business_description": "(analyst-pinned; metadata pending)",
+                        }
+                        cocos.append(target)
+                        cm.append({})
+                        cmg.append({})
+                        cr.append({})
+                        continue
+                    if "include" in flags:
+                        target["include"] = bool(flags["include"])
+                    if "selected_for_wacc" in flags:
+                        target["selected_for_wacc"] = bool(flags["selected_for_wacc"])
+                        # Selected for WACC implies included
+                        if flags["selected_for_wacc"]:
+                            target["include"] = True
 
             # Eric 2026-05-08 item 5: WACC β must come from the comps the LLM
             # marked selected_for_wacc, not from its own gut feel. Override only
