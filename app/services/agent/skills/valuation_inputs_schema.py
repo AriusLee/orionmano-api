@@ -85,6 +85,15 @@ class Projections(_Permissive):
     revenue_growth_method: str | None = None
     revenue_y0: float
     nwc_y0: float
+    # Eric 2026-05-18 — audited Y0 absolutes so the Projections sheet's Y0
+    # column shows real numbers instead of blanks. Optional because legacy
+    # inputs JSONs may not include them; producer prompts the LLM to fill
+    # them from historical_fs. opex_y0 is stored NEGATIVE for sign consistency
+    # with the rest of the cascade.
+    gross_profit_y0: float | None = None
+    opex_y0: float | None = None  # negative
+    ebitda_y0: float | None = None
+    ebit_y0: float | None = None
     revenue_growth: list[float | None]
     gross_margin: list[float | None]
     opex_pct_revenue: list[float | None]

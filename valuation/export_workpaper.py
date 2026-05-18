@@ -65,6 +65,10 @@ SCALAR_PATHS: dict[str, str] = {
     "revenue_growth_method": "projections.revenue_growth_method",
     "revenue_y0": "projections.revenue_y0",
     "nwc_y0": "projections.nwc_y0",
+    "gross_profit_y0": "projections.gross_profit_y0",
+    "opex_y0": "projections.opex_y0",
+    "ebitda_y0": "projections.ebitda_y0",
+    "ebit_y0": "projections.ebit_y0",
     # Terminal
     "terminal_method": "terminal.method",
     "terminal_growth_rate": "terminal.growth_rate",

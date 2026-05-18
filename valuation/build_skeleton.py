@@ -94,6 +94,16 @@ SECTIONS: list[Section] = [
               notes="Last reported full-year revenue; cascades into Projections"),
         Param("nwc_y0", "Net working capital (Y0)", "currency",
               notes="Audited Y0 NWC; required for Y1 ΔNWC computation"),
+        # Eric 2026-05-18 — audited Y0 absolutes for the Projections sheet's
+        # Y0 column. opex_y0 stored negative to match the cascade sign convention.
+        Param("gross_profit_y0", "Gross profit (Y0)", "currency",
+              notes="Audited Y0 gross profit; populates Projections!C12"),
+        Param("opex_y0", "Operating expenses (Y0)", "currency",
+              notes="Audited Y0 opex (negative); populates Projections!C14"),
+        Param("ebitda_y0", "EBITDA (Y0)", "currency",
+              notes="Audited Y0 EBITDA; populates Projections!C15"),
+        Param("ebit_y0", "EBIT (Y0)", "currency",
+              notes="Audited Y0 EBIT; populates Projections!C18"),
         *vec("revenue_growth", "Revenue growth", "percentage"),
         *vec("gross_margin", "Gross margin", "percentage"),
         *vec("opex_pct_revenue", "Opex % of revenue", "percentage"),
@@ -522,6 +532,16 @@ def build_projections_formulas(ws):
     lrow(R_DEP, "Depreciation & amortization", "(currency × unit)")
     lrow(R_EBIT, "EBIT", "(currency × unit)")
     lrow(R_EBITM, "EBIT margin", "%")
+    # Y0 column — read audited absolutes from Inputs named ranges. IFERROR
+    # blanks the cell when the named range hasn't been populated yet (so the
+    # template still renders for partial inputs).
+    ws[f"C{R_GP}"] = "=IFERROR(gross_profit_y0,\"\")"
+    ws[f"C{R_GM}"] = "=IFERROR(gross_profit_y0/revenue_y0,\"\")"
+    ws[f"C{R_OPEX}"] = "=IFERROR(opex_y0,\"\")"
+    ws[f"C{R_EBITDA}"] = "=IFERROR(ebitda_y0,\"\")"
+    ws[f"C{R_EBITDAM}"] = "=IFERROR(ebitda_y0/revenue_y0,\"\")"
+    ws[f"C{R_EBIT}"] = "=IFERROR(ebit_y0,\"\")"
+    ws[f"C{R_EBITM}"] = "=IFERROR(ebit_y0/revenue_y0,\"\")"
     for y in range(1, PROJECTION_YEARS + 1):
         cur = col_for_year(y)
         ws[f"{cur}{R_GP}"] = f"={cur}{R_REV}*gross_margin_y{y}"
