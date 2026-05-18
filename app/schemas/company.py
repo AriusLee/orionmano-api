@@ -1,4 +1,5 @@
 from pydantic import BaseModel, computed_field
+from typing import Any
 from uuid import UUID
 from datetime import datetime, date
 
@@ -18,6 +19,7 @@ class CompanyCreate(BaseModel):
     target_exchange: str | None = None
     target_valuation: float | None = None
     valuation_date: date | None = None
+    pinned_overrides: dict[str, Any] | None = None
 
 
 class CompanyUpdate(BaseModel):
@@ -35,6 +37,7 @@ class CompanyUpdate(BaseModel):
     target_exchange: str | None = None
     target_valuation: float | None = None
     valuation_date: date | None = None
+    pinned_overrides: dict[str, Any] | None = None
     report_tier: str | None = None
 
 
@@ -56,6 +59,7 @@ class CompanyResponse(BaseModel):
     target_exchange: str | None = None
     target_valuation: float | None = None
     valuation_date: date | None = None
+    pinned_overrides: dict[str, Any] | None = None
     report_tier: str = "standard"
     logo_path: str | None = None
     created_at: datetime

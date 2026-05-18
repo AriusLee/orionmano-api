@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime, date
+from typing import Any
 
 from sqlalchemy import Float, String, Text, Date, DateTime, ForeignKey, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -28,6 +29,7 @@ class Company(Base):
     target_exchange: Mapped[str | None] = mapped_column(String(50))
     target_valuation: Mapped[float | None] = mapped_column(Float)  # saved default for valuation runs; same currency × unit as the workpaper
     valuation_date: Mapped[date | None] = mapped_column(Date)  # saved default for valuation runs; per-run override still allowed on the page
+    pinned_overrides: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=dict)  # Eric 2026-05-17 — analyst-fixed params the LLM must preserve verbatim and that calibration must skip when scaling to target
     report_tier: Mapped[str] = mapped_column(String(20), default="standard")  # essential, standard, premium
     logo_path: Mapped[str | None] = mapped_column(String(500))
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))

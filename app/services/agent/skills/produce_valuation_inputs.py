@@ -73,7 +73,107 @@ def _implied_dcf_ev_actual(payload: dict) -> float | None:
         return None
 
 
-def _calibrate_to_target(payload: dict, target_actual: float) -> float | None:
+# ─── Pinned overrides (Eric 2026-05-17) ──────────────────────────────────────
+# Whitelist of analyst-pinnable parameters. Each entry maps a stable key to
+# (dotted_path_in_payload, value_type). Type is informational — the frontend
+# uses it to pick the right input widget; the backend coerces on apply.
+PINNABLE_PARAMS: dict[str, tuple[str, str]] = {
+    "revenue_y0":                 ("projections.revenue_y0",                    "currency"),
+    "revenue_growth_y1":          ("projections.revenue_growth.0",              "percent"),
+    "revenue_growth_y2":          ("projections.revenue_growth.1",              "percent"),
+    "revenue_growth_y3":          ("projections.revenue_growth.2",              "percent"),
+    "revenue_growth_y4":          ("projections.revenue_growth.3",              "percent"),
+    "revenue_growth_y5":          ("projections.revenue_growth.4",              "percent"),
+    "gross_margin_y1":            ("projections.gross_margin.0",                "percent"),
+    "gross_margin_y2":            ("projections.gross_margin.1",                "percent"),
+    "gross_margin_y3":            ("projections.gross_margin.2",                "percent"),
+    "gross_margin_y4":            ("projections.gross_margin.3",                "percent"),
+    "gross_margin_y5":            ("projections.gross_margin.4",                "percent"),
+    "terminal_growth_rate":       ("terminal.growth_rate",                      "percent"),
+    "risk_free_rate":             ("wacc.shared.risk_free_rate",                "percent"),
+    "equity_risk_premium":        ("wacc.shared.equity_risk_premium",           "percent"),
+    "country_risk_premium":       ("wacc.shared.country_risk_premium",          "percent"),
+    "unlevered_beta_pm":          ("wacc.per_management.unlevered_beta",        "number"),
+    "size_premium_pm":            ("wacc.per_management.size_premium",          "percent"),
+    "specific_risk_premium_pm":   ("wacc.per_management.specific_risk_premium", "percent"),
+    "pretax_cost_of_debt_pm":     ("wacc.per_management.pretax_cost_of_debt",   "percent"),
+    "dlom_pct":                   ("bridge.dlom_pct",                           "percent"),
+    "dloc_pct":                   ("bridge.dloc_pct",                           "percent"),
+    "shares_outstanding":         ("bridge.shares_outstanding",                 "number"),
+    "shares_outstanding_diluted": ("bridge.shares_outstanding_diluted",         "number"),
+}
+
+
+def _apply_pinned_overrides(payload: dict, pinned: dict | None) -> list[str]:
+    """Authoritatively write each pinned key into the payload, navigating the
+    dotted path. Returns the list of applied keys (so calibration can skip
+    them). Silently drops keys that aren't in PINNABLE_PARAMS."""
+    if not pinned or not isinstance(pinned, dict):
+        return []
+    applied: list[str] = []
+    for key, raw_value in pinned.items():
+        spec = PINNABLE_PARAMS.get(key)
+        if not spec:
+            continue
+        path, _type = spec
+        try:
+            value = float(raw_value) if raw_value is not None else None
+        except (TypeError, ValueError):
+            continue
+        if value is None:
+            continue
+        parts = path.split(".")
+        node: Any = payload
+        # Walk to the parent of the leaf
+        for i, p in enumerate(parts[:-1]):
+            next_p = parts[i + 1]
+            next_is_index = next_p.isdigit()
+            if p.isdigit():
+                idx = int(p)
+                if not isinstance(node, list):
+                    break  # type mismatch — skip
+                while len(node) <= idx:
+                    node.append([] if next_is_index else {})
+                node = node[idx]
+            else:
+                if not isinstance(node, dict):
+                    break
+                node = node.setdefault(p, [] if next_is_index else {})
+        else:
+            # Set the leaf
+            last = parts[-1]
+            if last.isdigit():
+                idx = int(last)
+                if isinstance(node, list):
+                    while len(node) <= idx:
+                        node.append(None)
+                    node[idx] = value
+                    applied.append(key)
+            else:
+                if isinstance(node, dict):
+                    node[last] = value
+                    applied.append(key)
+    return applied
+
+
+def _pinned_array_indices(pinned_keys: list[str], array_key: str) -> set[int]:
+    """Given a list of applied pinned keys and a target array name (e.g.
+    'revenue_growth' or 'gross_margin'), return the set of indices that are
+    pinned and must NOT be scaled by calibration."""
+    indices: set[int] = set()
+    for key in pinned_keys:
+        spec = PINNABLE_PARAMS.get(key)
+        if not spec:
+            continue
+        path = spec[0]
+        # Match path like "projections.revenue_growth.K" or "projections.gross_margin.K"
+        parts = path.split(".")
+        if len(parts) == 3 and parts[1] == array_key and parts[2].isdigit():
+            indices.add(int(parts[2]))
+    return indices
+
+
+def _calibrate_to_target(payload: dict, target_actual: float, pinned_keys: list[str] | None = None) -> float | None:
     """Deterministic safety net: when the LLM goal-seek loop fails to land DCF
     EV within tolerance of target, binary-search a uniform multiplier that
     scales BOTH revenue_growth AND gross_margin (capped at sane ceilings) so
@@ -104,12 +204,25 @@ def _calibrate_to_target(payload: dict, target_actual: float) -> float | None:
     GROWTH_CAP = 1.50  # per-period growth cap (sanity)
     GM_CAP = 0.85       # per-period GM cap (sanity)
 
+    # Indices that the analyst pinned — skip these when scaling so the pinned
+    # value stays exactly as set, regardless of calibration multiplier.
+    pinned_growth_idx = _pinned_array_indices(pinned_keys or [], "revenue_growth")
+    pinned_gm_idx = _pinned_array_indices(pinned_keys or [], "gross_margin")
+
     def apply(multiplier: float) -> None:
-        proj["revenue_growth"] = [min(g * multiplier, GROWTH_CAP) for g in base_g]
+        proj["revenue_growth"] = [
+            base_g[i] if i in pinned_growth_idx else min(base_g[i] * multiplier, GROWTH_CAP)
+            for i in range(len(base_g))
+        ]
         if base_m is not None:
-            proj["gross_margin"] = [min(m * multiplier, GM_CAP) for m in base_m]
+            proj["gross_margin"] = [
+                base_m[i] if i in pinned_gm_idx else min(base_m[i] * multiplier, GM_CAP)
+                for i in range(len(base_m))
+            ]
         # Mirror to segments (top-level array is the cascade base when no
         # segments; when segments are present, their arrays drive the totals).
+        # Segments inherit the same scaling but DON'T inherit pin protection —
+        # pinned overrides are scoped to top-level arrays only for now.
         segs = proj.get("segments") or []
         for s in segs:
             if not isinstance(s, dict):
@@ -421,6 +534,35 @@ class ProduceValuationInputsSkill(Skill):
             else target_valuation_company
         )
 
+        # Eric 2026-05-17 — analyst-pinned overrides from Company record.
+        # Filtered to known keys only; values coerced to float in _apply_pinned_overrides.
+        pinned_overrides_raw = getattr(company_obj, "pinned_overrides", None) or {}
+        pinned_overrides: dict[str, float] = {}
+        if isinstance(pinned_overrides_raw, dict):
+            for k, v in pinned_overrides_raw.items():
+                if k in PINNABLE_PARAMS and v is not None:
+                    try:
+                        pinned_overrides[k] = float(v)
+                    except (TypeError, ValueError):
+                        pass
+
+        if pinned_overrides:
+            # Tell the LLM these are non-negotiable so it doesn't waste effort
+            # trying to re-derive them from documents or convergence pressure.
+            lines = []
+            for k, v in pinned_overrides.items():
+                path, type_ = PINNABLE_PARAMS[k]
+                display = f"{v*100:.2f}%" if type_ == "percent" else f"{v:,.4f}"
+                lines.append(f"  - {path} = {display}  (key: {k})")
+            company_context = (
+                "ANALYST-PINNED PARAMETERS (must preserve these exact values; "
+                "DO NOT adjust based on documents, comps, or goal-seek pressure; "
+                "tune all OTHER assumptions around these pivots):\n"
+                + "\n".join(lines)
+                + "\n\n"
+                + company_context
+            )
+
         if target_valuation_run is not None:
             company_context = (
                 f"User-supplied target valuation for this run: {target_valuation_run} "
@@ -573,6 +715,12 @@ class ProduceValuationInputsSkill(Skill):
                     "notes": "Auto-derived by the pipeline; re-levered to target capital structure inside the DCF.",
                 }
 
+            # Eric 2026-05-17 — apply analyst-pinned overrides AFTER the
+            # derived-beta step so a pinned unlevered_beta_pm wins over the
+            # comp-derived value. This is the deterministic "preserve these
+            # exact values run-to-run" guarantee.
+            applied_pinned_keys: list[str] = _apply_pinned_overrides(payload, pinned_overrides)
+
             last_payload = payload
 
             model, error = validate_inputs(payload)
@@ -638,9 +786,15 @@ class ProduceValuationInputsSkill(Skill):
                 and abs(last_implied_ev - float(target_valuation_effective)) / float(target_valuation_effective) > EV_CONVERGENCE_TOLERANCE
             ):
                 calibration_applied = _calibrate_to_target(
-                    payload, float(target_valuation_effective)
+                    payload, float(target_valuation_effective),
+                    pinned_keys=applied_pinned_keys,
                 )
                 if calibration_applied is not None:
+                    # Defensive re-apply: calibration is supposed to skip
+                    # pinned indices but a buggy edit shouldn't be able to
+                    # clobber an analyst pin silently.
+                    if pinned_overrides:
+                        _apply_pinned_overrides(payload, pinned_overrides)
                     # Recompute implied EV with calibrated growth array
                     last_implied_ev = _implied_dcf_ev_actual(payload)
                     # Note the calibration in sources so the audit trail is honest

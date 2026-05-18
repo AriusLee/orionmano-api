@@ -38,6 +38,7 @@ _COLUMN_UPGRADES: list[str] = [
     "ALTER TABLE reports ADD COLUMN IF NOT EXISTS lint_findings JSONB",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS target_valuation DOUBLE PRECISION",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS valuation_date DATE",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS pinned_overrides JSONB DEFAULT '{}'::jsonb",
     "ALTER TABLE reports ADD COLUMN IF NOT EXISTS citation_health JSONB",
 ]
 
