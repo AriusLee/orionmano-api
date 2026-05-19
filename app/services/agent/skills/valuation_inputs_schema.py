@@ -94,6 +94,9 @@ class Projections(_Permissive):
     opex_y0: float | None = None  # negative
     ebitda_y0: float | None = None
     ebit_y0: float | None = None
+    # Eric 2026-05-19 #1 — tax + net income Y0 absolutes (negative for tax)
+    tax_y0: float | None = None  # negative
+    net_income_y0: float | None = None
     revenue_growth: list[float | None]
     gross_margin: list[float | None]
     opex_pct_revenue: list[float | None]

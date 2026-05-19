@@ -305,7 +305,11 @@ def _coco_stats(inputs: dict) -> dict[str, dict[str, float]]:
 
     Filters: (1) include flag, (2) exchange match against
     engagement.exchange_platform when both are populated (Eric 2026-05-08 item 5
-    — comps listed on a different exchange must not pollute the multiples).
+    — comps listed on a different exchange must not pollute the multiples),
+    (3) Eric 2026-05-19 #6 — IQR outlier removal: values outside
+    [Q1 − 1.5·IQR, Q3 + 1.5·IQR] are dropped from the included population
+    before recomputing the final stats so a single distortive comp doesn't
+    pull the median.
     Comps with no exchange field are kept (backward-compat for older data;
     new LLM-produced data always carries the exchange field)."""
     cocos = _g(inputs, "cocos", default=[]) or []
@@ -316,7 +320,7 @@ def _coco_stats(inputs: dict) -> dict[str, dict[str, float]]:
                "ev_ebitda_ntm", "pe_ltm", "pe_ntm"]
     out: dict[str, dict[str, float]] = {}
     for m in metrics:
-        vals: list[float] = []
+        raw_vals: list[float] = []
         for i in range(n):
             if not cocos[i].get("include", True):
                 continue
@@ -328,14 +332,30 @@ def _coco_stats(inputs: dict) -> dict[str, dict[str, float]]:
             if v is None:
                 continue
             try:
-                vals.append(float(v))
+                raw_vals.append(float(v))
             except (TypeError, ValueError):
                 continue
+        # IQR outlier removal — need at least 4 values to compute meaningful
+        # Q1/Q3. With fewer, skip the filter (otherwise we'd over-trim a
+        # sparse population).
+        outlier_count = 0
+        if len(raw_vals) >= 4:
+            q1 = _percentile(raw_vals, 0.25)
+            q3 = _percentile(raw_vals, 0.75)
+            iqr = q3 - q1
+            lo_bound = q1 - 1.5 * iqr
+            hi_bound = q3 + 1.5 * iqr
+            cleaned = [v for v in raw_vals if lo_bound <= v <= hi_bound]
+            outlier_count = len(raw_vals) - len(cleaned)
+            vals = cleaned
+        else:
+            vals = raw_vals
         out[m] = {
             "q1": _percentile(vals, 0.25),
             "median": _percentile(vals, 0.50),
             "q3": _percentile(vals, 0.75),
             "n": float(len(vals)),
+            "outliers_removed": float(outlier_count),
         }
     return out
 

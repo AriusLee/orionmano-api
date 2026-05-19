@@ -83,6 +83,8 @@ PINNABLE_PARAMS: dict[str, tuple[str, str]] = {
     "opex_y0":                    ("projections.opex_y0",                       "currency"),
     "ebitda_y0":                  ("projections.ebitda_y0",                     "currency"),
     "ebit_y0":                    ("projections.ebit_y0",                       "currency"),
+    "tax_y0":                     ("projections.tax_y0",                        "currency"),
+    "net_income_y0":              ("projections.net_income_y0",                 "currency"),
     "revenue_growth_y1":          ("projections.revenue_growth.0",              "percent"),
     "revenue_growth_y2":          ("projections.revenue_growth.1",              "percent"),
     "revenue_growth_y3":          ("projections.revenue_growth.2",              "percent"),
@@ -393,6 +395,23 @@ After you emit the JSON, the pipeline will compute the DCF per-management EV and
 
 {context if context else '(No extracted documents available — use sensible defaults consistent with US/Nasdaq IPO advisory practice for a generic Asia-Pacific tech target.)'}
 
+# Document priority (Eric 2026-05-19 #2)
+
+When extracting financial data from the company context above, weigh document categories in this order — earlier-listed sources override later ones if they disagree:
+
+**Primary (must extract from when present):**
+1. `audit_report` — most recent audited financial statements. Trumps everything for revenue_y0, historical_fs.*, gross_profit_y0, opex_y0, ebitda_y0, ebit_y0, tax_y0, net_income_y0, nwc_y0.
+2. `management_accounts` — interim / LTM accounts that bridge the audit to today. Use ONLY for periods after the audit cutoff or when audit is missing.
+3. `projections` / Business Development Plan — drives revenue_growth, gross_margin progression, opex_pct_revenue, capex/D&A intensity. Anchor every Y1-Y5 array entry to a specific driver cited in the BDP.
+
+**Secondary (strengthens defensibility):**
+4. `cap_table` — drives bridge.shares_outstanding, shares_outstanding_diluted, equity_interest_pct.
+5. `shareholder_agreement` — affects bridge.dlom_pct (lockup / transfer restrictions) and dloc_pct (control / voting rights).
+6. `tax_return` — sanity-checks tax.rate_high and the effective_rate_override.
+7. `board_minutes` — context for terminal_growth_rate, specific_risk_premium (governance maturity).
+
+If a primary doc is missing, populate from secondaries + market data, and flag the gap in the relevant `sources.<id>.notes` field so the analyst sees what was inferred vs audited.
+
 # Task
 
 Produce a JSON object that conforms to the schema document above. Use the company context to fill as many fields as possible. For fields you cannot determine from the context, use sensible defaults consistent with US/Nasdaq IPO advisory practice.{goal_seek_block}
@@ -403,11 +422,22 @@ Every growth rate, margin, WACC component, terminal-value parameter, and comp-se
 
 - **Revenue growth & gross margin:** anchor to (a) the target's stated BDP / management projections if present in the documents, (b) recent comparable-company growth rates as a ceiling reality-check, and (c) industry-standard maturity curves (high-growth in early years, decaying toward terminal). If the BDP is absent, infer from historical FS trajectory + segment commentary. **When goal-seek mode is active, lean toward the upper end of the defensible range; when no target is set, lean toward the anchor.**
 - **WACC inputs (risk_free, ERP, country risk, beta):** anchor risk_free_rate to a current sovereign-yield observation (cite the date), ERP to Damodaran's most recent implied ERP, country risk to Damodaran's country table, and unlevered_beta to the median of the comps marked `selected_for_wacc=true` (not a generic industry average).
+- **WACC self-review (Eric 2026-05-19 #7) — REQUIRED:** after composing the WACC build, take an explicit second pass on `specific_risk_premium` (per-mgmt and independent). For BOTH scenarios, populate `sources.specific_risk_premium_per_mgmt.rationale` and `sources.specific_risk_premium_indep.rationale` with 2–3 sentences that EXPLICITLY assess: (i) **customer / supplier concentration** — single-customer revenue >30% or single-supplier sourcing >40% warrants +50–100bps; (ii) **governance maturity** — pre-IPO, recently-restated, or family-controlled targets carry +50–150bps; (iii) **jurisdictional risk above country premium** — operating-in-single-country, regulatory-license dependency, or sanctions-exposed targets warrant +25–100bps; (iv) **scale / data quality** — sub-$50M revenue or partial audit history warrants +25–75bps. Justify the final number you chose against this checklist. If you tightened the premium below your comp set's median, the rationale MUST identify which evidence (e.g. "long-dated supply contracts disclosed in note 14") supports the tightening. This is the analyst-facing review that defends the WACC; do not skip it.
 - **Terminal growth:** must be ≤ long-run nominal GDP of the target's primary market AND consistent with industry-maturity expectations. Anything >3.5% for a developed-market company is hard to defend.
 - **Margin progression:** if you project gross_margin or EBITDA-margin expansion, the trajectory must be justified by operating-leverage evidence in the documents (segment-mix shift, scale, automation). Do not assume universal margin expansion absent evidence.
 - **Comp multiples:** the median comp multiple is only defensible if the comp set genuinely matches the target on size, growth, margin profile, and geography. If the target is sub-scale relative to the comps, apply a size discount in `size_premium`.
 
 Every assumption above must have a `sources.<id>` entry whose `source` + `detail` cite the EXACT evidence (FS page, Damodaran retrieval date, BDP slide number, comp filing). Generic "Manual" sourcing is only acceptable when no document evidence exists AND the assumption is a regulator-standard convention.
+
+# Market data freshness (Eric 2026-05-19 #8) — REQUIRED
+
+Every **market-driven** parameter — `risk_free_rate`, `equity_risk_premium`, `country_risk_premium`, every `coco_multiples` entry, every `precedents.ev_*` figure, every comp `raw_beta` and `market_cap_usd_mm` — MUST carry an explicit retrieval date in its source's `detail` field. Acceptable formats: ISO date `"retrieved 2024-12-31"` or month-year `"as at Dec 2024"`. The date should be the most recent observation you can defensibly cite, ideally within 90 days of the engagement's `valuation_date`. For each entry:
+
+- If retrieval date is **within 90 days of valuation_date** → no caveat needed; the data is fresh.
+- If retrieval date is **90–180 days old** → append `"; consider refreshing before client delivery"` to the source's `notes`.
+- If retrieval date is **>180 days stale** → append `"STALE: refresh required; current value may differ"` to `notes` and DO NOT use it as a goal-seek anchor.
+
+This stays consistent with the dashboard/xlsx audit trail and gives the analyst a clear refresh trigger before they sign the report.
 
 # Required completeness
 
@@ -416,14 +446,14 @@ Every section listed below MUST be present in the output:
 - `engagement` — all 13 fields (company_name, company_country, company_industry_us, company_industry_global, valuation_date, target_valuation, exchange_platform, report_purpose, accounting_standard, engagement_team{{partner,manager,department}}, client_name). `target_valuation` is the client's stated target valuation in **ACTUAL currency units** — NOT scaled by `currency.unit`. A $1B target is written as `1000000000`, NOT `1000000` (even when the workpaper unit is `'000`). Leave null if not provided by the user. `exchange_platform` is the exchange the comparable-company pool must be drawn from (e.g. "NASDAQ", "NYSE"); default to "NASDAQ" if not specified — comps not listed on this exchange must be excluded.
 - `currency` — primary, unit, alt, fx_rate_alt
 - `tax` — jurisdiction, type ("flat"/"two_tier"/"progressive"), rate_low, rate_high, threshold, effective_rate_override
-- `projections` — years (typically 5), revenue_growth_method, **revenue_y0** (last reported full-year revenue, in the same currency × unit as the workpaper), **nwc_y0** (audited Y0 NWC = current assets ex-cash − current liabilities ex-debt), and Y1-Y5 arrays for revenue_growth, gross_margin, opex_pct_revenue, capex_pct_revenue, dep_pct_revenue, nwc_pct_sales (all 6 arrays, each length-5). **revenue_y0 is the cascade base — without it the workpaper math is dead.** ALSO populate **gross_profit_y0**, **opex_y0** (negative), **ebitda_y0**, **ebit_y0** from the most recent full-year audited income statement (`historical_fs.gross_profit[-1]`, `historical_fs.opex_total[-1]`, `historical_fs.ebitda[-1]`, `historical_fs.ebit[-1]`) so the Projections sheet's Y0 column shows real audited values, not blanks. Eric 2026-05-18.
+- `projections` — years (typically 5), revenue_growth_method, **revenue_y0** (last reported full-year revenue, in the same currency × unit as the workpaper), **nwc_y0** (audited Y0 NWC = current assets ex-cash − current liabilities ex-debt), and Y1-Y5 arrays for revenue_growth, gross_margin, opex_pct_revenue, capex_pct_revenue, dep_pct_revenue, nwc_pct_sales (all 6 arrays, each length-5). **revenue_y0 is the cascade base — without it the workpaper math is dead.** ALSO populate **gross_profit_y0**, **opex_y0** (negative), **ebitda_y0**, **ebit_y0**, **tax_y0** (negative), **net_income_y0** from the most recent full-year audited income statement (`historical_fs.gross_profit[-1]`, `historical_fs.opex_total[-1]`, `historical_fs.ebitda[-1]`, `historical_fs.ebit[-1]`, `historical_fs.tax_expense[-1]`, `historical_fs.net_income[-1]`) so the Projections sheet's Y0 column shows real audited values, not blanks. Eric 2026-05-18 / 2026-05-19 #1.
 - `projections.segments` (OPTIONAL but RECOMMENDED when the target has distinct business lines) — array of segments, each `{{name, start_year, revenue_y0 (if start_year=0) or initial_revenue (if start_year>0), revenue_growth[], gross_margin[] OR cogs_pct[]}}`. When provided, total revenue & gross profit at each year are the SUM across all active segments; the top-level revenue_growth + gross_margin arrays are then IGNORED for the cascade (still emit them for back-compat, but make the segment numbers the authoritative breakdown). Segments with `start_year > 0` model new revenue streams launched mid-projection (Eric 2026-05-08 item 2: "user can add new revenue streams with corresponding COGS during the projection period"). The sum of all segment revenue_y0 (for start_year=0 segments) MUST equal the top-level revenue_y0 — otherwise the workpaper Y0 base mismatches the audited FS.
 - `historical_fs` — 5-year arrays (FY-5..FY-1, oldest first; pad with null where data is missing) for: revenue, cogs, gross_profit, opex_total, sga, rnd, ebitda, da, ebit, interest_expense, other_income_expense, profit_before_tax, tax_expense, net_income, cash, accounts_receivable, inventory, prepaid_expenses, total_current_assets, ppe, intangibles, other_lt_assets, total_assets, accounts_payable, short_term_debt, other_current_liabilities, total_current_liabilities, long_term_debt, other_lt_liabilities, total_liabilities, total_equity. Pull from audited financial statements when available — fewer than 5 years OK; pad missing years with `null` (NOT 0).
 - `terminal` — method ("gordon_growth"), growth_rate, exit_multiple_type, exit_multiple_value
 - `wacc.shared` — risk_free_rate, risk_free_rate_source, equity_risk_premium, country_risk_premium
 - `wacc.per_management` — unlevered_beta, target_debt_to_equity, size_premium, specific_risk_premium, pretax_cost_of_debt, target_debt_weight, target_equity_weight
 - `wacc.independent` — same fields, slightly more conservative (higher beta, higher specific risk, higher D/E)
-- `cocos` — array of 0-30 comparable companies with (tier, include, company, ticker, exchange, business_description, selected_for_wacc, country, accounting, market_cap_usd_mm, d_to_e, raw_beta, tax_rate). **Exchange filter rule:** every comp's `exchange` field MUST equal `engagement.exchange_platform` — comps listed on other exchanges are excluded by the pipeline. **Selection rule:** screen ~20 comps total; mark 5–6 with `selected_for_wacc=true` (the most directly comparable ones, used for the WACC beta build); the remainder are reference/peer comps with `selected_for_wacc=false`. **business_description** is a one-line description of what the comp does (e.g. "Document-oriented NoSQL database"). **Tier 3 size cap rule:** comparables (especially Tier 3) must be within ~10× the target's enterprise value. Do NOT include megacap reference comps that are 100×+ the target's size — they distort the median multiples. If the target's market cap is unclear, use revenue × industry-typical EV/Sales as a proxy.
+- `cocos` — array of 0-30 comparable companies with (tier, include, company, ticker, exchange, business_description, selected_for_wacc, country, accounting, market_cap_usd_mm, d_to_e, raw_beta, tax_rate). **Exchange filter rule:** every comp's `exchange` field MUST equal `engagement.exchange_platform` — comps listed on other exchanges are excluded by the pipeline. **Selection rule (Eric 2026-05-19 #3 — TIGHTENED):** screen ~15–20 comps total; **mark EXACTLY 5–6 (no fewer, no more) with `selected_for_wacc=true`** — these are the "highly relevant" set that drives the WACC β. Every selected_for_wacc comp MUST satisfy ALL of: (a) **size match** — market cap within ~10× of the target's expected market cap (target estimated as Y1 revenue × industry-typical EV/Sales); (b) **sub-industry match** — same Damodaran industry classification or one tier away; (c) **geography proximity** — same region or close (HK/SG/MY/AU peers preferred over US for an APAC trader; US peers OK if no APAC equivalents exist on the target exchange); (d) **margin profile** — gross-margin and EBITDA-margin within ~50% relative of the target's own audited profile (a low-margin trading co. should NOT pick a high-margin SaaS comp). Reference/peer comps (`selected_for_wacc=false`) populate the broader 15–20-comp pool used in market-multiple ranges. **business_description** is a one-line description of what the comp does (e.g. "Document-oriented NoSQL database"). **Outlier check (Eric 2026-05-19 #6):** before finalising the multiples, sanity-check each comp's EV/Sales, EV/EBITDA, P/E against the cluster. If a comp's multiple is more than ~3× the visual median of the rest, mark its `include=false` and append " — multiple outlier, excluded" to its `business_description`. The Python summary additionally applies an IQR-based outlier filter (drops values outside [Q1 − 1.5·IQR, Q3 + 1.5·IQR]) so the dashboard medians are clean even if the analyst leaves include=true. **Tier 3 size cap rule:** comparables (especially Tier 3) must be within ~10× the target's enterprise value. Do NOT include megacap reference comps that are 100×+ the target's size — they distort the median multiples. If the target's market cap is unclear, use revenue × industry-typical EV/Sales as a proxy.
 - `coco_multiples` — array same length and order as `cocos`, each entry `{{ev_sales_ltm, ev_sales_ntm, ev_ebitda_ltm, ev_ebitda_ntm, pe_ltm, pe_ntm}}`. Provide market-observed trading multiples for each comparable. Use null where data is unavailable (e.g. negative-EBITDA companies for EV/EBITDA). **Without these, the entire Comps + Football Field cascade is dead.**
 - `coco_margins` — array same length as `cocos`, each `{{gross, ebit, net}}` (decimals; -0.10 = -10%)
 - `coco_ratios` — array same length as `cocos`, each `{{roe, roa, d_to_e, current_ratio}}`
@@ -610,6 +640,24 @@ class ProduceValuationInputsSkill(Skill):
                 "DO NOT adjust based on documents, comps, or goal-seek pressure; "
                 "tune all OTHER assumptions around these pivots):\n"
                 + "\n".join(lines)
+                + "\n\n"
+                + company_context
+            )
+
+        # Eric 2026-05-19 #9 — analyst-supplied Business Development Plan.
+        # Treated as authoritative narrative context for revenue/growth/margin
+        # justification, anchoring the projection cascade against the BDP's
+        # specific drivers (new product launches, geographic expansion, signed
+        # contracts, capex programs). Injected ABOVE the document context so
+        # the LLM weighs it as primary evidence, not commentary.
+        bdp_raw = getattr(company_obj, "business_development_plan", None)
+        if isinstance(bdp_raw, str) and bdp_raw.strip():
+            company_context = (
+                "ANALYST-SUPPLIED BUSINESS DEVELOPMENT PLAN (authoritative; "
+                "use as primary evidence for revenue / growth / margin "
+                "assumptions — every projection lever you choose MUST be "
+                "traceable to a specific driver in this plan):\n"
+                + bdp_raw.strip()
                 + "\n\n"
                 + company_context
             )

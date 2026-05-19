@@ -104,6 +104,11 @@ SECTIONS: list[Section] = [
               notes="Audited Y0 EBITDA; populates Projections!C15"),
         Param("ebit_y0", "EBIT (Y0)", "currency",
               notes="Audited Y0 EBIT; populates Projections!C18"),
+        # Eric 2026-05-19 #1 — tax + net income Y0 absolutes
+        Param("tax_y0", "Tax (Y0)", "currency",
+              notes="Audited Y0 tax expense (negative); populates Projections!C22"),
+        Param("net_income_y0", "Net income (Y0)", "currency",
+              notes="Audited Y0 net income; populates Projections!C23"),
         *vec("revenue_growth", "Revenue growth", "percentage"),
         *vec("gross_margin", "Gross margin", "percentage"),
         *vec("opex_pct_revenue", "Opex % of revenue", "percentage"),
@@ -542,6 +547,9 @@ def build_projections_formulas(ws):
     ws[f"C{R_EBITDAM}"] = "=IFERROR(ebitda_y0/revenue_y0,\"\")"
     ws[f"C{R_EBIT}"] = "=IFERROR(ebit_y0,\"\")"
     ws[f"C{R_EBITM}"] = "=IFERROR(ebit_y0/revenue_y0,\"\")"
+    # Eric 2026-05-19 #1 — Y0 Tax + Net income on rows 22 / 23
+    ws["C22"] = "=IFERROR(tax_y0,\"\")"
+    ws["C23"] = "=IFERROR(net_income_y0,\"\")"
     for y in range(1, PROJECTION_YEARS + 1):
         cur = col_for_year(y)
         ws[f"{cur}{R_GP}"] = f"={cur}{R_REV}*gross_margin_y{y}"

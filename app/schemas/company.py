@@ -21,6 +21,7 @@ class CompanyCreate(BaseModel):
     valuation_date: date | None = None
     pinned_overrides: dict[str, Any] | None = None
     pinned_cocos: dict[str, Any] | None = None
+    business_development_plan: str | None = None
 
 
 class CompanyUpdate(BaseModel):
@@ -40,6 +41,7 @@ class CompanyUpdate(BaseModel):
     valuation_date: date | None = None
     pinned_overrides: dict[str, Any] | None = None
     pinned_cocos: dict[str, Any] | None = None
+    business_development_plan: str | None = None
     report_tier: str | None = None
 
 
@@ -63,6 +65,7 @@ class CompanyResponse(BaseModel):
     valuation_date: date | None = None
     pinned_overrides: dict[str, Any] | None = None
     pinned_cocos: dict[str, Any] | None = None
+    business_development_plan: str | None = None
     report_tier: str = "standard"
     logo_path: str | None = None
     created_at: datetime
