@@ -1,6 +1,7 @@
 import asyncio
 import os
 import json
+import re
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -246,6 +247,40 @@ def _get_sections(report_type: str, tier: str) -> list[tuple[str, str]]:
     if tier in type_sections:
         return type_sections[tier]
     return type_sections.get("standard", [])
+
+
+_DUP_HEADING_PATTERN = re.compile(
+    r"^\s*#{1,6}\s+(?:\d+(?:\.\d+)*\.?\s+)?(.+?)\s*$",
+    re.MULTILINE,
+)
+
+
+def _strip_duplicate_section_heading(content: str, section_title: str) -> str:
+    """Drop a leading markdown heading that duplicates the section title.
+
+    Eric 2026-05-19 — the LLM occasionally prepends a `## N. Title` heading
+    even though the renderer already prints the section title and number
+    above the LLM content. We strip it (case-insensitive, ignoring a leading
+    `N.` numbering prefix that doesn't match the actual section order — that
+    was the root cause of "5. Company & Historical Financials Overview"
+    rendering under the §2 slot).
+
+    Conservative: only strips the FIRST heading line if it's at the top and
+    matches the title. Sub-section headings further down are preserved.
+    """
+    if not content:
+        return content
+    stripped = content.lstrip("\n")
+    # Find the first non-empty line; bail if it's not a heading.
+    first_line, _, rest = stripped.partition("\n")
+    m = _DUP_HEADING_PATTERN.match(first_line)
+    if not m:
+        return content
+    captured = m.group(1).strip().lower()
+    target = section_title.strip().lower()
+    if captured == target or captured.startswith(target) or target.startswith(captured):
+        return rest.lstrip("\n")
+    return content
 
 
 def _load_template(report_type: str) -> str:
@@ -1436,13 +1471,14 @@ async def _generate_gap_parallel(
         section_instruction = GAP_SECTION_INSTRUCTIONS.get(section_key, "")
         content = await generate_text(
             system_prompt=system_prompt,
-            user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble.{gap_user_suffix}\n{section_instruction}',
+            user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble. **DO NOT include the section title as a heading or number it — the renderer already prints the section title and number above your content. For sub-sections, use plain headings without numeric prefixes (e.g. "## Corporate Structure", NOT "## 5.1 Corporate Structure" or "## 2.1 Corporate Structure"). Start directly with sub-section headings or body prose.**{gap_user_suffix}\n{section_instruction}',
             max_tokens=max_tokens,
             use_reasoner=use_reasoner,
             skill="generate_report:gap_pass1",
             company_id=report.company_id,
             report_id=report.id,
         )
+        content = _strip_duplicate_section_heading(content, section_title)
 
         section = ReportSection(
             report_id=report.id,
@@ -1470,13 +1506,14 @@ async def _generate_gap_parallel(
             section_instruction = GAP_SECTION_INSTRUCTIONS.get(section_key, "")
             content = await generate_text(
                 system_prompt=parallel_system_prompt,
-                user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble.{gap_user_suffix}\n{section_instruction}',
+                user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble. **DO NOT include the section title as a heading or number it — the renderer already prints the section title and number above your content. For sub-sections, use plain headings without numeric prefixes (e.g. "## Corporate Structure", NOT "## 5.1 Corporate Structure" or "## 2.1 Corporate Structure"). Start directly with sub-section headings or body prose.**{gap_user_suffix}\n{section_instruction}',
                 max_tokens=max_tokens,
                 use_reasoner=use_reasoner,
                 skill="generate_report:gap_pass2",
                 company_id=report.company_id,
                 report_id=report.id,
             )
+            content = _strip_duplicate_section_heading(content, section_title)
             return ReportSection(
                 report_id=report.id,
                 section_key=section_key,
@@ -1723,13 +1760,19 @@ Tier: {tier.upper()} — {tier_instruction}
 
                 content = await generate_text(
                     system_prompt=system_prompt,
-                    user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble.{gap_user_suffix}\n{section_instruction}',
+                    user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble. **DO NOT include the section title as a heading or number it — the renderer already prints the section title and number above your content. For sub-sections, use plain headings without numeric prefixes (e.g. "## Corporate Structure", NOT "## 5.1 Corporate Structure" or "## 2.1 Corporate Structure"). Start directly with sub-section headings or body prose.**{gap_user_suffix}\n{section_instruction}',
                     max_tokens=max_tokens_per_section,
                     use_reasoner=use_reasoner,
                     skill=f"generate_report:{report_type}",
                     company_id=report.company_id,
                     report_id=report.id,
                 )
+                # Eric 2026-05-19 — safety strip: even with the explicit
+                # "don't repeat the title" instruction, models occasionally
+                # prepend a duplicate "## N. Title" heading. Drop the first
+                # markdown heading line if it matches the current section
+                # title (case-insensitive, ignoring leading "N." numbering).
+                content = _strip_duplicate_section_heading(content, section_title)
 
                 # Industry reports: resolve <cite/> tags into GFM footnotes and
                 # create PublishedArticle stubs for later body generation. We

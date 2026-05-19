@@ -85,6 +85,43 @@ async def delete_report(
     return Response(status_code=204)
 
 
+@router.post("/{report_id}/regenerate", response_model=ReportListResponse)
+async def regenerate_report(
+    company_id: UUID,
+    report_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Re-run report generation against the current workpaper, in place.
+
+    Eric 2026-05-19 — analyst wants to iterate on the written narrative
+    without re-running the producer. This endpoint deletes the existing
+    sections, resets the Report row to pending, and re-kicks the
+    generator background task. The Report row id stays the same so the
+    URL/View Report link remains valid.
+    """
+    result = await db.execute(
+        select(Report).where(Report.id == report_id, Report.company_id == company_id)
+    )
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report.status == "generating":
+        raise HTTPException(
+            status_code=409,
+            detail="Report is already regenerating — wait for the current run to finish.",
+        )
+
+    await db.execute(delete(ReportSection).where(ReportSection.report_id == report_id))
+    report.status = "pending"
+    report.error_message = None
+    report.progress_message = None
+    await db.commit()
+
+    asyncio.create_task(_generate_bg(company_id, report.report_type, user.id, report.id))
+    return report
+
+
 @router.get("/{report_id}", response_model=ReportResponse)
 async def get_report(
     company_id: UUID,
