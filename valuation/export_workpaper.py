@@ -117,6 +117,7 @@ SCALAR_PATHS: dict[str, str] = {
 # Year-vector params: stem -> json dotted path (list)
 YEAR_VECTOR_PATHS: dict[str, str] = {
     "revenue_growth": "projections.revenue_growth",
+    "revenue_growth_primary": "projections.revenue_growth_primary",
     "gross_margin": "projections.gross_margin",
     "opex_pct_revenue": "projections.opex_pct_revenue",
     "capex_pct_revenue": "projections.capex_pct_revenue",

@@ -97,19 +97,23 @@ SECTIONS: list[Section] = [
         # Eric 2026-05-18 — audited Y0 absolutes for the Projections sheet's
         # Y0 column. opex_y0 stored negative to match the cascade sign convention.
         Param("gross_profit_y0", "Gross profit (Y0)", "currency",
-              notes="Audited Y0 gross profit; populates Projections!C12"),
+              notes="Audited Y0 gross profit; populates Projections!C16"),
         Param("opex_y0", "Operating expenses (Y0)", "currency",
-              notes="Audited Y0 opex (negative); populates Projections!C14"),
+              notes="Audited Y0 opex (negative); populates Projections!C18"),
         Param("ebitda_y0", "EBITDA (Y0)", "currency",
-              notes="Audited Y0 EBITDA; populates Projections!C15"),
+              notes="Audited Y0 EBITDA; populates Projections!C19"),
         Param("ebit_y0", "EBIT (Y0)", "currency",
-              notes="Audited Y0 EBIT; populates Projections!C18"),
+              notes="Audited Y0 EBIT; populates Projections!C22"),
         # Eric 2026-05-19 #1 — tax + net income Y0 absolutes
         Param("tax_y0", "Tax (Y0)", "currency",
-              notes="Audited Y0 tax expense (negative); populates Projections!C22"),
+              notes="Audited Y0 tax expense (negative); populates Projections!C26"),
         Param("net_income_y0", "Net income (Y0)", "currency",
-              notes="Audited Y0 net income; populates Projections!C23"),
-        *vec("revenue_growth", "Revenue growth", "percentage"),
+              notes="Audited Y0 net income; populates Projections!C27"),
+        *vec("revenue_growth", "Revenue growth (total)", "percentage"),
+        # Eric 2026-05-19 — conservative primary growth track (~historical
+        # CAGR ±2pp); the gap between total and primary becomes the BDP-
+        # justified "Additional" revenue line on Projections.
+        *vec("revenue_growth_primary", "Revenue growth (primary, conservative)", "percentage"),
         *vec("gross_margin", "Gross margin", "percentage"),
         *vec("opex_pct_revenue", "Opex % of revenue", "percentage"),
         *vec("capex_pct_revenue", "Capex % of revenue", "percentage"),
@@ -513,22 +517,53 @@ def build_projections_formulas(ws):
             ws.cell(row=row, column=2, value=unit).font = SMALL_FONT
 
     # ----- Revenue & growth -----
+    # Eric 2026-05-19 — split revenue into Primary (conservative, ~historical
+    # CAGR) and Additional (BDP-justified stretch). Total = Primary + Additional
+    # and drives every downstream calculation. Primary cascades at
+    # revenue_growth_primary_y{n}; Total cascades at revenue_growth_y{n} (the
+    # calibration target). Additional is computed as Total − Primary, with its
+    # own derived Y/Y growth shown for the analyst.
     section(6, "Revenue & growth")
-    R_REV, R_RG = 8, 9
-    lrow(R_REV, "Revenue", "(currency × unit)")
-    ws.cell(row=R_REV, column=3, value="=revenue_y0")
-    ws.cell(row=R_REV, column=3).border = BORDER
+    R_PRI_REV, R_PRI_RG, R_ADD_REV, R_ADD_RG, R_REV, R_RG = 8, 9, 10, 11, 12, 13
+    lrow(R_PRI_REV, "Revenue - Primary", "(currency × unit)")
+    lrow(R_PRI_RG, "Revenue growth (primary)", "%")
+    lrow(R_ADD_REV, "Revenue - Additional", "(currency × unit)")
+    lrow(R_ADD_RG, "Additional Revenue growth", "%")
+    lrow(R_REV, "Total Revenue", "(currency × unit)")
+    lrow(R_RG, "Revenue growth (total)", "%")
+    # Y0 base — Primary and Total both start at revenue_y0; Additional = 0
+    ws.cell(row=R_PRI_REV, column=3, value="=revenue_y0").border = BORDER
+    ws.cell(row=R_PRI_REV, column=2, value="(from Inputs)").font = SMALL_FONT
+    ws.cell(row=R_REV, column=3, value="=revenue_y0").border = BORDER
     ws.cell(row=R_REV, column=2, value="(from Inputs)").font = SMALL_FONT
+    ws.cell(row=R_ADD_REV, column=3, value=0).font = NORMAL_FONT
     for y in range(1, PROJECTION_YEARS + 1):
         prev = col_for_year(y - 1)
         cur = col_for_year(y)
+        # Primary cascades at conservative rate. ISNUMBER guard falls back to
+        # total growth when the LLM didn't supply revenue_growth_primary (e.g.
+        # legacy inputs JSON without the new field, or empty cell after blank
+        # named-range write).
+        ws[f"{cur}{R_PRI_REV}"] = (
+            f'={prev}{R_PRI_REV}*(1+IF(ISNUMBER(revenue_growth_primary_y{y}),'
+            f'revenue_growth_primary_y{y},revenue_growth_y{y}))'
+        )
+        ws[f"{cur}{R_PRI_RG}"] = (
+            f'=IF(ISNUMBER(revenue_growth_primary_y{y}),'
+            f'revenue_growth_primary_y{y},revenue_growth_y{y})'
+        )
+        # Total cascades at calibrated total rate.
         ws[f"{cur}{R_REV}"] = f"={prev}{R_REV}*(1+revenue_growth_y{y})"
         ws[f"{cur}{R_RG}"] = f"=revenue_growth_y{y}"
-    lrow(R_RG, "Revenue growth", "%")
+        # Additional = Total − Primary (the stretch the BDP must explain).
+        ws[f"{cur}{R_ADD_REV}"] = f"={cur}{R_REV}-{cur}{R_PRI_REV}"
+        # Additional growth — Y/Y of Additional itself. Y1 blanks via IFERROR
+        # because prior Additional = 0 → division by zero.
+        ws[f"{cur}{R_ADD_RG}"] = f'=IFERROR({cur}{R_ADD_REV}/{prev}{R_ADD_REV}-1,"")'
 
     # ----- Profitability -----
-    section(11, "Profitability")
-    R_GP, R_GM, R_OPEX, R_EBITDA, R_EBITDAM, R_DEP, R_EBIT, R_EBITM = 12, 13, 14, 15, 16, 17, 18, 19
+    section(15, "Profitability")
+    R_GP, R_GM, R_OPEX, R_EBITDA, R_EBITDAM, R_DEP, R_EBIT, R_EBITM = 16, 17, 18, 19, 20, 21, 22, 23
     lrow(R_GP, "Gross profit", "(currency × unit)")
     lrow(R_GM, "Gross margin", "%")
     lrow(R_OPEX, "Operating expenses", "(currency × unit)")
@@ -547,9 +582,10 @@ def build_projections_formulas(ws):
     ws[f"C{R_EBITDAM}"] = "=IFERROR(ebitda_y0/revenue_y0,\"\")"
     ws[f"C{R_EBIT}"] = "=IFERROR(ebit_y0,\"\")"
     ws[f"C{R_EBITM}"] = "=IFERROR(ebit_y0/revenue_y0,\"\")"
-    # Eric 2026-05-19 #1 — Y0 Tax + Net income on rows 22 / 23
-    ws["C22"] = "=IFERROR(tax_y0,\"\")"
-    ws["C23"] = "=IFERROR(net_income_y0,\"\")"
+    # Eric 2026-05-19 #1 — Y0 Tax + Net income on rows 26 / 27 (was 22/23
+    # pre-primary/additional split)
+    ws["C26"] = "=IFERROR(tax_y0,\"\")"
+    ws["C27"] = "=IFERROR(net_income_y0,\"\")"
     for y in range(1, PROJECTION_YEARS + 1):
         cur = col_for_year(y)
         ws[f"{cur}{R_GP}"] = f"={cur}{R_REV}*gross_margin_y{y}"
@@ -562,8 +598,8 @@ def build_projections_formulas(ws):
         ws[f"{cur}{R_EBITM}"] = f"=IFERROR({cur}{R_EBIT}/{cur}{R_REV},0)"
 
     # ----- Tax & net income -----
-    section(21, "Tax & net income")
-    R_TAX, R_NI = 22, 23
+    section(25, "Tax & net income")
+    R_TAX, R_NI = 26, 27
     lrow(R_TAX, "Tax", "(currency × unit)")
     lrow(R_NI, "Net income", "(currency × unit)")
     for y in range(1, PROJECTION_YEARS + 1):
@@ -583,8 +619,8 @@ def build_projections_formulas(ws):
         ws[f"{cur}{R_NI}"] = f"={cur}{R_EBIT}+{cur}{R_TAX}"
 
     # ----- Capex & working capital -----
-    section(25, "Capex & working capital")
-    R_CAPEX, R_NWC, R_DNWC = 26, 27, 28
+    section(29, "Capex & working capital")
+    R_CAPEX, R_NWC, R_DNWC = 30, 31, 32
     lrow(R_CAPEX, "Capex", "(currency × unit)")
     lrow(R_NWC, "Net working capital", "(currency × unit)")
     lrow(R_DNWC, "Δ Working capital", "(currency × unit)")
@@ -599,8 +635,8 @@ def build_projections_formulas(ws):
         ws[f"{cur}{R_DNWC}"] = f"=-({cur}{R_NWC}-{prev}{R_NWC})"
 
     # ----- FCFF -----
-    section(30, "FCFF construction")
-    R_F_EBIT, R_F_TAX, R_F_DEP, R_F_CAPEX, R_F_DWC, R_FCFF = 31, 32, 33, 34, 35, 36
+    section(34, "FCFF construction")
+    R_F_EBIT, R_F_TAX, R_F_DEP, R_F_CAPEX, R_F_DWC, R_FCFF = 35, 36, 37, 38, 39, 40
     lrow(R_F_EBIT, "EBIT", "(currency × unit)")
     lrow(R_F_TAX, "Less: Tax on EBIT", "(currency × unit)")
     lrow(R_F_DEP, "Add: Depreciation", "(currency × unit)")
@@ -620,11 +656,11 @@ def build_projections_formulas(ws):
     ws.cell(row=R_FCFF, column=1).font = Font(bold=True)
 
     # Format hints — apply percentage format to margin rows; integer to monetary
-    pct_rows = [R_RG, R_GM, R_EBITDAM, R_EBITM]
+    pct_rows = [R_PRI_RG, R_ADD_RG, R_RG, R_GM, R_EBITDAM, R_EBITM]
     for r in pct_rows:
         for y in range(1, PROJECTION_YEARS + 1):
             ws.cell(row=r, column=3 + y).number_format = "0.0%"
-    money_rows = [R_REV, R_GP, R_OPEX, R_EBITDA, R_DEP, R_EBIT, R_TAX, R_NI,
+    money_rows = [R_PRI_REV, R_ADD_REV, R_REV, R_GP, R_OPEX, R_EBITDA, R_DEP, R_EBIT, R_TAX, R_NI,
                   R_CAPEX, R_NWC, R_DNWC, R_F_EBIT, R_F_TAX, R_F_DEP, R_F_CAPEX, R_F_DWC, R_FCFF]
     for r in money_rows:
         for y in range(0, PROJECTION_YEARS + 1):
@@ -767,7 +803,7 @@ def wire_calculated_inputs(wb):
 
 def build_dcf_formulas(ws, scenario: str = "per_mgmt"):
     """Wire a DCF sheet for one scenario (per_mgmt or indep). Reads FCFF from
-    Projections row 36, discounts at the scenario WACC, applies Gordon Growth
+    Projections row 40, discounts at the scenario WACC, applies Gordon Growth
     or Exit Multiple terminal value, and sums to Enterprise Value.
 
     Convention: Y_n discount period = n (no stub year in v1). Terminal value
@@ -827,7 +863,7 @@ def build_dcf_formulas(ws, scenario: str = "per_mgmt"):
     lrow(R_PV, "PV of FCFF", "(currency × unit)")
     for y in range(1, PROJECTION_YEARS + 1):
         col = get_column_letter(3 + y)
-        ws[f"{col}{R_FCFF}"] = f"=Projections!{col}36"  # Projections row 36 = FCFF
+        ws[f"{col}{R_FCFF}"] = f"=Projections!{col}40"  # Projections row 40 = FCFF
         ws[f"{col}{R_PERIOD}"] = y
         ws[f"{col}{R_DF}"] = f"=1/(1+{wacc_ref})^{col}{R_PERIOD}"
         ws[f"{col}{R_PV}"] = f"={col}{R_FCFF}*{col}{R_DF}"
@@ -849,19 +885,19 @@ def build_dcf_formulas(ws, scenario: str = "per_mgmt"):
     TC = get_column_letter(3 + PROJECTION_YEARS + 1)  # I
     LAST_Y_COL = get_column_letter(3 + PROJECTION_YEARS)  # H
     ws[f"{TC}{R_TM}"] = "=terminal_method"
-    ws[f"{TC}{R_TFCFF}"] = f"=Projections!{LAST_Y_COL}36"
+    ws[f"{TC}{R_TFCFF}"] = f"=Projections!{LAST_Y_COL}40"
     # Gordon: FCFF_y5 × (1+g) / (WACC - g)
     ws[f"{TC}{R_TGORDON}"] = (
         f"=IFERROR({TC}{R_TFCFF}*(1+terminal_growth_rate)/({wacc_ref}-terminal_growth_rate),0)"
     )
-    # Exit multiple — switches on type: EV/EBITDA -> Y5 EBITDA × mult, EV/Sales -> Y5 Revenue × mult, P/E -> Y5 NI × mult
+    # Exit multiple — switches on type: EV/EBITDA -> Y5 EBITDA × mult, EV/Sales -> Y5 Total Revenue × mult, P/E -> Y5 NI × mult
     ws[f"{TC}{R_TEXIT}"] = (
         f'=IF(EXACT(terminal_exit_multiple_type,"EV/EBITDA"),'
-        f'Projections!{LAST_Y_COL}15*terminal_exit_multiple_value,'
+        f'Projections!{LAST_Y_COL}19*terminal_exit_multiple_value,'
         f'IF(EXACT(terminal_exit_multiple_type,"EV/Sales"),'
-        f'Projections!{LAST_Y_COL}8*terminal_exit_multiple_value,'
+        f'Projections!{LAST_Y_COL}12*terminal_exit_multiple_value,'
         f'IF(EXACT(terminal_exit_multiple_type,"P/E"),'
-        f'Projections!{LAST_Y_COL}23*terminal_exit_multiple_value,0)))'
+        f'Projections!{LAST_Y_COL}27*terminal_exit_multiple_value,0)))'
     )
     ws[f"{TC}{R_TSEL}"] = (
         f'=IF(EXACT(terminal_method,"exit_multiple"),{TC}{R_TEXIT},{TC}{R_TGORDON})'
@@ -1393,9 +1429,9 @@ def build_comps_formulas(ws):
     R_SALES, R_EBITDA, R_PE = 7, 8, 9
     multiple_rows = [
         # (label, target_cell_on_projections, multiples_col_on_CoCoMult, gives_eq)
-        (R_SALES, "EV/Sales NTM", "Projections!D8", _MULT_COL["ev_sales_ntm"], False),
-        (R_EBITDA, "EV/EBITDA NTM", "Projections!D15", _MULT_COL["ev_ebitda_ntm"], False),
-        (R_PE, "P/E NTM (gives Equity)", "Projections!D23", _MULT_COL["pe_ntm"], True),
+        (R_SALES, "EV/Sales NTM", "Projections!D12", _MULT_COL["ev_sales_ntm"], False),
+        (R_EBITDA, "EV/EBITDA NTM", "Projections!D19", _MULT_COL["ev_ebitda_ntm"], False),
+        (R_PE, "P/E NTM (gives Equity)", "Projections!D27", _MULT_COL["pe_ntm"], True),
     ]
     for r, label, target_ref, mult_col, gives_eq in multiple_rows:
         ws.cell(row=r, column=1, value=label).font = NORMAL_FONT
@@ -1540,9 +1576,9 @@ def build_football_field_formulas(ws):
     PREC_FIRST = 158  # follows cocos_table at 127:156 + 1 banner row (157) + header (157) — actual computed at runtime
     # Use a dynamic reference via the named range to avoid hardcoding
     lrow(R_PREC, "Precedent transactions",
-         f"=IFERROR(MIN(IF(INDEX(precedents_table,0,1)=TRUE,INDEX(precedents_table,0,7)*Projections!D15,\"\")),0)",
-         f"=IFERROR(AVERAGEIFS(INDEX(precedents_table,0,7),INDEX(precedents_table,0,1),TRUE)*Projections!D15,0)",
-         f"=IFERROR(MAX(IF(INDEX(precedents_table,0,1)=TRUE,INDEX(precedents_table,0,7)*Projections!D15,\"\")),0)",
+         f"=IFERROR(MIN(IF(INDEX(precedents_table,0,1)=TRUE,INDEX(precedents_table,0,7)*Projections!D19,\"\")),0)",
+         f"=IFERROR(AVERAGEIFS(INDEX(precedents_table,0,7),INDEX(precedents_table,0,1),TRUE)*Projections!D19,0)",
+         f"=IFERROR(MAX(IF(INDEX(precedents_table,0,1)=TRUE,INDEX(precedents_table,0,7)*Projections!D19,\"\")),0)",
          "=weight_precedent",
          "Mean EV/EBITDA × Y1 EBITDA across included precedents")
     ws.cell(row=R_PREC, column=1).font = Font(bold=True)
@@ -1572,7 +1608,7 @@ def build_football_field_formulas(ws):
 def build_sensitivity_formulas(ws):
     """7x7 sensitivity grid: WACC (rows) × terminal growth rate (cols).
     Each cell recomputes Enterprise Value from scratch using its WACC and g,
-    reading FCFF Y1..Y5 from Projections row 36."""
+    reading FCFF Y1..Y5 from Projections row 40."""
     write_header_band(ws, 1, "Sensitivity — WACC × Terminal growth rate")
     ws.cell(row=2, column=1, value=(
         "Each cell recomputes EV = Σ FCFF_y / (1+WACC)^y + FCFF_y5 × (1+g) / (WACC−g) / (1+WACC)^5. "
@@ -1610,7 +1646,7 @@ def build_sensitivity_formulas(ws):
         ws.column_dimensions[get_column_letter(c)].width = 13
 
     # Rows 7-13: WACC (Per-Mgmt base ± offset × sens_wacc_step)
-    BASE_FCFF_ROW = 36  # Projections row holding FCFF
+    BASE_FCFF_ROW = 40  # Projections row holding FCFF
     for i in range(GRID_W):
         row = HDR_ROW + 1 + i
         offset = i - BASE_IDX

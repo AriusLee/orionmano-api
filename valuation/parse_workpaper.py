@@ -104,6 +104,7 @@ _SECTION_ROOTS = {
 # Detected at parse time via the `_y\d+$` suffix.
 _Y_VECTOR_ROOTS = {
     "revenue_growth": ["projections", "revenue_growth"],
+    "revenue_growth_primary": ["projections", "revenue_growth_primary"],
     "gross_margin": ["projections", "gross_margin"],
     "opex_pct_revenue": ["projections", "opex_pct_revenue"],
     "capex_pct_revenue": ["projections", "capex_pct_revenue"],

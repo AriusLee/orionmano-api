@@ -90,6 +90,11 @@ PINNABLE_PARAMS: dict[str, tuple[str, str]] = {
     "revenue_growth_y3":          ("projections.revenue_growth.2",              "percent"),
     "revenue_growth_y4":          ("projections.revenue_growth.3",              "percent"),
     "revenue_growth_y5":          ("projections.revenue_growth.4",              "percent"),
+    "revenue_growth_primary_y1":  ("projections.revenue_growth_primary.0",      "percent"),
+    "revenue_growth_primary_y2":  ("projections.revenue_growth_primary.1",      "percent"),
+    "revenue_growth_primary_y3":  ("projections.revenue_growth_primary.2",      "percent"),
+    "revenue_growth_primary_y4":  ("projections.revenue_growth_primary.3",      "percent"),
+    "revenue_growth_primary_y5":  ("projections.revenue_growth_primary.4",      "percent"),
     "gross_margin_y1":            ("projections.gross_margin.0",                "percent"),
     "gross_margin_y2":            ("projections.gross_margin.1",                "percent"),
     "gross_margin_y3":            ("projections.gross_margin.2",                "percent"),
@@ -224,6 +229,73 @@ def _find_previous_valuation_payload(company_id: Any, current_exchange: str | No
     if not isinstance(cocos, list) or not cocos:
         return None
     return inputs
+
+
+_PRIMARY_GROWTH_CAP = 0.10  # 10% — anything above this needs BDP justification
+
+
+def _ensure_revenue_growth_primary(payload: dict) -> None:
+    """Ensure projections.revenue_growth_primary is a fully-populated length-n
+    list (n = years count of revenue_growth). Defaulting rule, per Eric
+    2026-05-19:
+
+      1. If LLM supplied a full numeric list, clamp each entry to [0, 0.10]
+         (the conservative-track cap) and keep them.
+      2. Otherwise, derive a flat default from historical 3-yr revenue CAGR
+         (`historical_fs.revenue[-3:]`), clamped to [0, 0.10].
+      3. If historical revenue isn't available, copy revenue_growth and clamp
+         to [0, 0.10] so primary is always defined.
+
+    Mutates payload in place. Never raises — silently no-ops on malformed
+    payloads (calibration / validation will catch shape issues downstream).
+    """
+    proj = payload.get("projections")
+    if not isinstance(proj, dict):
+        return
+    growth = proj.get("revenue_growth")
+    if not isinstance(growth, list) or not growth:
+        return  # no total growth to anchor against; skeleton's IFERROR handles
+    n = len(growth)
+
+    def _clamp(x: Any) -> float | None:
+        try:
+            v = float(x)
+        except (TypeError, ValueError):
+            return None
+        if v < 0:
+            return 0.0
+        if v > _PRIMARY_GROWTH_CAP:
+            return _PRIMARY_GROWTH_CAP
+        return v
+
+    supplied = proj.get("revenue_growth_primary")
+    if isinstance(supplied, list) and len(supplied) == n and all(
+        v is not None for v in supplied
+    ):
+        proj["revenue_growth_primary"] = [_clamp(v) for v in supplied]
+        return
+
+    historical = (payload.get("historical_fs") or {}).get("revenue")
+    cagr: float | None = None
+    if isinstance(historical, list):
+        clean = [float(v) for v in historical if isinstance(v, (int, float)) and v > 0]
+        if len(clean) >= 2:
+            first, last = clean[-min(3, len(clean))], clean[-1]
+            periods = min(3, len(clean)) - 1
+            if first > 0 and periods > 0:
+                try:
+                    cagr = (last / first) ** (1.0 / periods) - 1.0
+                except (ValueError, ZeroDivisionError):
+                    cagr = None
+
+    if cagr is not None:
+        default = _clamp(cagr) or 0.0
+        proj["revenue_growth_primary"] = [default] * n
+        return
+
+    # Last resort — copy revenue_growth (clamped) so primary still cascades
+    # at a reasonable rate.
+    proj["revenue_growth_primary"] = [_clamp(g) for g in growth]
 
 
 def _calibrate_to_target(payload: dict, target_actual: float, pinned_keys: list[str] | None = None) -> float | None:
@@ -446,7 +518,9 @@ Every section listed below MUST be present in the output:
 - `engagement` — all 13 fields (company_name, company_country, company_industry_us, company_industry_global, valuation_date, target_valuation, exchange_platform, report_purpose, accounting_standard, engagement_team{{partner,manager,department}}, client_name). `target_valuation` is the client's stated target valuation in **ACTUAL currency units** — NOT scaled by `currency.unit`. A $1B target is written as `1000000000`, NOT `1000000` (even when the workpaper unit is `'000`). Leave null if not provided by the user. `exchange_platform` is the exchange the comparable-company pool must be drawn from (e.g. "NASDAQ", "NYSE"); default to "NASDAQ" if not specified — comps not listed on this exchange must be excluded.
 - `currency` — primary, unit, alt, fx_rate_alt
 - `tax` — jurisdiction, type ("flat"/"two_tier"/"progressive"), rate_low, rate_high, threshold, effective_rate_override
-- `projections` — years (typically 5), revenue_growth_method, **revenue_y0** (last reported full-year revenue, in the same currency × unit as the workpaper), **nwc_y0** (audited Y0 NWC = current assets ex-cash − current liabilities ex-debt), and Y1-Y5 arrays for revenue_growth, gross_margin, opex_pct_revenue, capex_pct_revenue, dep_pct_revenue, nwc_pct_sales (all 6 arrays, each length-5). **revenue_y0 is the cascade base — without it the workpaper math is dead.** ALSO populate **gross_profit_y0**, **opex_y0** (negative), **ebitda_y0**, **ebit_y0**, **tax_y0** (negative), **net_income_y0** from the most recent full-year audited income statement (`historical_fs.gross_profit[-1]`, `historical_fs.opex_total[-1]`, `historical_fs.ebitda[-1]`, `historical_fs.ebit[-1]`, `historical_fs.tax_expense[-1]`, `historical_fs.net_income[-1]`) so the Projections sheet's Y0 column shows real audited values, not blanks. Eric 2026-05-18 / 2026-05-19 #1.
+- `projections` — years (typically 5), revenue_growth_method, **revenue_y0** (last reported full-year revenue, in the same currency × unit as the workpaper), **nwc_y0** (audited Y0 NWC = current assets ex-cash − current liabilities ex-debt), and Y1-Y5 arrays for revenue_growth, **revenue_growth_primary**, gross_margin, opex_pct_revenue, capex_pct_revenue, dep_pct_revenue, nwc_pct_sales (all 7 arrays, each length-5). **revenue_y0 is the cascade base — without it the workpaper math is dead.** ALSO populate **gross_profit_y0**, **opex_y0** (negative), **ebitda_y0**, **ebit_y0**, **tax_y0** (negative), **net_income_y0** from the most recent full-year audited income statement (`historical_fs.gross_profit[-1]`, `historical_fs.opex_total[-1]`, `historical_fs.ebitda[-1]`, `historical_fs.ebit[-1]`, `historical_fs.tax_expense[-1]`, `historical_fs.net_income[-1]`) so the Projections sheet's Y0 column shows real audited values, not blanks. Eric 2026-05-18 / 2026-05-19 #1.
+
+**Primary vs. Total revenue growth (Eric 2026-05-19)**: `revenue_growth` is the **TOTAL** growth the calibration tunes to hit `target_valuation`. `revenue_growth_primary` is the **CONSERVATIVE** baseline track — what the business does if it just continues its historical trend, with NO additional BDP-driven stretch. Anchor `revenue_growth_primary` to the 3-year historical revenue CAGR (compute from `historical_fs.revenue[-3:]`), allowing ±2pp tolerance for cyclical normalization. **Cap `revenue_growth_primary` at 10% absolute** even if historical CAGR is higher (anything above that needs BDP justification → goes into Additional). The Projections sheet displays Primary, Additional (= Total − Primary), and Total as three separate rows — Additional represents the BDP-justified stretch that the analyst must defend in the written report. Always populate `revenue_growth_primary` even when uncertain (fallback: copy `revenue_growth` clamped to [0, 0.10]).
 - `projections.segments` (OPTIONAL but RECOMMENDED when the target has distinct business lines) — array of segments, each `{{name, start_year, revenue_y0 (if start_year=0) or initial_revenue (if start_year>0), revenue_growth[], gross_margin[] OR cogs_pct[]}}`. When provided, total revenue & gross profit at each year are the SUM across all active segments; the top-level revenue_growth + gross_margin arrays are then IGNORED for the cascade (still emit them for back-compat, but make the segment numbers the authoritative breakdown). Segments with `start_year > 0` model new revenue streams launched mid-projection (Eric 2026-05-08 item 2: "user can add new revenue streams with corresponding COGS during the projection period"). The sum of all segment revenue_y0 (for start_year=0 segments) MUST equal the top-level revenue_y0 — otherwise the workpaper Y0 base mismatches the audited FS.
 - `historical_fs` — 5-year arrays (FY-5..FY-1, oldest first; pad with null where data is missing) for: revenue, cogs, gross_profit, opex_total, sga, rnd, ebitda, da, ebit, interest_expense, other_income_expense, profit_before_tax, tax_expense, net_income, cash, accounts_receivable, inventory, prepaid_expenses, total_current_assets, ppe, intangibles, other_lt_assets, total_assets, accounts_payable, short_term_debt, other_current_liabilities, total_current_liabilities, long_term_debt, other_lt_liabilities, total_liabilities, total_equity. Pull from audited financial statements when available — fewer than 5 years OK; pad missing years with `null` (NOT 0).
 - `terminal` — method ("gordon_growth"), growth_rate, exit_multiple_type, exit_multiple_value
@@ -993,6 +1067,15 @@ class ProduceValuationInputsSkill(Skill):
                     ),
                     "notes": "Auto-derived by the pipeline; re-levered to target capital structure inside the DCF.",
                 }
+
+            # Eric 2026-05-19 — guarantee revenue_growth_primary is populated
+            # so the Projections sheet's Primary cascade has values to read.
+            # If the LLM omitted or under-filled the field, fall back to
+            # historical 3-yr revenue CAGR clamped to [0, 0.10]; if historical
+            # revenue isn't available either, copy revenue_growth clamped to
+            # the same cap. Done in a pure post-process so it runs on every
+            # retry regardless of LLM output quality.
+            _ensure_revenue_growth_primary(payload)
 
             # Eric 2026-05-17 — apply analyst-pinned overrides AFTER the
             # derived-beta step so a pinned unlevered_beta_pm wins over the

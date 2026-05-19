@@ -208,6 +208,12 @@ class GenerateValuationWorkpaperSkill(Skill):
                 "errors": vr.errors,
                 "summary": summary,
                 "inputs": payload,
+                # Eric 2026-05-19 — only "active" runs surface via /latest and
+                # are downloadable. The API endpoint flips the previous active
+                # run to "superseded" at the start of /generate-workpaper, so
+                # mid-regenerate the user can't accidentally download stale
+                # data thinking it's the new run.
+                "status": "active",
             }
             summary_path = output_path.with_suffix(".summary.json")
             summary_path.write_text(json.dumps(summary_payload, default=str))

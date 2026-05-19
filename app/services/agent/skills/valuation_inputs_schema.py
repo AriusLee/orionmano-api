@@ -98,6 +98,12 @@ class Projections(_Permissive):
     tax_y0: float | None = None  # negative
     net_income_y0: float | None = None
     revenue_growth: list[float | None]
+    # Eric 2026-05-19 — primary/additional split. revenue_growth_primary is the
+    # conservative track (~historical CAGR ±2pp) that doesn't require BDP
+    # justification; the residual to hit revenue_growth (the TOTAL growth that
+    # calibration tunes to target_valuation) shows up as the "Additional"
+    # revenue line on Projections and must be explained by the BDP narrative.
+    revenue_growth_primary: list[float | None] | None = None
     gross_margin: list[float | None]
     opex_pct_revenue: list[float | None]
     capex_pct_revenue: list[float | None]

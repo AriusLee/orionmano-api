@@ -34,11 +34,15 @@ def _valuations_dir() -> Path:
 
 
 def _latest_summary_for(company_id: UUID) -> dict | None:
-    """Find the most recent .summary.json belonging to this company.
+    """Find the most recent ACTIVE .summary.json belonging to this company.
 
     Files are named `valuation-{slug}-{DDMMYYYY}.summary.json` (no UUID in
     the filename), so we glob all summaries and filter by the `company_id`
-    field stored inside each one. Returns the freshest by mtime.
+    field stored inside each one. Eric 2026-05-19 — only summaries with
+    `status: "active"` are returned (or summaries without a status field,
+    for backward compat with pre-status runs). Superseded runs are filtered
+    out so a mid-regenerate user can't download stale data thinking it's
+    the new run.
     """
     d = _valuations_dir()
     if not d.exists():
@@ -54,11 +58,56 @@ def _latest_summary_for(company_id: UUID) -> dict | None:
             continue
         if data.get("company_id") != cid:
             continue
+        # Eric 2026-05-19 — status filter. Default to "active" for legacy
+        # summaries without the field so pre-existing runs still surface.
+        status = data.get("status", "active")
+        if status != "active":
+            continue
         candidates.append((p.stat().st_mtime, data))
     if not candidates:
         return None
     candidates.sort(key=lambda x: x[0], reverse=True)
     return candidates[0][1]
+
+
+def _active_summary_path_for(company_id: UUID) -> Path | None:
+    """Return the on-disk path of the current active summary for a company,
+    or None if none exist. Used by /generate-workpaper to flip the previous
+    run to "superseded" before kicking off a new run."""
+    d = _valuations_dir()
+    if not d.exists():
+        return None
+    cid = str(company_id)
+    candidates: list[tuple[float, Path]] = []
+    for p in d.glob("valuation-*.summary.json"):
+        if not p.is_file():
+            continue
+        try:
+            data = json.loads(p.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("company_id") != cid:
+            continue
+        status = data.get("status", "active")
+        if status != "active":
+            continue
+        candidates.append((p.stat().st_mtime, p))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0][1]
+
+
+def _set_summary_status(path: Path, status: str) -> None:
+    """In-place edit a summary.json's status field. Used to flip active ↔
+    superseded around /generate-workpaper invocations. Silently no-ops on
+    read/write errors so a corrupted summary file doesn't block a regen."""
+    try:
+        data = json.loads(path.read_text())
+        data["status"] = status
+        path.write_text(json.dumps(data, default=str))
+    except (OSError, json.JSONDecodeError):
+        pass
 
 
 class GenerateWorkpaperRequest(BaseModel):
@@ -94,13 +143,31 @@ async def generate_workpaper(
     ctx = AgentContext(db=db, company_id=company_id, user_id=user.id)
     target_valuation = body.target_valuation if body else None
     valuation_date = body.valuation_date if body else None
-    result = await skill.execute(
-        ctx,
-        target_valuation=target_valuation,
-        valuation_date=valuation_date,
-    )
+
+    # Eric 2026-05-19 — flip the previous active summary to "superseded"
+    # BEFORE invoking the skill. While the producer is running, /latest
+    # returns 404 → frontend can't render the stale workpaper or surface a
+    # Download button pointing at the old xlsx. If the skill fails, we
+    # restore the previous summary to active so the user retains access to
+    # the last good run.
+    prev_active_path = _active_summary_path_for(company_id)
+    if prev_active_path is not None:
+        _set_summary_status(prev_active_path, "superseded")
+
+    try:
+        result = await skill.execute(
+            ctx,
+            target_valuation=target_valuation,
+            valuation_date=valuation_date,
+        )
+    except Exception:
+        if prev_active_path is not None:
+            _set_summary_status(prev_active_path, "active")
+        raise
 
     if result.status == SkillStatus.FAILED:
+        if prev_active_path is not None:
+            _set_summary_status(prev_active_path, "active")
         logger.error(
             "generate-workpaper FAILED for company=%s target_valuation=%s valuation_date=%s: %s | artifacts=%s",
             company_id, target_valuation, valuation_date, result.message,
@@ -173,9 +240,21 @@ async def regenerate_from_inputs(
         )
 
     ctx = AgentContext(db=db, company_id=company_id, user_id=user.id)
-    result = await skill.execute(ctx, inputs=payload)
+
+    prev_active_path = _active_summary_path_for(company_id)
+    if prev_active_path is not None:
+        _set_summary_status(prev_active_path, "superseded")
+
+    try:
+        result = await skill.execute(ctx, inputs=payload)
+    except Exception:
+        if prev_active_path is not None:
+            _set_summary_status(prev_active_path, "active")
+        raise
 
     if result.status == SkillStatus.FAILED:
+        if prev_active_path is not None:
+            _set_summary_status(prev_active_path, "active")
         logger.error(
             "regenerate-from-inputs FAILED for company=%s: %s",
             company_id, result.message,
@@ -263,9 +342,21 @@ async def regenerate_from_xlsx(
         )
 
     ctx = AgentContext(db=db, company_id=company_id, user_id=user.id)
-    result = await skill.execute(ctx, inputs=payload)
+
+    prev_active_path = _active_summary_path_for(company_id)
+    if prev_active_path is not None:
+        _set_summary_status(prev_active_path, "superseded")
+
+    try:
+        result = await skill.execute(ctx, inputs=payload)
+    except Exception:
+        if prev_active_path is not None:
+            _set_summary_status(prev_active_path, "active")
+        raise
 
     if result.status == SkillStatus.FAILED:
+        if prev_active_path is not None:
+            _set_summary_status(prev_active_path, "active")
         logger.error(
             "regenerate-from-xlsx FAILED for company=%s: %s",
             company_id, result.message,
