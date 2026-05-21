@@ -20,4 +20,4 @@ weasyprint>=68.0
 pyyaml>=6.0
 openpyxl>=3.1.0
 bcrypt>=4.0.0
-pypandoc>=1.13
+pypandoc_binary>=1.13

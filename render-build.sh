@@ -1,24 +1,17 @@
 #!/usr/bin/env bash
 # Render build script for the Orionmano backend.
 #
-# System packages:
-#   - libreoffice-calc: headless xlsx recalc (Excel formula evaluation in
-#     export_workpaper.py so the .summary.json overlay matches the workbook).
-#   - pandoc: markdown → .docx conversion for the DRS Industry Section
-#     deliverable (docx_export.py via pypandoc).
-#   - fonts-liberation: Arial/Helvetica metric-compatible substitutes so
-#     LibreOffice and pandoc produce visually correct output on a fontless
-#     headless host.
-#
-# Python:
-#   - pip install -r requirements.txt
+# Render's Python native runtime mounts the root filesystem read-only, so we
+# can't `apt-get install` system packages. Workarounds:
+#   - pandoc: use `pypandoc_binary` (PyPI wheel that bundles the pandoc
+#     binary) — already in requirements.txt.
+#   - libreoffice: there is no PyPI equivalent. Headless xlsx recalc is
+#     SKIPPED on Render. The workpaper still ships, but the .summary.json
+#     overlay uses Python-computed values instead of LibreOffice-recalc'd
+#     cell values — analyst will see ~1-2% drift between dashboard and the
+#     xlsx workbook. Acceptable for now; switch to Docker if Eric needs
+#     exact-match parity.
 set -euxo pipefail
-
-apt-get update
-apt-get install -y --no-install-recommends \
-  libreoffice-calc \
-  pandoc \
-  fonts-liberation
 
 pip install --upgrade pip
 pip install -r requirements.txt
