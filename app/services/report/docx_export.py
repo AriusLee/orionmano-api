@@ -5,15 +5,21 @@ Eric 2026-05-21 — the DRS Industry Section deliverable needs to ship as a
 team's existing Word workflow. Same input as the PDF exporter (Report rows
 with ordered sections); output is Word bytes produced via pandoc.
 
-Requires the `pandoc` binary on PATH (added to render-build.sh for prod)
-and the `pypandoc` package (in requirements.txt). The exporter raises
-RuntimeError when pandoc is missing rather than silently falling back —
-the analyst would not want a half-baked artifact in front of an SEC reader.
+Eric 2026-05-22 — for the DRS to look like a real S-1 industry chapter,
+chart fenced JSON blocks are rendered to PNG images (matplotlib) and
+embedded inline as `![](path)` markdown image refs. Pandoc resolves those
+references and embeds the PNGs as real Word images. Fallback when a chart
+spec fails to render: the existing `_chart_block_to_table` helper emits a
+clean markdown table so no raw JSON ever leaks into the final doc.
 """
 from __future__ import annotations
 
-import shutil
+import json
+import os
+import re
+import tempfile
 from datetime import datetime
+from pathlib import Path
 from typing import Iterable
 from uuid import UUID
 
@@ -24,19 +30,62 @@ from sqlalchemy.orm import selectinload
 from app.models.company import Company
 from app.models.report import Report
 
+# Match ```chart fences whether the JSON starts on a new line or inline on
+# the same line as the opener — matches the PDF renderer's pattern exactly.
+_CHART_FENCE_RE = re.compile(r"```chart\b[ \t]*\n?([\s\S]*?)```", re.IGNORECASE)
 
-def _pandoc_available() -> bool:
-    return shutil.which("pandoc") is not None
 
-
-def _section_to_markdown(title: str, body_md: str | None) -> str:
-    body = body_md.strip() if body_md else "*Content pending*"
-    # Belt-and-suspenders: even when the DRS prompt forbids chart-fenced JSON
-    # blocks, the LLM occasionally still emits one. Convert any leftover
-    # ```chart blocks to markdown tables before pandoc sees them so Word
-    # doesn't show raw JSON. Eric 2026-05-21.
+def _embed_chart_images(
+    body_md: str,
+    asset_dir: Path,
+    counter: list[int],
+) -> str:
+    """Render every ```chart fenced JSON spec to a PNG in asset_dir and
+    rewrite the fence as a markdown image reference. Falls back to the
+    markdown-table conversion when the spec is malformed or matplotlib
+    fails. `counter` is a one-element list used as a mutable int so chart
+    indices stay unique across sections within a single export."""
+    from app.services.report.chart_png_renderer import render_chart_spec_to_png
     from app.services.report.generator import _chart_block_to_table
-    body = _chart_block_to_table(body)
+
+    def _replace(match: re.Match[str]) -> str:
+        raw = match.group(1).strip()
+        try:
+            spec = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            # Unparseable — let _chart_block_to_table strip it cleanly.
+            return _chart_block_to_table(f"```chart\n{raw}\n```")
+        counter[0] += 1
+        png_path = asset_dir / f"chart_{counter[0]}.png"
+        ok = render_chart_spec_to_png(spec, str(png_path))
+        if not ok:
+            return _chart_block_to_table(f"```chart\n{raw}\n```")
+        title = spec.get("title", "")
+        source_note = spec.get("source_note") or ""
+        # Markdown image — pandoc embeds the PNG inline in the .docx. Caption
+        # underneath kept as italicized source attribution.
+        parts: list[str] = [""]
+        if title:
+            parts.append(f"**{title}**")
+            parts.append("")
+        parts.append(f"![{title or 'Chart'}]({png_path})")
+        if source_note:
+            parts.append("")
+            parts.append(f"*{source_note}*")
+        parts.append("")
+        return "\n".join(parts)
+
+    return _CHART_FENCE_RE.sub(_replace, body_md)
+
+
+def _section_to_markdown(
+    title: str,
+    body_md: str | None,
+    asset_dir: Path,
+    chart_counter: list[int],
+) -> str:
+    body = body_md.strip() if body_md else "*Content pending*"
+    body = _embed_chart_images(body, asset_dir, chart_counter)
     return f"# {title}\n\n{body}"
 
 
@@ -44,9 +93,11 @@ def _assemble_markdown(
     title: str,
     company_name: str,
     sections: Iterable[tuple[str, str | None]],
+    asset_dir: Path,
 ) -> str:
     """Stitch the title page, metadata block, and each section into one
-    markdown document for pandoc to consume."""
+    markdown document for pandoc to consume. Chart PNGs are rendered into
+    asset_dir as a side-effect of section assembly."""
     date_str = datetime.now().strftime("%d %B %Y")
     parts: list[str] = [
         f"% {title}",
@@ -54,8 +105,9 @@ def _assemble_markdown(
         f"% {date_str}",
         "",
     ]
+    chart_counter = [0]
     for sec_title, sec_body in sections:
-        parts.append(_section_to_markdown(sec_title, sec_body))
+        parts.append(_section_to_markdown(sec_title, sec_body, asset_dir, chart_counter))
         parts.append("")
     return "\n".join(parts)
 
@@ -66,13 +118,7 @@ async def generate_report_docx(
     report_id: UUID,
 ) -> bytes:
     """Render a report row to a Word (.docx) document."""
-    if not _pandoc_available():
-        raise RuntimeError(
-            "pandoc binary not found on PATH. Install pandoc "
-            "(apt-get install pandoc on Render; brew install pandoc locally)."
-        )
-
-    import pypandoc  # imported lazily so the rest of the app boots without it
+    import pypandoc  # lazy: pypandoc_binary ships its own bundled pandoc
 
     result = await db.execute(
         select(Report)
@@ -89,27 +135,28 @@ async def generate_report_docx(
 
     ordered = sorted(report.sections, key=lambda s: s.sort_order)
     section_pairs = [(s.section_title, s.content) for s in ordered]
-    md = _assemble_markdown(report.title, company_name, section_pairs)
 
-    # pypandoc.convert_text returns a unicode str when outputfile is None and
-    # the target is a text format; for binary formats (docx, pdf) it needs an
-    # outputfile. We write to a temp file and read bytes back.
-    import tempfile
-    import os
-    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
-        tmp_path = tmp.name
-    try:
-        pypandoc.convert_text(
-            md,
-            to="docx",
-            format="markdown+pipe_tables+grid_tables+footnotes+raw_html",
-            outputfile=tmp_path,
-            extra_args=["--standalone"],
-        )
-        with open(tmp_path, "rb") as f:
-            return f.read()
-    finally:
+    # All chart PNGs + the pandoc output land in a single temp dir so cleanup
+    # is one rmtree call. Pandoc resolves the absolute image paths embedded
+    # in the markdown when it builds the .docx.
+    with tempfile.TemporaryDirectory(prefix="orionmano_docx_") as tmp_dir:
+        asset_dir = Path(tmp_dir)
+        md = _assemble_markdown(report.title, company_name, section_pairs, asset_dir)
+        docx_path = asset_dir / "out.docx"
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+            pypandoc.convert_text(
+                md,
+                to="docx",
+                format="markdown+pipe_tables+grid_tables+footnotes+raw_html",
+                outputfile=str(docx_path),
+                extra_args=["--standalone", f"--resource-path={asset_dir}"],
+            )
+        except OSError as e:
+            # pypandoc_binary couldn't locate the bundled pandoc — surface a
+            # clear error rather than letting the OSError bubble unhelpfully.
+            raise RuntimeError(
+                f"DOCX export failed because pandoc could not be invoked: {e}. "
+                "Confirm `pypandoc_binary` is installed (pip install -r requirements.txt)."
+            ) from e
+        with open(docx_path, "rb") as f:
+            return f.read()

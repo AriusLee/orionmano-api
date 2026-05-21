@@ -1383,11 +1383,17 @@ INDUSTRY_DRS_SECTION_INSTRUCTIONS = {
         "regulation without a `<cite/>`."
     ),
     "competitive_landscape": (
-        "Describe market structure (fragmented vs consolidated), top 3-5 competitors by "
-        "revenue or share, and the competitive dynamics (price, technology, distribution, "
-        "brand). Include a markdown table with: Competitor | Revenue (latest year) | Market "
-        "Share | Key Strengths | Key Weaknesses. Match the depth of the competitive section "
-        "in the Microware S-1 industry chapter."
+        "Describe market structure (fragmented vs consolidated), the profile of the top "
+        "3-5 industry participants, and competitive dynamics (price, technology, "
+        "distribution, brand). **DO NOT name specific companies** — the Company has not "
+        "obtained reference approvals from those peers. Refer to peers by category and "
+        "position only: 'a US-listed acoustic specialist', 'the leading mainland China "
+        "low-cost contract manufacturer', 'a Japan-headquartered branded audio peer'. In "
+        "tables, use generic labels: Player A / Player B / Player C. Include a markdown "
+        "table with: Player | HQ Geography | Listing Venue | Revenue Band (e.g. USD "
+        "$50-200M) | Gross Margin Band | Key Strengths | Key Weaknesses. Bands are "
+        "preferable to exact figures to keep peers unidentifiable. Match the analytical "
+        "depth of a real S-1 industry chapter while preserving anonymity."
     ),
     "company_positioning": (
         "Position the Company within the competitive landscape established above. 2-3 "
@@ -1505,6 +1511,14 @@ This document is a STANDALONE section of a Nasdaq IPO prospectus. It is not a re
 - Match the tone and density of the SEC exemplars below:
   - Glogos (tm246985-23_f1) — https://www.sec.gov/Archives/edgar/data/2013649/000110465925027648/tm246985-23_f1.htm#tINOV
   - Microware (d487167df1) — https://www.sec.gov/Archives/edgar/data/1722608/000119312518060890/d487167df1.htm#rom487167_16
+
+## PEER ANONYMITY — MANDATORY (Eric 2026-05-22)
+The Company has NOT obtained reference approvals from peer companies. Therefore, throughout the entire DRS Industry Section:
+- **DO NOT name specific competitor companies.** The source industry report may name peers (e.g., "Koss", "VOXX", "Turtle Beach", "Universal Electronics"); strip those names when repurposing.
+- **Refer to peers only by category descriptors**: "a US-listed acoustic devices specialist", "the leading mainland China low-cost contract manufacturer", "a Japan-headquartered branded audio peer", "a NYSE-listed consumer electronics conglomerate".
+- **In comparison tables, use generic labels**: Player A, Player B, Player C.
+- **Use revenue / margin bands rather than exact figures** when the peer would be identifiable from precise numbers (e.g., "Revenue band: USD $50-200M" instead of "Revenue: USD $87M").
+- Public-domain market size, industry CAGR, regulatory body names, and government statistics CAN still be quoted with citations — only peer COMPANIES are anonymized.
 
 ## STRUCTURE
 This is the **Industry** chapter only. Sub-sections (Industry Overview / Market Size / Growth Drivers / Regulatory Environment / Competitive Landscape / Company Positioning) are generated one at a time. Each sub-section must read like a section of an actual S-1 filing — not a research paper.
