@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.models.company import Company
 from app.models.document import Document
@@ -19,6 +20,7 @@ REPORT_TITLES = {
     "sales_deck": "Sales Deck",
     "kickoff_deck": "Kick-off Meeting Deck",
     "industry_report": "Industry Expert Report",
+    "industry_drs": "DRS — Industry Section",
     "dd_report": "Due Diligence Report",
     "valuation_report": "Valuation Report",
     "teaser": "Company Teaser",
@@ -114,6 +116,21 @@ REPORT_SECTIONS = {
             ("challenges_headwinds", "Market Challenges and Headwinds"),
             ("market_outlook", "Market Outlook and Future Opportunities"),
             ("strategic_recommendations", "Strategic Recommendations"),
+        ],
+    },
+    # Eric 2026-05-21 — Draft Registration Statement industry section. Consumes
+    # the company's most-recent industry_report and reformats it into S-1
+    # prospectus-style language modeled on the SEC exemplars Eric shared (Glogos
+    # tm246985-23_f1 and Microware d487167df1 industry sections). Output is the
+    # standalone "Industry" section that drops into a Form F-1 / S-1 filing.
+    "industry_drs": {
+        "standard": [
+            ("industry_overview", "Industry Overview"),
+            ("market_size_growth", "Market Size and Growth"),
+            ("growth_drivers", "Key Industry Growth Drivers"),
+            ("regulatory_environment", "Regulatory Environment"),
+            ("competitive_landscape", "Competitive Landscape"),
+            ("company_positioning", "Our Position in the Industry"),
         ],
     },
     "dd_report": {
@@ -294,10 +311,17 @@ def _load_template(report_type: str) -> str:
         "teaser": "06-company-teaser.md",
         "company_deck": "07-company-deck.md",
     }
+    # Report types without a dedicated markdown template (e.g. industry_drs,
+    # which is fully described by its system prompt) short-circuit here.
+    # Otherwise os.path.join would resolve to the templates DIRECTORY and
+    # raise IsADirectoryError. Eric 2026-05-21 fix.
+    filename = template_map.get(report_type)
+    if not filename:
+        return ""
     # knowledge-base/ lives inside backend/ (one ".." fewer than the old layout)
     # so the path holds in deploys that ship only the backend tree.
     kb_path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "..", "knowledge-base", "05-report-templates", template_map.get(report_type, "")
+        os.path.dirname(__file__), "..", "..", "..", "knowledge-base", "05-report-templates", filename
     )
     try:
         with open(kb_path, "r") as f:
@@ -1325,6 +1349,192 @@ INDUSTRY_REASONER_SECTIONS = {
 }
 
 
+# Eric 2026-05-21 — DRS Industry Section (S-1 prospectus style). Each
+# instruction describes the depth and structure of the corresponding section
+# in a real Form F-1/S-1 industry chapter.
+INDUSTRY_DRS_SECTION_INSTRUCTIONS = {
+    "industry_overview": (
+        "Open with a 2-3 paragraph definition of the industry the Company operates in, "
+        "establishing scope (geography, sub-sector, end-markets served) and why this market "
+        "matters. Tone: third-person, formal, no marketing language. Cite quantitative "
+        "claims via `<cite/>`. Match the opening style of the Glogos and Microware S-1 "
+        "industry sections."
+    ),
+    "market_size_growth": (
+        "Provide market size (in USD or local currency) for the most recent reported year "
+        "and a 3-5 year historical CAGR, then forecast CAGR for the next 5 years. ALWAYS "
+        "present dual CAGR: 'The market grew from USD X in 20YY to USD Y in 20YY, a CAGR "
+        "of A.B%, and is expected to reach USD Z by 20YYE, representing a CAGR of C.D% over "
+        "20YY-20YYE.' Include a markdown table breaking down size by geography or segment. "
+        "Mirror the depth seen in the SEC exemplars."
+    ),
+    "growth_drivers": (
+        "4-6 structural growth drivers. Each: bolded driver name, 2-3 sentence explanation "
+        "with quantification where possible, `<cite/>` on every number. Order by impact. "
+        "Examples typical in S-1 filings: rising consumer income, regulatory tailwinds, "
+        "technological shifts, demographic trends, channel expansion."
+    ),
+    "regulatory_environment": (
+        "Survey the key regulatory regimes affecting the industry. Cover (a) home-jurisdiction "
+        "regulation (Hong Kong, Singapore, etc.), (b) US/Nasdaq-relevant regulation (FDA, FCC, "
+        "tariffs, export controls, sanctions), and (c) any cross-border data, IP, or trade "
+        "rules. For each regime: bolded name, what it regulates, current status (in force, "
+        "pending), implications for industry participants. NO speculation about future "
+        "regulation without a `<cite/>`."
+    ),
+    "competitive_landscape": (
+        "Describe market structure (fragmented vs consolidated), top 3-5 competitors by "
+        "revenue or share, and the competitive dynamics (price, technology, distribution, "
+        "brand). Include a markdown table with: Competitor | Revenue (latest year) | Market "
+        "Share | Key Strengths | Key Weaknesses. Match the depth of the competitive section "
+        "in the Microware S-1 industry chapter."
+    ),
+    "company_positioning": (
+        "Position the Company within the competitive landscape established above. 2-3 "
+        "paragraphs covering: (a) which segment(s) the Company plays in, (b) competitive "
+        "advantages (technology, scale, customer base, IP), (c) the white-space opportunity "
+        "the Company is targeting post-IPO. Tone is still third-person and prospectus-grade "
+        "— the Company refers to itself as 'the Company' or 'we' as appropriate to S-1 voice."
+    ),
+}
+
+
+_CHART_BLOCK_RE = re.compile(r"```chart\s*\n(.*?)\n```", re.DOTALL)
+
+
+def _chart_block_to_table(md: str) -> str:
+    """Replace ```chart fenced JSON blocks with a clean markdown table.
+
+    Chart spec → markdown table conversion. Industry-report sections embed
+    chart JSON for the web/PDF renderer (ChartBlock React component). When
+    that content flows into the DRS (which exports to .docx) or into any
+    pandoc-rendered artifact, the chart fence becomes a raw JSON dump.
+    This helper extracts the `data` array + `series` list and emits a
+    readable markdown table instead, preserving the same numbers.
+
+    If the JSON fails to parse, the original fenced block is removed (no
+    raw JSON leaks into the output).
+    """
+    def _replace(match: re.Match[str]) -> str:
+        try:
+            spec = json.loads(match.group(1))
+        except (json.JSONDecodeError, ValueError):
+            return ""  # unparseable — drop rather than leak JSON
+        rows = spec.get("data") or []
+        if not rows:
+            return ""
+        series = spec.get("series") or []
+        if not series:
+            # Pull keys from the first row except "x"
+            series = [k for k in rows[0].keys() if k != "x"]
+        title = spec.get("title")
+        unit = spec.get("y_unit")
+        x_label = spec.get("x_label", "")
+        # Header
+        headers = [x_label or " "] + [f"{s} ({unit})" if unit else s for s in series]
+        sep = ["---"] * len(headers)
+        body_lines = []
+        for r in rows:
+            x_val = r.get("x", "")
+            cells = [str(x_val)] + [str(r.get(s, "")) for s in series]
+            body_lines.append("| " + " | ".join(cells) + " |")
+        out = []
+        if title:
+            out.append(f"**{title}**")
+            out.append("")
+        out.append("| " + " | ".join(headers) + " |")
+        out.append("| " + " | ".join(sep) + " |")
+        out.extend(body_lines)
+        source = spec.get("source_note")
+        if source:
+            out.append("")
+            out.append(f"*{source}*")
+        return "\n".join(out)
+
+    return _CHART_BLOCK_RE.sub(_replace, md)
+
+
+async def _load_industry_report_for_drs(
+    db: AsyncSession, company_id: UUID
+) -> str:
+    """Returns the most-recent completed industry_report's sections as a
+    markdown blob to feed the DRS prompt. Chart fenced blocks are converted
+    to markdown tables so the LLM doesn't copy raw JSON into the DRS output
+    (which would then break the pandoc-driven .docx export). Empty string
+    when no industry report exists."""
+    result = await db.execute(
+        select(Report)
+        .options(selectinload(Report.sections))
+        .where(
+            Report.company_id == company_id,
+            Report.report_type == "industry_report",
+            Report.status.in_(["draft", "approved", "review"]),
+        )
+        .order_by(Report.created_at.desc())
+    )
+    report = result.scalars().first()
+    if report is None:
+        return ""
+    sections = sorted(report.sections, key=lambda s: s.sort_order)
+    parts: list[str] = []
+    for s in sections:
+        if s.content:
+            cleaned = _chart_block_to_table(s.content)
+            parts.append(f"## {s.section_title}\n\n{cleaned}")
+    return "\n\n".join(parts)
+
+
+def _build_industry_drs_prompt(
+    company,
+    tier: str,
+    tier_instruction: str,
+    industry_report_context: str,
+    company_context: str,
+) -> str:
+    """System prompt for the DRS Industry Section deliverable. Tells DeepSeek
+    to rewrite the source industry report into S-1 prospectus-style language
+    modeled on the SEC exemplars Eric provided 2026-05-21."""
+    return f"""You are a senior capital-markets analyst at **Orionmano Assurance Services**, drafting the **Industry** chapter of a Draft Registration Statement (DRS) for the Company's Form F-1 / S-1 filing with the U.S. Securities and Exchange Commission.
+
+This document is a STANDALONE section of a Nasdaq IPO prospectus. It is not a research report — it is a regulatory filing chapter, written in third-person prospectus voice, dense with citations, and structured to satisfy SEC disclosure expectations.
+
+## VOICE AND STYLE — PROSPECTUS-GRADE
+- Third-person formal English. The Company refers to itself as "the Company" or "we" (consistent with S-1 voice).
+- NO marketing language. NO superlatives without quantification. NO hedging fillers.
+- Every quantitative claim carries a specific number AND a `<cite/>` tag.
+- Match the tone and density of the SEC exemplars below:
+  - Glogos (tm246985-23_f1) — https://www.sec.gov/Archives/edgar/data/2013649/000110465925027648/tm246985-23_f1.htm#tINOV
+  - Microware (d487167df1) — https://www.sec.gov/Archives/edgar/data/1722608/000119312518060890/d487167df1.htm#rom487167_16
+
+## STRUCTURE
+This is the **Industry** chapter only. Sub-sections (Industry Overview / Market Size / Growth Drivers / Regulatory Environment / Competitive Landscape / Company Positioning) are generated one at a time. Each sub-section must read like a section of an actual S-1 filing — not a research paper.
+
+## EXHIBITS — TABLES ONLY, NO CHART JSON
+The DRS deliverable is exported as a Word document (.docx). For every quantitative exhibit (market size trajectory, market shares, segment splits, peer benchmarking), emit a **markdown table** with the same numbers. **DO NOT emit ```chart fenced JSON blocks** — they render as raw JSON in Word and look unprofessional. The source industry report may contain such blocks; convert them to tables when you reference the same data.
+
+## CITATION PROTOCOL — MANDATORY
+Every quantitative claim and external fact MUST carry an inline `<cite/>` tag:
+  `<cite topic="kebab-case-topic" claim="The specific factual claim with numbers in one sentence."/>`
+- One tag per distinct claim, placed immediately after the claim (inline, not at paragraph end).
+- Reuse `topic` values across sections when citing the same subject (the system maps tags to published Orionmano articles).
+- DO NOT use `[1]`, `[^1]`, or any other footnote syntax directly — the system converts `<cite/>` tags automatically.
+- Forbidden sources: paid databases (Bloomberg, Refinitiv, Gartner, IQVIA), proprietary research, the Company's own internal documents.
+
+## TIER
+Tier: **{tier.upper()}** — {tier_instruction}
+
+## SOURCE MATERIAL — PRIOR INDUSTRY REPORT FOR THIS COMPANY
+The Company already commissioned an internal industry research report. Repurpose that research into prospectus voice for this DRS chapter. Pull facts, market sizing, growth drivers, and competitive observations from the report below. Re-cite them via `<cite/>` tags — the prior report's footnote numbering does not carry over.
+
+{industry_report_context if industry_report_context else "(No prior industry report found. Refuse to generate and instruct the analyst to commission an industry_report first.)"}
+
+## TARGET COMPANY CONTEXT
+{company_context}
+
+REMEMBER: This is the **Industry** chapter of an SEC filing, NOT a research report and NOT a sales pitch. Your reader is an SEC reviewer or institutional investor.
+"""
+
+
 def _build_industry_report_prompt(
     company,
     tier: str,
@@ -1663,6 +1873,17 @@ async def generate_report_bg(
             # Industry reports use inline <cite/> -> per-section GFM footnotes.
             # No numbered-source registry, no end-of-doc references section.
             references_section = ""
+        elif report_type == "industry_drs":
+            # Eric 2026-05-21 — DRS Industry Section. Reuses the source
+            # industry_report's research and reformats it into S-1 prospectus
+            # voice. If no industry_report exists, the report row will still
+            # be created but each section will note that an industry_report
+            # must be commissioned first.
+            industry_ctx = await _load_industry_report_for_drs(db, company.id)
+            system_prompt = _build_industry_drs_prompt(
+                company, tier, tier_instruction, industry_ctx, company_context,
+            )
+            references_section = ""
         else:
             system_prompt = f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong-based), specialising in Nasdaq IPO advisory for Asia-Pacific companies. All deliverables target Nasdaq listing standards (Capital Market / Global Market / Global Select Market), SEC registration (S-1 / F-1 / 20-F / 6-K), PCAOB-audited financials, and US GAAP / IFRS reconciliation paths. Do NOT reference HKEX, HKSIR, SEHK, Bursa Malaysia, or other non-US listing regimes as the regulatory perimeter.
 Generate professional report content. Be concise, data-driven, and specific.
@@ -1712,6 +1933,10 @@ Tier: {tier.upper()} — {tier_instruction}
         # truncating mid-cite-tag and mid-chart-JSON, so widen it.
         if report_type == "industry_report":
             max_tokens_per_section = {"essential": 1800, "standard": 3200, "premium": 4500}.get(tier, 3200)
+        elif report_type == "industry_drs":
+            # DRS sections are prospectus-grade prose with tables and dense
+            # citations — needs as much headroom as the industry report itself.
+            max_tokens_per_section = {"essential": 1800, "standard": 3200, "premium": 4500}.get(tier, 3200)
 
         # Per-report-type user-prompt suffix
         if report_type in ("gap_analysis", "dd_report"):
@@ -1720,7 +1945,7 @@ Tier: {tier.upper()} — {tier_instruction}
                 "State the basis of information naturally (e.g., 'Based on FY2025 audited financials' or 'Per management representations'). "
                 "If information is not available, clearly state 'Information Required' and describe what data is needed."
             )
-        elif report_type == "industry_report":
+        elif report_type in ("industry_report", "industry_drs"):
             gap_user_suffix = (
                 " IMPORTANT: cite every quantitative claim using inline `<cite topic=\"kebab-case\" claim=\"...\"/>` tags as specified. "
                 "Do NOT use [1], [2], or [^n] syntax. Do NOT cite paid/proprietary databases or client documents. "
@@ -1757,6 +1982,11 @@ Tier: {tier.upper()} — {tier_instruction}
                 elif report_type == "industry_report":
                     section_instruction = INDUSTRY_SECTION_INSTRUCTIONS.get(section_key, "")
                     use_reasoner = section_key in INDUSTRY_REASONER_SECTIONS
+                elif report_type == "industry_drs":
+                    section_instruction = INDUSTRY_DRS_SECTION_INSTRUCTIONS.get(section_key, "")
+                    # Competitive landscape + company positioning benefit from
+                    # chain-of-thought — same heuristic as the industry report.
+                    use_reasoner = section_key in {"competitive_landscape", "company_positioning"}
 
                 content = await generate_text(
                     system_prompt=system_prompt,
@@ -1780,7 +2010,7 @@ Tier: {tier.upper()} — {tier_instruction}
                 # of orphaned-pending stubs) so the final heal step can retry
                 # any that are still pending — Eric 2026-05 fix for the
                 # 404 backlog.
-                if report_type == "industry_report":
+                if report_type in ("industry_report", "industry_drs"):
                     from app.services.report.citations import process_cite_tags
                     content, cited_articles = await process_cite_tags(
                         db, content, report_id=report.id

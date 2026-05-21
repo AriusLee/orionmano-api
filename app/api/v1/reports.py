@@ -354,6 +354,35 @@ async def autofix_lint_finding(
     }
 
 
+@router.get("/{report_id}/docx")
+async def export_report_docx(
+    company_id: UUID,
+    report_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Render a report row to a Word (.docx) document.
+
+    Eric 2026-05-21 — DRS Industry Section ships as .docx so legal can paste
+    it into the prospectus draft. Other report_types can also use this
+    endpoint when a Word deliverable is preferred over PDF.
+    """
+    from app.services.report.docx_export import generate_report_docx
+    try:
+        docx_bytes = await generate_report_docx(db, company_id, report_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        # Pandoc missing on host — surface as 500 with a clear message so the
+        # deploy team knows to add the binary.
+        raise HTTPException(status_code=500, detail=str(e))
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": 'attachment; filename="report.docx"'},
+    )
+
+
 @router.get("/{report_id}/pdf")
 async def export_report_pdf(
     company_id: UUID,
