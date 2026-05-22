@@ -560,35 +560,55 @@ async def run_citation_heal_loop(report_id: UUID, article_ids: list[UUID]) -> No
     """Generate each pending article sequentially, re-snapshotting after every
     one so the live-progress counter ticks. Assumes initialize_citation_snapshot
     already ran (which marked the snapshot as in-flight). The final write flips
-    `in_flight=False` and sets `all_ok` honestly."""
+    `in_flight=False` and sets `all_ok` honestly.
+
+    Eric 2026-05-22 — wrap in try/finally so the in_flight=False snapshot is
+    ALWAYS written, even when the loop dies mid-flight (LLM exception that
+    bubbles past the per-article catch, DB session failure, asyncio cancellation
+    by uvicorn reload). Otherwise the UI shows "Generating cited articles" at
+    20 of 27 forever and the analyst has no escape hatch.
+    """
     from sqlalchemy import select
     from app.database import async_session
     from app.models.published_article import PublishedArticle as _PA
 
-    async with async_session() as db:
-        result = await db.execute(
-            select(_PA.id).where(
-                _PA.id.in_(article_ids),
-                _PA.status == "pending",
-            )
-        )
-        pending_ids = [row[0] for row in result.all()]
-
-    for idx, aid in enumerate(pending_ids):
+    pending_ids: list[UUID] = []
+    try:
         async with async_session() as db:
-            try:
-                await generate_article_body(db, aid)
-            except Exception:
-                pass
-            await asyncio.sleep(0.5)
-        snapshot = await _snapshot_citation_health(
-            article_ids,
-            in_flight=(idx < len(pending_ids) - 1),
-        )
-        await _save_citation_snapshot(report_id, snapshot)
+            result = await db.execute(
+                select(_PA.id).where(
+                    _PA.id.in_(article_ids),
+                    _PA.status == "pending",
+                )
+            )
+            pending_ids = [row[0] for row in result.all()]
 
-    final_snapshot = await _snapshot_citation_health(article_ids, in_flight=False)
-    await _save_citation_snapshot(report_id, final_snapshot)
+        for idx, aid in enumerate(pending_ids):
+            async with async_session() as db:
+                try:
+                    await generate_article_body(db, aid)
+                except Exception:
+                    pass
+                await asyncio.sleep(0.5)
+            try:
+                snapshot = await _snapshot_citation_health(
+                    article_ids,
+                    in_flight=(idx < len(pending_ids) - 1),
+                )
+                await _save_citation_snapshot(report_id, snapshot)
+            except Exception:
+                # Snapshot failure shouldn't stop the heal loop — continue
+                # processing the rest and let the finally block finalize.
+                pass
+    finally:
+        try:
+            final_snapshot = await _snapshot_citation_health(article_ids, in_flight=False)
+            await _save_citation_snapshot(report_id, final_snapshot)
+        except Exception:
+            # Last-ditch: even the finalizer failed. The UI now has a stale
+            # detector (5 min no-progress → Restart button) so the analyst can
+            # recover manually.
+            pass
 
 
 async def heal_and_validate_citations(report_id: UUID, article_ids: list[UUID]) -> None:

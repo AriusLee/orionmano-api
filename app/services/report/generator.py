@@ -1513,18 +1513,48 @@ This document is a STANDALONE section of a Nasdaq IPO prospectus. It is not a re
   - Microware (d487167df1) — https://www.sec.gov/Archives/edgar/data/1722608/000119312518060890/d487167df1.htm#rom487167_16
 
 ## PEER ANONYMITY — MANDATORY (Eric 2026-05-22)
-The Company has NOT obtained reference approvals from peer companies. Therefore, throughout the entire DRS Industry Section:
-- **DO NOT name specific competitor companies.** The source industry report may name peers (e.g., "Koss", "VOXX", "Turtle Beach", "Universal Electronics"); strip those names when repurposing.
-- **Refer to peers only by category descriptors**: "a US-listed acoustic devices specialist", "the leading mainland China low-cost contract manufacturer", "a Japan-headquartered branded audio peer", "a NYSE-listed consumer electronics conglomerate".
-- **In comparison tables, use generic labels**: Player A, Player B, Player C.
-- **Use revenue / margin bands rather than exact figures** when the peer would be identifiable from precise numbers (e.g., "Revenue band: USD $50-200M" instead of "Revenue: USD $87M").
-- Public-domain market size, industry CAGR, regulatory body names, and government statistics CAN still be quoted with citations — only peer COMPANIES are anonymized.
+The Company has NOT obtained reference approvals from peer companies. Throughout the entire DRS Industry Section:
+- **DO NOT name specific competitor companies.** The source industry report may contain real peer names — strip them when repurposing.
+- **Refer to peers by descriptor**, using categories that fit THIS company's actual industry. For a payments business: "a US-listed cross-border payments specialist", "a regional bank's payments subsidiary". For a consumer-tech business: "a NYSE-listed consumer electronics conglomerate", "the leading Asia-headquartered contract manufacturer". Pick descriptors that match the sector at hand — do not copy examples from unrelated industries.
+- **In comparison tables and charts, use generic labels**: Player A / Player B / Player C.
+- **Use revenue / margin bands** rather than exact figures when a peer would be identifiable from precise numbers (e.g. "Revenue band: USD $50-200M" instead of "Revenue: USD $87M"). Use exact figures freely for public-domain MARKET totals.
+- Public-domain market sizing, industry CAGR, regulatory body names, government statistics, and named regulators / laws CAN be quoted with citations — only peer COMPANIES are anonymized.
+- **You MUST still produce substantive analysis** of market structure, participant typology, and competitive dynamics. Anonymity is a STYLISTIC constraint, not a reason to leave the Competitive Landscape section blank or thin. If the source industry report names peers, summarize the structural insight (concentration, archetypes, dynamics) WITHOUT the names.
 
 ## STRUCTURE
 This is the **Industry** chapter only. Sub-sections (Industry Overview / Market Size / Growth Drivers / Regulatory Environment / Competitive Landscape / Company Positioning) are generated one at a time. Each sub-section must read like a section of an actual S-1 filing — not a research paper.
 
-## EXHIBITS — TABLES ONLY, NO CHART JSON
-The DRS deliverable is exported as a Word document (.docx). For every quantitative exhibit (market size trajectory, market shares, segment splits, peer benchmarking), emit a **markdown table** with the same numbers. **DO NOT emit ```chart fenced JSON blocks** — they render as raw JSON in Word and look unprofessional. The source industry report may contain such blocks; convert them to tables when you reference the same data.
+## EXHIBITS — CHART BLOCKS + TABLES BOTH REQUIRED
+For every quantitative exhibit (market size trajectory, market shares, segment splits, geographic distribution, growth comparisons), emit BOTH:
+
+1. A `chart` fenced JSON block — the DOCX exporter renders this to a PNG and embeds it as an actual image in Word.
+2. A markdown table immediately below it, so the same numbers are visible as text.
+
+Chart spec format (use this EXACT schema):
+
+```chart
+{{
+  "type": "bar" | "stacked-bar" | "line" | "pie" | "horizontal-bar",
+  "title": "Exhibit N: [description]",
+  "x_label": "string",
+  "y_label": "string",
+  "y_unit": "USD M" | "%" | etc.,
+  "data": [
+    {{"x": "2024", "Market Size": 6.86}},
+    {{"x": "2025", "Market Size": 7.72}}
+  ],
+  "series": ["Market Size"],
+  "annotations": ["CAGR 2024-2032: 12.6%"],
+  "source_note": "Source: Orionmano Industries"
+}}
+```
+
+Rules:
+- For time-series → `bar` or `line`. x = year (string). One key per series.
+- For market-share → `pie` or `horizontal-bar`. Each row has `x` (segment / player label) and a single value series.
+- For nested segmentation over time → `stacked-bar`. Each row has `x` (year) and one key per stack segment.
+- `data` MUST contain only numeric values — no strings or "n/a". If unknown, omit the row.
+- Aim for at least 2 chart blocks total across the DRS (market size + one of: segment share, geographic split, anonymized peer comparison with Player A / B / C labels).
 
 ## CITATION PROTOCOL — MANDATORY
 Every quantitative claim and external fact MUST carry an inline `<cite/>` tag:
