@@ -1365,8 +1365,14 @@ INDUSTRY_DRS_SECTION_INSTRUCTIONS = {
         "and a 3-5 year historical CAGR, then forecast CAGR for the next 5 years. ALWAYS "
         "present dual CAGR: 'The market grew from USD X in 20YY to USD Y in 20YY, a CAGR "
         "of A.B%, and is expected to reach USD Z by 20YYE, representing a CAGR of C.D% over "
-        "20YY-20YYE.' Include a markdown table breaking down size by geography or segment. "
-        "Mirror the depth seen in the SEC exemplars."
+        "20YY-20YYE.' "
+        "\n\n**REQUIRED EXHIBITS** — you MUST emit BOTH for the market-size trajectory: "
+        "(a) a ```chart fenced JSON block (type='bar' or 'line', x=year, one series 'Market "
+        "Size', data covering historical + forecast years), AND (b) a markdown table with "
+        "the same numbers immediately below. The chart fence renders as an embedded image "
+        "in the Word export. Use the schema shown in the system prompt. Optionally add a "
+        "second chart (pie or stacked-bar) for geographic or segment split when the data "
+        "supports it. Mirror the depth seen in the SEC exemplars."
     ),
     "growth_drivers": (
         "4-6 structural growth drivers. Each: bolded driver name, 2-3 sentence explanation "
@@ -1385,15 +1391,24 @@ INDUSTRY_DRS_SECTION_INSTRUCTIONS = {
     "competitive_landscape": (
         "Describe market structure (fragmented vs consolidated), the profile of the top "
         "3-5 industry participants, and competitive dynamics (price, technology, "
-        "distribution, brand). **DO NOT name specific companies** — the Company has not "
-        "obtained reference approvals from those peers. Refer to peers by category and "
-        "position only: 'a US-listed acoustic specialist', 'the leading mainland China "
-        "low-cost contract manufacturer', 'a Japan-headquartered branded audio peer'. In "
-        "tables, use generic labels: Player A / Player B / Player C. Include a markdown "
-        "table with: Player | HQ Geography | Listing Venue | Revenue Band (e.g. USD "
-        "$50-200M) | Gross Margin Band | Key Strengths | Key Weaknesses. Bands are "
-        "preferable to exact figures to keep peers unidentifiable. Match the analytical "
-        "depth of a real S-1 industry chapter while preserving anonymity."
+        "distribution, brand). "
+        "\n\n**PEER ANONYMITY (use category descriptors, not company names)** — refer to "
+        "peers by category that fits the actual industry. Examples: 'a US-listed cross-"
+        "border payments specialist', 'a regional bank's payments subsidiary', 'the "
+        "leading Asia-headquartered contract manufacturer'. In tables and charts, use "
+        "Player A / Player B / Player C labels. **You MUST still produce 600-1200 words "
+        "of substantive analysis** — anonymity is a stylistic constraint, not a reason to "
+        "leave this section blank or thin. If the source industry report names peers, "
+        "summarize the structural insight (concentration, archetypes, dynamics) WITHOUT "
+        "the names. "
+        "\n\n**REQUIRED EXHIBITS** — emit BOTH for the peer comparison: "
+        "(a) a markdown table with columns Player | HQ Geography | Listing Venue | "
+        "Revenue Band (e.g. USD $50-200M) | Gross Margin Band | Key Strengths | Key "
+        "Weaknesses (use bands, not exact figures, to keep peers unidentifiable), AND "
+        "(b) a ```chart fenced JSON block — type='horizontal-bar' or 'bar' — showing the "
+        "anonymized players (x: Player A / B / C labels) plotted against a quantitative "
+        "metric like Revenue Band Midpoint or Estimated Market Share. The chart fence "
+        "renders as an embedded image in the Word export."
     ),
     "company_positioning": (
         "Position the Company within the competitive landscape established above. 2-3 "
@@ -2028,13 +2043,25 @@ Tier: {tier.upper()} — {tier_instruction}
                     use_reasoner = section_key in INDUSTRY_REASONER_SECTIONS
                 elif report_type == "industry_drs":
                     section_instruction = INDUSTRY_DRS_SECTION_INSTRUCTIONS.get(section_key, "")
-                    # Competitive landscape + company positioning benefit from
-                    # chain-of-thought — same heuristic as the industry report.
-                    use_reasoner = section_key in {"competitive_landscape", "company_positioning"}
+                    # Eric 2026-05-23 — reasoner was returning empty competitive_landscape
+                    # for some companies (REMSEA payments). DRS sections are formatting-
+                    # heavy (chart fences + tables); reasoner is less reliable at
+                    # following micro-format rules. Use chat for all DRS sections.
+                    use_reasoner = False
 
+                base_user_prompt = (
+                    f'Write the "{section_title}" section. Be professional and concise. '
+                    f'Markdown only. No preamble. **DO NOT include the section title as a '
+                    f'heading or number it — the renderer already prints the section title '
+                    f'and number above your content. For sub-sections, use plain headings '
+                    f'without numeric prefixes (e.g. "## Corporate Structure", NOT '
+                    f'"## 5.1 Corporate Structure" or "## 2.1 Corporate Structure"). '
+                    f'Start directly with sub-section headings or body prose.**'
+                    f'{gap_user_suffix}\n{section_instruction}'
+                )
                 content = await generate_text(
                     system_prompt=system_prompt,
-                    user_prompt=f'Write the "{section_title}" section. Be professional and concise. Markdown only. No preamble. **DO NOT include the section title as a heading or number it — the renderer already prints the section title and number above your content. For sub-sections, use plain headings without numeric prefixes (e.g. "## Corporate Structure", NOT "## 5.1 Corporate Structure" or "## 2.1 Corporate Structure"). Start directly with sub-section headings or body prose.**{gap_user_suffix}\n{section_instruction}',
+                    user_prompt=base_user_prompt,
                     max_tokens=max_tokens_per_section,
                     use_reasoner=use_reasoner,
                     skill=f"generate_report:{report_type}",
@@ -2047,6 +2074,33 @@ Tier: {tier.upper()} — {tier_instruction}
                 # markdown heading line if it matches the current section
                 # title (case-insensitive, ignoring leading "N." numbering).
                 content = _strip_duplicate_section_heading(content, section_title)
+
+                # Eric 2026-05-23 — defensive retry. The DRS competitive_landscape
+                # section was returning empty body on prod (REMSEA payments) because
+                # DeepSeek occasionally bails when its constraints feel over-defined.
+                # If the stripped content is empty or trivially short (just a heading
+                # or one sentence), retry once with chat model + a softened nudge
+                # that explicitly tells the model the section MUST contain prose.
+                if report_type == "industry_drs" and len((content or "").strip()) < 300:
+                    retry_prompt = (
+                        base_user_prompt
+                        + "\n\n**RETRY** — your previous response was empty or too short. "
+                        "Produce 600-1200 words of substantive analysis. Anonymity "
+                        "constraints are stylistic only — they are not a reason to "
+                        "leave the section blank. Use Player A/B/C labels and "
+                        "category descriptors as instructed, but DO produce the full "
+                        "content."
+                    )
+                    content = await generate_text(
+                        system_prompt=system_prompt,
+                        user_prompt=retry_prompt,
+                        max_tokens=max_tokens_per_section,
+                        use_reasoner=False,
+                        skill=f"generate_report:{report_type}:retry",
+                        company_id=report.company_id,
+                        report_id=report.id,
+                    )
+                    content = _strip_duplicate_section_heading(content, section_title)
 
                 # Industry reports: resolve <cite/> tags into GFM footnotes and
                 # create PublishedArticle stubs for later body generation. We
