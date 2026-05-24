@@ -289,6 +289,33 @@ def salvage_truncated_tail(content: str) -> str:
     return out.rstrip()
 
 
+def strip_cites_and_footnotes(content: str) -> str:
+    """Remove every `<cite .../>` tag, every `[^N]` ref, and every `[^N]:`
+    definition block from `content`.
+
+    Eric 2026-05-24 — the DRS Industry Section opens with the OM Report
+    chapter-level disclosure, so body prose must NOT carry inline footnotes.
+    Chart `source_note` fields and explicit "Source: …" lines inside chart
+    JSON / markdown table footers are unaffected because they don't use
+    `<cite/>` syntax. Tail-truncation cleanup runs first so dangling tags
+    don't survive as raw text.
+    """
+    out = salvage_truncated_tail(content)
+    # Drop every well-formed cite tag.
+    out = _CITE_TAG_RE.sub("", out)
+    # Drop any residual `<cite ...>` / `<cite ... />` that didn't match the
+    # strict tag regex (e.g. malformed attributes). Use a permissive pattern
+    # scoped to the literal `<cite` opener so we don't touch unrelated HTML.
+    out = re.sub(r"<cite\b[^>]*/?>", "", out, flags=re.IGNORECASE)
+    # Drop GFM footnote DEFINITIONS line-by-line: `[^N]: ...` at line start.
+    out = re.sub(r"(?m)^\[\^[A-Za-z0-9_-]+\]:.*(?:\n|$)", "", out)
+    # Drop inline `[^N]` markers regardless of whether a definition existed.
+    out = _FOOTNOTE_REF_RE.sub("", out)
+    # Collapse any blank-line runs left by the deletions.
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.rstrip()
+
+
 def strip_orphan_footnote_refs(content: str) -> str:
     """Remove `[^N]` markers that have no matching `[^N]:` definition.
 

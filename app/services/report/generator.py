@@ -1356,42 +1356,49 @@ INDUSTRY_DRS_SECTION_INSTRUCTIONS = {
     "industry_overview": (
         "Open with a 2-3 paragraph definition of the industry the Company operates in, "
         "establishing scope (geography, sub-sector, end-markets served) and why this market "
-        "matters. Tone: third-person, formal, no marketing language. Cite quantitative "
-        "claims via `<cite/>`. Match the opening style of the Glogos and Microware S-1 "
-        "industry sections."
+        "matters. Tone: third-person, formal, no marketing language. NO `<cite/>` tags, NO "
+        "`[^N]` footnotes — body prose is unfootnoted (the chapter-level OM Report disclosure "
+        "handles attribution). Sprinkle an *\"according to the OM Report\"* / *\"per the OM "
+        "Report\"* phrase 1-2 times where natural. Match the opening style of the Glogos and "
+        "Microware S-1 industry sections."
     ),
     "market_size_growth": (
         "Provide market size (in USD or local currency) for the most recent reported year "
         "and a 3-5 year historical CAGR, then forecast CAGR for the next 5 years. ALWAYS "
         "present dual CAGR: 'The market grew from USD X in 20YY to USD Y in 20YY, a CAGR "
         "of A.B%, and is expected to reach USD Z by 20YYE, representing a CAGR of C.D% over "
-        "20YY-20YYE.' "
+        "20YY-20YYE.' Numbers go in the prose unfootnoted. "
         "\n\n**REQUIRED EXHIBITS** — you MUST emit BOTH for the market-size trajectory: "
         "(a) a ```chart fenced JSON block (type='bar' or 'line', x=year, one series 'Market "
-        "Size', data covering historical + forecast years), AND (b) a markdown table with "
-        "the same numbers immediately below. The chart fence renders as an embedded image "
-        "in the Word export. Use the schema shown in the system prompt. Optionally add a "
-        "second chart (pie or stacked-bar) for geographic or segment split when the data "
-        "supports it. Mirror the depth seen in the SEC exemplars."
+        "Size', data covering historical + forecast years, `source_note`: \"Source: the OM "
+        "Report\"), AND (b) a markdown table with the same numbers immediately below, "
+        "followed on its own line by `*Source: the OM Report.*` The chart fence renders "
+        "as an embedded image in the Word export. Use the schema shown in the system "
+        "prompt. Optionally add a second chart (pie or stacked-bar) for geographic or "
+        "segment split when the data supports it. Mirror the depth seen in the SEC exemplars."
     ),
     "growth_drivers": (
         "4-6 structural growth drivers. Each: bolded driver name, 2-3 sentence explanation "
-        "with quantification where possible, `<cite/>` on every number. Order by impact. "
-        "Examples typical in S-1 filings: rising consumer income, regulatory tailwinds, "
-        "technological shifts, demographic trends, channel expansion."
+        "with quantification where possible. NO `<cite/>` tags, NO `[^N]` footnotes — "
+        "numbers live in the prose unfootnoted. Order by impact. Examples typical in S-1 "
+        "filings: rising consumer income, regulatory tailwinds, technological shifts, "
+        "demographic trends, channel expansion."
     ),
     "regulatory_environment": (
         "Survey the key regulatory regimes affecting the industry. Cover (a) home-jurisdiction "
         "regulation (Hong Kong, Singapore, etc.), (b) US/Nasdaq-relevant regulation (FDA, FCC, "
         "tariffs, export controls, sanctions), and (c) any cross-border data, IP, or trade "
         "rules. For each regime: bolded name, what it regulates, current status (in force, "
-        "pending), implications for industry participants. NO speculation about future "
-        "regulation without a `<cite/>`."
+        "pending), implications for industry participants. Named regulators / laws / notices "
+        "appear inline as plain descriptive prose (e.g. *\"under Singapore's Payment Services "
+        "Act 2019\"*) — these are NOT citations, no `<cite/>` or footnote required. NO "
+        "speculation about future regulation."
     ),
     "competitive_landscape": (
         "Describe market structure (fragmented vs consolidated), the profile of the top "
         "3-5 industry participants, and competitive dynamics (price, technology, "
-        "distribution, brand). "
+        "distribution, brand). NO `<cite/>` tags, NO `[^N]` footnotes — body prose is "
+        "unfootnoted. "
         "\n\n**PEER ANONYMITY (use category descriptors, not company names)** — refer to "
         "peers by category that fits the actual industry. Examples: 'a US-listed cross-"
         "border payments specialist', 'a regional bank's payments subsidiary', 'the "
@@ -1404,18 +1411,20 @@ INDUSTRY_DRS_SECTION_INSTRUCTIONS = {
         "\n\n**REQUIRED EXHIBITS** — emit BOTH for the peer comparison: "
         "(a) a markdown table with columns Player | HQ Geography | Listing Venue | "
         "Revenue Band (e.g. USD $50-200M) | Gross Margin Band | Key Strengths | Key "
-        "Weaknesses (use bands, not exact figures, to keep peers unidentifiable), AND "
+        "Weaknesses (use bands, not exact figures, to keep peers unidentifiable), followed "
+        "on its own line by `*Source: the OM Report.*`, AND "
         "(b) a ```chart fenced JSON block — type='horizontal-bar' or 'bar' — showing the "
         "anonymized players (x: Player A / B / C labels) plotted against a quantitative "
-        "metric like Revenue Band Midpoint or Estimated Market Share. The chart fence "
-        "renders as an embedded image in the Word export."
+        "metric like Revenue Band Midpoint or Estimated Market Share, with `source_note`: "
+        "\"Source: the OM Report\". The chart fence renders as an embedded image in the Word export."
     ),
     "company_positioning": (
         "Position the Company within the competitive landscape established above. 2-3 "
         "paragraphs covering: (a) which segment(s) the Company plays in, (b) competitive "
         "advantages (technology, scale, customer base, IP), (c) the white-space opportunity "
         "the Company is targeting post-IPO. Tone is still third-person and prospectus-grade "
-        "— the Company refers to itself as 'the Company' or 'we' as appropriate to S-1 voice."
+        "— the Company refers to itself as 'the Company' or 'we' as appropriate to S-1 voice. "
+        "NO `<cite/>` tags, NO `[^N]` footnotes — body prose is unfootnoted."
     ),
 }
 
@@ -1522,7 +1531,7 @@ This document is a STANDALONE section of a Nasdaq IPO prospectus. It is not a re
 ## VOICE AND STYLE — PROSPECTUS-GRADE
 - Third-person formal English. The Company refers to itself as "the Company" or "we" (consistent with S-1 voice).
 - NO marketing language. NO superlatives without quantification. NO hedging fillers.
-- Every quantitative claim carries a specific number AND a `<cite/>` tag.
+- Every quantitative claim carries a specific number, but **NO inline citation markers** (see CITATION PROTOCOL below) — body prose is unfootnoted; the chapter-level disclosure handles attribution.
 - Match the tone and density of the SEC exemplars below:
   - Glogos (tm246985-23_f1) — https://www.sec.gov/Archives/edgar/data/2013649/000110465925027648/tm246985-23_f1.htm#tINOV
   - Microware (d487167df1) — https://www.sec.gov/Archives/edgar/data/1722608/000119312518060890/d487167df1.htm#rom487167_16
@@ -1571,13 +1580,17 @@ Rules:
 - `data` MUST contain only numeric values — no strings or "n/a". If unknown, omit the row.
 - Aim for at least 2 chart blocks total across the DRS (market size + one of: segment share, geographic split, anonymized peer comparison with Player A / B / C labels).
 
-## CITATION PROTOCOL — MANDATORY
-Every quantitative claim and external fact MUST carry an inline `<cite/>` tag:
-  `<cite topic="kebab-case-topic" claim="The specific factual claim with numbers in one sentence."/>`
-- One tag per distinct claim, placed immediately after the claim (inline, not at paragraph end).
-- Reuse `topic` values across sections when citing the same subject (the system maps tags to published Orionmano articles).
-- DO NOT use `[1]`, `[^1]`, or any other footnote syntax directly — the system converts `<cite/>` tags automatically.
-- Forbidden sources: paid databases (Bloomberg, Refinitiv, Gartner, IQVIA), proprietary research, the Company's own internal documents.
+## CITATION PROTOCOL — NO INLINE CITATIONS IN BODY PROSE (Eric 2026-05-24)
+The chapter opens with a deterministic top-of-chapter disclosure attributing all data to the OM Report. That single disclosure replaces inline footnotes throughout the body. Therefore:
+- **DO NOT emit `<cite topic="..." claim="..."/>` tags anywhere.** Server-side post-processing will strip every cite tag and every `[^N]` footnote artifact from your output before persistence, so emitting them just wastes tokens.
+- **DO NOT emit `[1]`, `[^1]`, `[^name]` or any footnote/endnote markers** anywhere in body prose.
+- **DO NOT append a "Sources" / "References" / "Footnotes" list** at the end of any section.
+- For attribution voice in body prose, use the natural-language phrasing covered in the "ATTRIBUTION VOICE" section above (*"according to the OM Report"*, *"per the OM Report"*) — these are PROSE, not citation markup.
+- **Charts and tables DO carry source attribution**:
+  - Every ```chart fenced JSON block MUST include a `source_note` field, typically `"Source: the OM Report"` (or `"Source: the OM Report and Company data"` when blended).
+  - Every markdown table MUST be followed immediately by an italicized line: `*Source: the OM Report.*` (or a blended variant) on its own line.
+- Public-domain regulatory / government / legal references (e.g. *"under Singapore's Payment Services Act 2019"*, *"the U.S. Department of Commerce's Bureau of Industry and Security"*) may appear inline as plain prose — these are NOT citations, they are descriptive references to named regimes, and they do not require any tag or footnote.
+- Forbidden sources: paid databases (Bloomberg, Refinitiv, Gartner, IQVIA, IDC), proprietary research, the Company's own internal documents, ANY external consultant name other than OM Assurance / the OM Report.
 
 ## TIER
 Tier: **{tier.upper()}** — {tier_instruction}
@@ -2132,13 +2145,22 @@ Tier: {tier.upper()} — {tier_instruction}
                 # of orphaned-pending stubs) so the final heal step can retry
                 # any that are still pending — Eric 2026-05 fix for the
                 # 404 backlog.
-                if report_type in ("industry_report", "industry_drs"):
+                #
+                # DRS Industry Section (Eric 2026-05-24): the chapter-level OM
+                # Report disclosure replaces inline citations. Strip every
+                # <cite/> tag and footnote artifact from body prose — charts
+                # and tables keep their own `source_note` / footer lines
+                # because those don't use <cite/> syntax.
+                if report_type == "industry_report":
                     from app.services.report.citations import process_cite_tags
                     content, cited_articles = await process_cite_tags(
                         db, content, report_id=report.id
                     )
                     for a in cited_articles:
                         all_cited_article_ids.add(a.id)
+                elif report_type == "industry_drs":
+                    from app.services.report.citations import strip_cites_and_footnotes
+                    content = strip_cites_and_footnotes(content)
 
                 section = ReportSection(
                     report_id=report.id,
