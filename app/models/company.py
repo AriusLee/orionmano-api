@@ -32,6 +32,7 @@ class Company(Base):
     pinned_overrides: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=dict)  # Eric 2026-05-17 — analyst-fixed params the LLM must preserve verbatim and that calibration must skip when scaling to target
     pinned_cocos: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=dict)  # Eric 2026-05-18 — analyst-fixed include/selected_for_wacc per ticker; producer overlays onto payload.cocos after LLM
     business_development_plan: Mapped[str | None] = mapped_column(Text)  # Eric 2026-05-19 #9 — analyst-supplied BDP narrative; producer treats as authoritative context for revenue/growth/margin justification
+    industry_report_addendum: Mapped[str | None] = mapped_column(Text)  # Eric 2026-05-23 — analyst-supplied disclosures (BDP highlights, recent launches, niche context) injected into industry_report generation as authoritative context
     report_tier: Mapped[str] = mapped_column(String(20), default="standard")  # essential, standard, premium
     logo_path: Mapped[str | None] = mapped_column(String(500))
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))

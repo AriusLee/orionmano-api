@@ -1601,8 +1601,15 @@ def _build_industry_report_prompt(
     template: str,
     web_context: str,
     company_context: str,
+    addendum: str = "",
 ) -> str:
-    """Build the Frost & Sullivan / CIC-style system prompt for industry reports."""
+    """Build the Frost & Sullivan / CIC-style system prompt for industry reports.
+
+    `addendum` is the optional analyst-supplied disclosure block — pulled from
+    Company.industry_report_addendum (Eric 2026-05-23). The LLM treats it as
+    authoritative context alongside the web/company context blocks. Empty
+    string when the company hasn't filled the field.
+    """
     return f"""You are a senior research analyst at **Orionmano Industries**, an independent industry research imprint publishing on industries.omassurance.com.
 
 You are drafting a section of an **Independent Industry Expert Report** — the institutional-grade document that accompanies Nasdaq IPO prospectuses (the "Industry" chapter typical of Form S-1 / F-1 filings) and equivalent international filings. Match the voice, density, and structure of Frost & Sullivan and China Insights Consultancy (CIC) reports.
@@ -1696,7 +1703,10 @@ Tier: **{tier.upper()}** — {tier_instruction}
 ## TARGET COMPANY CONTEXT (for framing the industry, not for citing)
 {company_context}
 
-REMEMBER: This is an INDUSTRY report, not a company report. Focus on the industry. The target company context tells you which industry, geography, and segment to analyze — but the report is about the industry, and only references the target company in the Strategic Recommendations section.
+## ANALYST-PROVIDED ADDITIONAL DISCLOSURES (Eric 2026-05-23 — authoritative; weave into Strategic Recommendations and any other section where the disclosure is directly relevant)
+{addendum if addendum else "(None provided.)"}
+
+REMEMBER: This is an INDUSTRY report, not a company report. Focus on the industry. The target company context tells you which industry, geography, and segment to analyze — but the report is about the industry, and only references the target company in the Strategic Recommendations section. Treat the Analyst-Provided Additional Disclosures as authoritative ground truth about the target company (analyst has verified it); do NOT cite it externally, but use it to inform claims about the Company's positioning and the strategic implications you draw.
 """
 
 
@@ -1926,8 +1936,14 @@ async def generate_report_bg(
             # DD report: no citations, natural basis statements only
             references_section = ""
         elif report_type == "industry_report":
+            # Eric 2026-05-23 — pull the analyst-supplied addendum from the
+            # company row (industry_report_addendum). Optional; empty string
+            # when not set, in which case the prompt block reads "(None
+            # provided.)" and the LLM ignores it.
+            addendum = (getattr(company, "industry_report_addendum", None) or "").strip()
             system_prompt = _build_industry_report_prompt(
                 company, tier, tier_instruction, template, web_context, company_context,
+                addendum=addendum,
             )
             # Industry reports use inline <cite/> -> per-section GFM footnotes.
             # No numbered-source registry, no end-of-doc references section.
