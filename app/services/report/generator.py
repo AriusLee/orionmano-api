@@ -1582,8 +1582,16 @@ Every quantitative claim and external fact MUST carry an inline `<cite/>` tag:
 ## TIER
 Tier: **{tier.upper()}** — {tier_instruction}
 
-## SOURCE MATERIAL — PRIOR INDUSTRY REPORT FOR THIS COMPANY
-The Company already commissioned an internal industry research report. Repurpose that research into prospectus voice for this DRS chapter. Pull facts, market sizing, growth drivers, and competitive observations from the report below. Re-cite them via `<cite/>` tags — the prior report's footnote numbering does not carry over.
+## ATTRIBUTION VOICE — "THE OM REPORT" (Eric 2026-05-24)
+The chapter opens with a chapter-level disclosure (rendered deterministically OUTSIDE your output — DO NOT emit it yourself) attributing the entire chapter to **Orionmano International Holdings Co. Limited ("OM Assurance")**'s industry report commissioned by the Company (referred to as **"the OM Report"**). Mirror how real S-1 industry chapters handle attribution after a top-of-chapter consultant disclosure:
+- **DO NOT** open every paragraph with "According to the OM Report" — the top disclosure already establishes broad attribution.
+- **DO** sprinkle phrases like *"according to the OM Report"*, *"as set forth in the OM Report"*, *"per the OM Report"*, *"the OM Report estimates that…"*, *"the OM Report further indicates that…"* approximately every 2-4 paragraphs (and on each major standalone statistic, table, or chart) so a reader can trace claims back to the OM Report without prompting.
+- For chart `source_note` fields and table footers, use **"Source: the OM Report"** (or "Source: the OM Report and Company data" when blending).
+- Public-domain market totals, regulatory bodies, named laws, and government statistics CAN still cite the original public source — but only when the source is genuinely public-domain. Default to "the OM Report" otherwise.
+- NEVER name "Frost & Sullivan", "Gartner", "IDC", or any other third-party consultant — the OM Report is the consultant.
+
+## SOURCE MATERIAL — PRIOR INDUSTRY REPORT FOR THIS COMPANY (THE OM REPORT)
+The Company already commissioned an internal industry research report — that report **IS** the OM Report. Repurpose that research into prospectus voice for this DRS chapter. Pull facts, market sizing, growth drivers, and competitive observations from the report below. Re-cite them via `<cite/>` tags AND the in-prose OM Report attribution above — the prior report's footnote numbering does not carry over.
 
 {industry_report_context if industry_report_context else "(No prior industry report found. Refuse to generate and instruct the analyst to commission an industry_report first.)"}
 

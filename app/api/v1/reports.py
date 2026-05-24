@@ -131,12 +131,20 @@ async def get_report(
 ):
     result = await db.execute(
         select(Report)
-        .options(selectinload(Report.sections))
+        .options(selectinload(Report.sections), selectinload(Report.company))
         .where(Report.id == report_id, Report.company_id == company_id)
     )
     report = result.scalar_one_or_none()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+    # DRS Industry Section opens with the OM Assurance / OM Report disclosure
+    # (Eric 2026-05-24). Attached as a transient attribute so Pydantic picks
+    # it up via from_attributes — the same string the .docx export renders.
+    if report.report_type == "industry_drs":
+        from app.services.report.disclosure import industry_drs_disclosure
+        report.disclosure_preamble = industry_drs_disclosure(
+            report.company.name if report.company else "the Company"
+        )
     return report
 
 

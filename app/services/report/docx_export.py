@@ -94,10 +94,13 @@ def _assemble_markdown(
     company_name: str,
     sections: Iterable[tuple[str, str | None]],
     asset_dir: Path,
+    preamble: str | None = None,
 ) -> str:
-    """Stitch the title page, metadata block, and each section into one
-    markdown document for pandoc to consume. Chart PNGs are rendered into
-    asset_dir as a side-effect of section assembly."""
+    """Stitch the title page, metadata block, optional preamble, and each
+    section into one markdown document for pandoc to consume. Chart PNGs are
+    rendered into asset_dir as a side-effect of section assembly. `preamble`
+    is rendered as italicized text immediately after the title page and
+    before the first section heading (used for the DRS legal disclosure)."""
     date_str = datetime.now().strftime("%d %B %Y")
     parts: list[str] = [
         f"% {title}",
@@ -105,6 +108,11 @@ def _assemble_markdown(
         f"% {date_str}",
         "",
     ]
+    if preamble:
+        # Italicized in pandoc markdown; matches the Frost & Sullivan-style
+        # opening paragraph in real S-1 industry chapters.
+        parts.append(f"*{preamble}*")
+        parts.append("")
     chart_counter = [0]
     for sec_title, sec_body in sections:
         parts.append(_section_to_markdown(sec_title, sec_body, asset_dir, chart_counter))
@@ -136,12 +144,20 @@ async def generate_report_docx(
     ordered = sorted(report.sections, key=lambda s: s.sort_order)
     section_pairs = [(s.section_title, s.content) for s in ordered]
 
+    # DRS Industry Section opens with the OM Assurance / OM Report disclosure
+    # (Eric 2026-05-24) — same text the on-screen viewer renders, sourced
+    # from disclosure.industry_drs_disclosure for single-source-of-truth.
+    preamble: str | None = None
+    if report.report_type == "industry_drs":
+        from app.services.report.disclosure import industry_drs_disclosure
+        preamble = industry_drs_disclosure(company_name)
+
     # All chart PNGs + the pandoc output land in a single temp dir so cleanup
     # is one rmtree call. Pandoc resolves the absolute image paths embedded
     # in the markdown when it builds the .docx.
     with tempfile.TemporaryDirectory(prefix="orionmano_docx_") as tmp_dir:
         asset_dir = Path(tmp_dir)
-        md = _assemble_markdown(report.title, company_name, section_pairs, asset_dir)
+        md = _assemble_markdown(report.title, company_name, section_pairs, asset_dir, preamble=preamble)
         docx_path = asset_dir / "out.docx"
         try:
             pypandoc.convert_text(

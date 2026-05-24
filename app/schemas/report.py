@@ -38,6 +38,9 @@ class ReportResponse(BaseModel):
     error_message: str | None = None
     lint_findings: list[dict] | None = None
     citation_health: dict | None = None
+    # Eric 2026-05-24 — only populated for industry_drs reports; the .docx
+    # export also renders this same string as the chapter preamble.
+    disclosure_preamble: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
     sections: list[ReportSectionResponse] = []
