@@ -300,6 +300,38 @@ def _strip_duplicate_section_heading(content: str, section_title: str) -> str:
     return content
 
 
+# Eric 2026-05-24 — terminal punctuation that signals a "completed" section
+# tail. We treat the section as cut mid-sentence if none of these appear in
+# the final segment.
+_TERMINAL_PUNCT = ('.', '!', '?', '"', '”', '’', ')', ']', '`')
+
+
+def _looks_truncated(content: str | None) -> bool:
+    """Heuristic: does this section's tail look like a mid-sentence cut?
+
+    Returns True when content is substantial (>500 chars — short stubs are
+    handled by the "under 300 chars" retry above) AND the last 12 non-
+    whitespace characters contain no terminal punctuation. Markdown table
+    rows ending in `|`, fenced code blocks ending in ```` ``` ````, and
+    italics ending in `*` are all treated as completed because their final
+    glyph signals a well-formed structural close. The check is intentionally
+    cheap and conservative — we'd rather miss a borderline cut than retry
+    spuriously and burn API budget.
+    """
+    if not content:
+        return False
+    tail = content.rstrip()
+    if len(tail) < 500:
+        return False
+    last_chunk = tail[-12:]
+    if any(p in last_chunk for p in _TERMINAL_PUNCT):
+        return False
+    # Markdown structural closers that imply the writer reached a natural stop.
+    if last_chunk.endswith('|') or last_chunk.endswith('```') or last_chunk.endswith('*'):
+        return False
+    return True
+
+
 def _load_template(report_type: str) -> str:
     template_map = {
         "gap_analysis": "00-gap-analysis.md",
@@ -2030,9 +2062,14 @@ Tier: {tier.upper()} — {tier_instruction}
         if report_type == "industry_report":
             max_tokens_per_section = {"essential": 1800, "standard": 3200, "premium": 4500}.get(tier, 3200)
         elif report_type == "industry_drs":
-            # DRS sections are prospectus-grade prose with tables and dense
-            # citations — needs as much headroom as the industry report itself.
-            max_tokens_per_section = {"essential": 1800, "standard": 3200, "premium": 4500}.get(tier, 3200)
+            # DRS sections are prospectus-grade prose plus chart JSON plus
+            # markdown tables — and several sections (regulatory_environment,
+            # competitive_landscape) cover multiple regimes/peers per section,
+            # so the 3200-token cap was cutting REMSEA's AML/CFT survey mid-
+            # sentence (Eric 2026-05-24 screenshot). DeepSeek-chat supports
+            # 8192 output tokens; lift the cap close to the ceiling for
+            # premium and well into safe territory for standard/essential.
+            max_tokens_per_section = {"essential": 2800, "standard": 5500, "premium": 7500}.get(tier, 5500)
 
         # Per-report-type user-prompt suffix
         if report_type in ("gap_analysis", "dd_report"):
@@ -2041,11 +2078,21 @@ Tier: {tier.upper()} — {tier_instruction}
                 "State the basis of information naturally (e.g., 'Based on FY2025 audited financials' or 'Per management representations'). "
                 "If information is not available, clearly state 'Information Required' and describe what data is needed."
             )
-        elif report_type in ("industry_report", "industry_drs"):
+        elif report_type == "industry_report":
             gap_user_suffix = (
                 " IMPORTANT: cite every quantitative claim using inline `<cite topic=\"kebab-case\" claim=\"...\"/>` tags as specified. "
                 "Do NOT use [1], [2], or [^n] syntax. Do NOT cite paid/proprietary databases or client documents. "
                 "The citation system converts your `<cite/>` tags to footnotes automatically."
+            )
+        elif report_type == "industry_drs":
+            # DRS chapter opens with the OM Report disclosure — body prose is
+            # unfootnoted; only charts and tables carry source attributions.
+            gap_user_suffix = (
+                " IMPORTANT: body prose is UNFOOTNOTED. Do NOT emit `<cite/>` tags, "
+                "`[^n]` footnotes, `[1]`/`[2]` markers, or any \"Sources\" list. "
+                "Every chart fence MUST include `\"source_note\": \"Source: the OM Report\"`. "
+                "Every markdown table MUST be followed on its own line by `*Source: the OM Report.*` "
+                "Public laws and regulators are referenced inline as plain descriptive prose."
             )
         else:
             gap_user_suffix = (
@@ -2138,6 +2185,43 @@ Tier: {tier.upper()} — {tier_instruction}
                         report_id=report.id,
                     )
                     content = _strip_duplicate_section_heading(content, section_title)
+
+                # Eric 2026-05-24 — truncation-detect-retry. The Regulatory
+                # Environment section ended mid-sentence ("...and to perform
+                # ongoing monitoring of") because the section's chart-and-
+                # tables-and-prose density blew past the 3200-token cap. We
+                # raised the cap to 5500 but DeepSeek can still cut multi-
+                # regime surveys; detect the cut by (a) substantial length
+                # (>800 chars — rules out near-empty caught above) and (b)
+                # no terminal punctuation in the final 12 chars (mid-sentence
+                # cut). Retry once with a higher cap and an explicit
+                # "complete the section" nudge.
+                if report_type == "industry_drs" and _looks_truncated(content):
+                    retry_cap = min(int(max_tokens_per_section * 1.5), 8000)
+                    truncation_retry_prompt = (
+                        base_user_prompt
+                        + "\n\n**RETRY** — your previous response was cut off mid-sentence "
+                        "(it ended without terminal punctuation). Produce the SAME "
+                        "section content but ensure it terminates with a complete "
+                        "sentence ending in a period. If a topic risks overflowing "
+                        "the budget, prefer breadth-then-depth: cover every required "
+                        "sub-topic in 2-3 tight sentences each rather than exhausting "
+                        "one and getting cut on the next."
+                    )
+                    retried = await generate_text(
+                        system_prompt=system_prompt,
+                        user_prompt=truncation_retry_prompt,
+                        max_tokens=retry_cap,
+                        use_reasoner=False,
+                        skill=f"generate_report:{report_type}:truncation-retry",
+                        company_id=report.company_id,
+                        report_id=report.id,
+                    )
+                    retried = _strip_duplicate_section_heading(retried, section_title)
+                    # Only accept the retry if it actually fixed the cut.
+                    # Otherwise keep the original — half a section beats no section.
+                    if retried and not _looks_truncated(retried):
+                        content = retried
 
                 # Industry reports: resolve <cite/> tags into GFM footnotes and
                 # create PublishedArticle stubs for later body generation. We
