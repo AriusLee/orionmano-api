@@ -43,24 +43,51 @@ _TITLE_PREFIX_RE = re.compile(r"^\s*Exhibit(?:\s+\d+)?\s*:\s*", re.IGNORECASE)
 _TITLE_NUM_RE = re.compile(r"^\s*Exhibit\s+(\d+)\b", re.IGNORECASE)
 
 
-def _label_sites(body: str) -> list[tuple[int, int, str, re.Match]]:
-    """Return all (start, end, kind, match) tuples for label sites in body,
-    sorted by document position. A label site is either a ```chart fence
-    OR a body caption line starting with `Exhibit`. Body labels whose
-    position falls inside a chart fence are excluded (the chart's own JSON
-    might contain "Exhibit" text that shouldn't double as a body label).
+def _scan_sites(body: str) -> tuple[list[tuple[int, int, str, re.Match]], list[tuple[int, int]]]:
+    """Return (label_sites, redundant_spans). label_sites is the sorted list
+    of (start, end, kind, match) for non-redundant label sites — chart
+    fences plus body Exhibit captions that are NOT immediately followed by
+    a chart fence. redundant_spans is the list of (start, end) ranges for
+    body labels that ARE immediately followed by a chart fence (only
+    whitespace between); these will be deleted from the markdown in the
+    rewrite pass so the chart fence alone carries the exhibit number.
+
+    Otherwise one chart would consume two counter slots (Eric 2026-05-25 —
+    the REMSEA (8).docx showed every chart producing two Exhibit labels:
+    one from the LLM's pre-chart bold paragraph, one from the chart fence
+    itself).
     """
     chart_matches = list(_CHART_FENCE_RE.finditer(body))
     chart_ranges = [(m.start(), m.end()) for m in chart_matches]
-    sites: list[tuple[int, int, str, re.Match]] = []
+    chart_starts_sorted = sorted(cs for cs, _ in chart_ranges)
+
+    label_sites: list[tuple[int, int, str, re.Match]] = []
+    redundant_spans: list[tuple[int, int]] = []
     for m in chart_matches:
-        sites.append((m.start(), m.end(), "chart", m))
+        label_sites.append((m.start(), m.end(), "chart", m))
     for m in _BODY_LABEL_RE.finditer(body):
-        s = m.start()
+        s, e = m.start(), m.end()
+        # Skip body labels that fall inside a chart fence (the JSON title
+        # might contain "Exhibit" text that shouldn't double as a label).
         if any(cs <= s < ce for cs, ce in chart_ranges):
             continue
-        sites.append((m.start(), m.end(), "label", m))
-    sites.sort(key=lambda x: x[0])
+        # Redundant-pre-chart: nearest chart fence starting at/after the
+        # label, with only whitespace between, means this label is the
+        # LLM's redundant heading for the chart that follows.
+        next_chart_start = next((cs for cs in chart_starts_sorted if cs >= e), None)
+        if next_chart_start is not None and not body[e:next_chart_start].strip():
+            # Stretch the deletion span to swallow the trailing whitespace
+            # so we don't leave a dangling blank line.
+            redundant_spans.append((s, next_chart_start))
+            continue
+        label_sites.append((s, e, "label", m))
+    label_sites.sort(key=lambda x: x[0])
+    return label_sites, redundant_spans
+
+
+def _label_sites(body: str) -> list[tuple[int, int, str, re.Match]]:
+    """Back-compat shim: return only the surviving label sites."""
+    sites, _ = _scan_sites(body)
     return sites
 
 
@@ -106,7 +133,8 @@ def renumber_exhibits(
                 if old_num:
                     mapping[int(old_num)] = counter
 
-    # Pass 2 — rewrite labels (counter) and in-prose refs (mapping).
+    # Pass 2 — rewrite labels (counter) and in-prose refs (mapping); also
+    # delete redundant pre-chart body labels.
     counter = 0
     out: list[tuple[str, str | None]] = []
     for sec_title, body in sections:
@@ -114,9 +142,13 @@ def renumber_exhibits(
             out.append((sec_title, body))
             continue
 
-        sites = _label_sites(body)
+        sites, redundant_spans = _scan_sites(body)
         label_spans = [(s, e) for s, e, _, _ in sites]
         replacements: list[tuple[int, int, str]] = []
+
+        # Drop redundant pre-chart body labels (replace with empty string).
+        for rs, re_ in redundant_spans:
+            replacements.append((rs, re_, ""))
 
         for start, end, kind, m in sites:
             if kind == "chart":
@@ -146,11 +178,12 @@ def renumber_exhibits(
                     (start, end, f"{bold_open}Exhibit {counter}: {caption}{bold_close}")
                 )
 
-        # In-prose refs OUTSIDE any label span use the mapping.
+        # In-prose refs OUTSIDE any label span or redundant span use the mapping.
+        protected_spans = label_spans + redundant_spans
         if mapping:
             for m in _INLINE_REF_RE.finditer(body):
                 s = m.start()
-                if any(ls <= s < le for ls, le in label_spans):
+                if any(ps <= s < pe for ps, pe in protected_spans):
                     continue
                 old = int(m.group(1))
                 new = mapping.get(old, old)

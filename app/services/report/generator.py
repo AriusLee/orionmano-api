@@ -1468,10 +1468,15 @@ INDUSTRY_DRS_SECTION_INSTRUCTIONS = {
         "summarize the structural insight (concentration, archetypes, dynamics) WITHOUT "
         "the names. "
         "\n\n**REQUIRED EXHIBITS** — emit BOTH for the peer comparison: "
-        "(a) a markdown table with columns Player | HQ Geography | Listing Venue | "
-        "Revenue Band (e.g. USD $50-200M) | Gross Margin Band | Key Strengths | Key "
-        "Weaknesses (use bands, not exact figures, to keep peers unidentifiable), followed "
-        "on its own line by `*Source: the OM Report.*`, AND "
+        "(a) a markdown table with EXACTLY FIVE columns (Eric 2026-05-25 — 7 columns were "
+        "too narrow on the page, causing every cell to wrap into a vertical stack of "
+        "1-2-letter fragments). Column structure: "
+        "`Player (HQ • Listing Venue) | Revenue Band (USD M) | Gross Margin Band | Key "
+        "Strengths | Key Weaknesses`. The first cell merges identity context: archetype "
+        "name in parentheses, HQ geography and listing venue joined by a bullet. Example: "
+        "`Player A — Global Universal Bank (Singapore • SGX)`. Use bands, not exact "
+        "figures, to keep peers unidentifiable. Follow the table on its own line with "
+        "`*Source: the OM Report.*`, AND "
         "(b) a ```chart fenced JSON block — type='horizontal-bar' or 'bar' — showing the "
         "anonymized players (x: Player A / B / C labels) plotted against a quantitative "
         "metric like Revenue Band Midpoint or Estimated Market Share, with `source_note`: "
@@ -1619,7 +1624,7 @@ This is the **Industry** chapter only. Sub-sections (Industry Overview / Market 
 ## EXHIBITS — CHART BLOCKS + TABLES BOTH REQUIRED
 For every quantitative exhibit (market size trajectory, market shares, segment splits, geographic distribution, growth comparisons), emit BOTH:
 
-1. A `chart` fenced JSON block — the DOCX exporter renders this to a PNG and embeds it as an actual image in Word.
+1. A `chart` fenced JSON block — the DOCX exporter renders this to a PNG and embeds it as an actual image in Word with the chart's `title` field as the figure caption. **DO NOT also emit a separate `**Title**` heading paragraph above or below the chart fence — that would duplicate the figure caption.** The chart's JSON `title` field is the single source of truth for the exhibit's name; do NOT pre-label it as `**Exhibit N: …**` or `**Title**` in body markdown — server-side post-processing assigns the global Exhibit number from the JSON title.
 2. A markdown table immediately below it, so the same numbers are visible as text.
 
 Chart spec format (use this EXACT schema):

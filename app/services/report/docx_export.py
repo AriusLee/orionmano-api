@@ -62,13 +62,14 @@ def _embed_chart_images(
             return _chart_block_to_table(f"```chart\n{raw}\n```")
         title = spec.get("title", "")
         source_note = spec.get("source_note") or ""
-        # Markdown image — pandoc embeds the PNG inline in the .docx. Caption
-        # underneath kept as italicized source attribution.
-        parts: list[str] = [""]
-        if title:
-            parts.append(f"**{title}**")
-            parts.append("")
-        parts.append(f"![{title or 'Chart'}]({png_path})")
+        # Markdown image. Eric 2026-05-25 — previously we ALSO emitted a
+        # `**{title}**` bold paragraph above the image, but pandoc already
+        # creates an Image Caption from the image alt text, so the title
+        # was rendering twice (bold pre-caption + Image Caption beneath the
+        # PNG). Now we emit ONLY the image — pandoc renders one captioned
+        # figure with the title as caption — and the italicized source
+        # note immediately below.
+        parts: list[str] = ["", f"![{title or 'Chart'}]({png_path})"]
         if source_note:
             parts.append("")
             parts.append(f"*{source_note}*")
