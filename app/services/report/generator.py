@@ -128,7 +128,15 @@ REPORT_SECTIONS = {
             ("industry_overview", "Industry Overview"),
             ("market_size_growth", "Market Size and Growth"),
             ("growth_drivers", "Key Industry Growth Drivers"),
-            ("regulatory_environment", "Regulatory Environment"),
+            # Regulatory Environment dropped (Eric 2026-05-25) — REMSEA review
+            # showed the section produces 12 sub-regimes (MAS PSA / AML-CFT /
+            # TRM / ITM / Sandbox; PDPC PDPA; ACRA; SEC; Nasdaq; FATCA; OFAC;
+            # cross-border data) that don't belong in the Industry chapter of
+            # a real S-1. Listing-jurisdiction regulation lives in Risk
+            # Factors / MD&A / Description of Securities / Material Tax;
+            # home-jurisdiction regulation typically gets its own separate
+            # Regulation chapter. Drop it from the default sequence; can be
+            # re-added if a client engagement genuinely needs it inline.
             ("competitive_landscape", "Competitive Landscape"),
             ("company_positioning", "Our Position in the Industry"),
         ],
@@ -1392,7 +1400,14 @@ INDUSTRY_DRS_SECTION_INSTRUCTIONS = {
         "`[^N]` footnotes — body prose is unfootnoted (the chapter-level OM Report disclosure "
         "handles attribution). Sprinkle an *\"according to the OM Report\"* / *\"per the OM "
         "Report\"* phrase 1-2 times where natural. Match the opening style of the Glogos and "
-        "Microware S-1 industry sections."
+        "Microware S-1 industry sections. "
+        "\n\n**FORBIDDEN SUBSECTIONS** (Eric 2026-05-25 — these are research-paper voice and "
+        "do not appear in real S-1 industry chapters): "
+        "do NOT add a `## Scope Boundaries` / `## Scope and Exclusions` / `## In Scope / Out "
+        "of Scope` subsection. Do NOT add a paragraph enumerating what is excluded from the "
+        "industry definition (e.g., \"explicitly excluded are unregulated peer-to-peer "
+        "transfer platforms…\"). The definition paragraph above is sufficient — additional "
+        "scope-lawyering is internal methodology that doesn't belong in a public filing."
     ),
     "market_size_growth": (
         "Provide market size (in USD or local currency) for the most recent reported year "
@@ -1449,6 +1464,15 @@ INDUSTRY_DRS_SECTION_INSTRUCTIONS = {
         "anonymized players (x: Player A / B / C labels) plotted against a quantitative "
         "metric like Revenue Band Midpoint or Estimated Market Share, with `source_note`: "
         "\"Source: the OM Report\". The chart fence renders as an embedded image in the Word export."
+        "\n\n**FORBIDDEN: methodology preface paragraphs** (Eric 2026-05-25) — do NOT prefix "
+        "the table with a paragraph explaining the anonymization scheme, the use of bands, "
+        "or how to read the table. Examples of paragraphs to AVOID: \"The following table "
+        "profiles representative competitors across the four archetypes, using anonymized "
+        "labels to preserve confidentiality. Revenue bands and gross margin bands are "
+        "expressed as ranges to prevent identification of any single firm.\" That is "
+        "analyst-process commentary that does not appear in real S-1 industry chapters. "
+        "Lead directly into the table after the structural-analysis prose; let the column "
+        "labels and Player A/B/C convention speak for themselves."
     ),
     "company_positioning": (
         "Position the Company within the competitive landscape established above. 2-3 "

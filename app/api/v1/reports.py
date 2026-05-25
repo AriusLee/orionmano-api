@@ -137,14 +137,26 @@ async def get_report(
     report = result.scalar_one_or_none()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    # DRS Industry Section opens with the OM Assurance / OM Report disclosure
-    # (Eric 2026-05-24). Attached as a transient attribute so Pydantic picks
-    # it up via from_attributes — the same string the .docx export renders.
+    # Industry-DRS-specific render: build the response, then mutate it.
+    # Mutating the ORM row directly would mark `content` dirty and let
+    # autoflush persist the renumbering — we want the transform to be a
+    # render-time concern, leaving the stored content untouched. So we
+    # validate into a Pydantic response and mutate that.
     if report.report_type == "industry_drs":
         from app.services.report.disclosure import industry_drs_disclosure
-        report.disclosure_preamble = industry_drs_disclosure(
+        from app.services.report.drs_render import renumber_exhibits
+
+        response = ReportResponse.model_validate(report)
+        response.disclosure_preamble = industry_drs_disclosure(
             report.company.name if report.company else "the Company"
         )
+        # Sections come back in sort_order via the eager-load above; the
+        # renumbering mapping is built from that same global order.
+        ordered_sections = sorted(response.sections, key=lambda s: s.sort_order)
+        remapped = renumber_exhibits([(s.section_title, s.content) for s in ordered_sections])
+        for sec, (_, new_body) in zip(ordered_sections, remapped):
+            sec.content = new_body
+        return response
     return report
 
 

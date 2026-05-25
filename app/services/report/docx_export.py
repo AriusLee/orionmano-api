@@ -147,10 +147,14 @@ async def generate_report_docx(
     # DRS Industry Section opens with the OM Assurance / OM Report disclosure
     # (Eric 2026-05-24) — same text the on-screen viewer renders, sourced
     # from disclosure.industry_drs_disclosure for single-source-of-truth.
+    # Also renumber Exhibit N references globally so the chapter sequence
+    # starts at 1 (Eric 2026-05-25 — REMSEA shipped with 2, 3 and no 1).
     preamble: str | None = None
     if report.report_type == "industry_drs":
         from app.services.report.disclosure import industry_drs_disclosure
+        from app.services.report.drs_render import renumber_exhibits
         preamble = industry_drs_disclosure(company_name)
+        section_pairs = renumber_exhibits(section_pairs)
 
     # All chart PNGs + the pandoc output land in a single temp dir so cleanup
     # is one rmtree call. Pandoc resolves the absolute image paths embedded
