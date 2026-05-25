@@ -178,5 +178,47 @@ async def generate_report_docx(
                 f"DOCX export failed because pandoc could not be invoked: {e}. "
                 "Confirm `pypandoc_binary` is installed (pip install -r requirements.txt)."
             ) from e
+
+        # Post-process: pandoc's default markdown→docx converter ships tables
+        # with no visible borders (Eric 2026-05-25 screenshot) — the columns
+        # are just whitespace-separated, which looks unprofessional in a
+        # prospectus exhibit. Apply 0.5pt black borders to every table so
+        # peer-comparison and market-size tables render with proper grid
+        # lines matching standard S-1 formatting.
+        _apply_table_borders(docx_path)
+
         with open(docx_path, "rb") as f:
             return f.read()
+
+
+def _apply_table_borders(docx_path: Path) -> None:
+    """Open the pandoc-generated .docx and apply 0.5pt single black borders
+    (top / bottom / left / right / inside-horizontal / inside-vertical) to
+    every table. Borders are written directly to each table's `<w:tblPr>`
+    via the OOXML schema so every cell inherits them — independent of
+    whether the document carries a `Table Grid` style definition.
+    """
+    from docx import Document as _Doc
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    def _border_element(edge: str) -> OxmlElement:
+        b = OxmlElement(f"w:{edge}")
+        b.set(qn("w:val"), "single")
+        b.set(qn("w:sz"), "4")  # half-points → 0.5pt
+        b.set(qn("w:space"), "0")
+        b.set(qn("w:color"), "000000")
+        return b
+
+    doc = _Doc(str(docx_path))
+    for table in doc.tables:
+        tblPr = table._tbl.tblPr
+        # Drop any existing tblBorders so we don't double-stack edges.
+        existing = tblPr.find(qn("w:tblBorders"))
+        if existing is not None:
+            tblPr.remove(existing)
+        tblBorders = OxmlElement("w:tblBorders")
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            tblBorders.append(_border_element(edge))
+        tblPr.append(tblBorders)
+    doc.save(str(docx_path))
