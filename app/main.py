@@ -55,6 +55,18 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         for stmt in _COLUMN_UPGRADES:
             await conn.execute(text(stmt))
+        # Reap orphaned report generations. Report generation runs as an
+        # in-process background task; a deploy / reload / crash kills that task
+        # mid-run and leaves the report wedged in "generating" forever (the UI
+        # then polls a frozen progress bar). At startup no generation task can
+        # be running, so any report still pending/generating is orphaned — fail
+        # it cleanly so the analyst can regenerate instead of waiting forever.
+        await conn.execute(text(
+            "UPDATE reports SET status = 'failed', "
+            "error_message = 'Generation was interrupted by a server restart — please regenerate.', "
+            "progress_message = NULL "
+            "WHERE status IN ('pending', 'generating')"
+        ))
     # Create upload dir
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     yield

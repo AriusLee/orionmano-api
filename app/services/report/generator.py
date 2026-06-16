@@ -2404,15 +2404,33 @@ Tier: {tier.upper()} — {tier_instruction}
                     f'Start directly with sub-section headings or body prose.**'
                     f'{gap_user_suffix}\n{section_instruction}'
                 )
-                content = await generate_text(
-                    system_prompt=system_prompt,
-                    user_prompt=base_user_prompt,
-                    max_tokens=max_tokens_per_section,
-                    use_reasoner=use_reasoner,
-                    skill=f"generate_report:{report_type}",
-                    company_id=report.company_id,
-                    report_id=report.id,
-                )
+                # Hard per-section time cap + fallback. A single slow / rate-
+                # limited / hung DeepSeek call must not stall the whole report
+                # (the symptom was a report "stuck at 14/16" for many minutes),
+                # and a section that errors must not sink the 13 good sections
+                # before it. On timeout/failure we write a clear placeholder and
+                # keep going so the report always completes; the analyst can
+                # regenerate the single section.
+                _section_timeout = 300 if use_reasoner else 200
+                try:
+                    content = await asyncio.wait_for(
+                        generate_text(
+                            system_prompt=system_prompt,
+                            user_prompt=base_user_prompt,
+                            max_tokens=max_tokens_per_section,
+                            use_reasoner=use_reasoner,
+                            skill=f"generate_report:{report_type}",
+                            company_id=report.company_id,
+                            report_id=report.id,
+                        ),
+                        timeout=_section_timeout,
+                    )
+                except Exception as e:  # incl. asyncio.TimeoutError (a TimeoutError subclass)
+                    content = (
+                        f"_This section could not be generated automatically "
+                        f"({type(e).__name__}). The rest of the report completed — "
+                        f"please regenerate this section._"
+                    )
                 # Eric 2026-05-19 — safety strip: even with the explicit
                 # "don't repeat the title" instruction, models occasionally
                 # prepend a duplicate "## N. Title" heading. Drop the first
@@ -2539,12 +2557,21 @@ Tier: {tier.upper()} — {tier_instruction}
             from app.services.report.lint import lint_report
             # Re-fetch sections so lint sees the final committed content
             await db.refresh(report)
-            findings = await lint_report(
-                report_id=report.id,
-                company_id=report.company_id,
-                sections=sorted(report.sections, key=lambda s: s.sort_order),
-            )
-            report.lint_findings = findings
+            # Time-cap the lint pass: all sections are already saved, so a hung
+            # lint must not wedge the report in "generating". On timeout/failure
+            # we skip lint and still finalize the report as a draft.
+            try:
+                findings = await asyncio.wait_for(
+                    lint_report(
+                        report_id=report.id,
+                        company_id=report.company_id,
+                        sections=sorted(report.sections, key=lambda s: s.sort_order),
+                    ),
+                    timeout=180,
+                )
+                report.lint_findings = findings
+            except Exception:
+                report.lint_findings = None
 
         report.status = "draft"
         report.progress_message = None
