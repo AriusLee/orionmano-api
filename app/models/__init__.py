@@ -9,6 +9,7 @@ from app.models.translation import TranslationCache
 from app.models.usage_log import UsageLog
 from app.models.web_search_cache import WebSearchCache
 from app.models.client_kb_page import ClientKbPage, ClientKbPageHistory
+from app.models.deck import Deck, DeckVersion
 
 __all__ = [
     "User",
@@ -25,4 +26,6 @@ __all__ = [
     "WebSearchCache",
     "ClientKbPage",
     "ClientKbPageHistory",
+    "Deck",
+    "DeckVersion",
 ]

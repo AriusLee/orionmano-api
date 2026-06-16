@@ -13,6 +13,11 @@ from app.services.agent.skills.generate_deck import (
     GenerateTeaserDeckSkill,
     GenerateCompanyDeckSkill,
 )
+from app.services.agent.skills.generate_deck_ai import (
+    GenerateDeckSkill,
+    AmendDeckSkill,
+    SwapDeckThemeSkill,
+)
 from app.services.agent.skills.web_research import WebResearchSkill
 from app.services.agent.skills.analyze_financials import AnalyzeFinancialsSkill
 from app.services.agent.skills.extract_document import ExtractDocumentSkill
@@ -30,11 +35,17 @@ register_skill(GenerateDDReportSkill())
 register_skill(GenerateValuationReportSkill())
 register_skill(GenerateTeaserSkill())
 
-# Decks (4 types)
+# Decks — legacy template-based skills (kept during transition, retired once
+# the new prompt-driven flow is live in the frontend).
 register_skill(GenerateSalesDeckSkill())
 register_skill(GenerateKickoffDeckSkill())
 register_skill(GenerateTeaserDeckSkill())
 register_skill(GenerateCompanyDeckSkill())
+
+# Decks — new AI / theme + prompt flow.
+register_skill(GenerateDeckSkill())
+register_skill(AmendDeckSkill())
+register_skill(SwapDeckThemeSkill())
 
 # Other skills
 register_skill(WebResearchSkill())
