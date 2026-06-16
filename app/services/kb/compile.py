@@ -50,14 +50,26 @@ _BASE_SYSTEM = (
     "audited consolidated financial statements (the Consolidated Statement of "
     "Profit or Loss / Consolidated Balance Sheet found in a prospectus, draft "
     "registration statement / DRS / F-1 / S-1, or audited annual report — the "
-    "\"F-pages\") are the PRIMARY, AUTHORITATIVE source. Individual account "
-    "leadsheets, breakdowns, trial balances, reconciliations and working-paper "
-    "schedules are SUPPORTING DETAIL ONLY and must NEVER override the "
-    "consolidated-statement figure for the same line item and period. Pick ONE "
-    "source per line item — never blend a leadsheet revenue with a consolidated "
-    "gross profit. If a prospectus/DRS with consolidated statements is present, "
-    "use those statements as the spine for ALL headline P&L and balance-sheet "
-    "figures.\n"
+    "\"F-pages\") are the PRIMARY, AUTHORITATIVE source. For every line item that "
+    "APPEARS on the face of those consolidated statements (revenue, cost of "
+    "sales, gross profit, other income, operating/admin expenses, operating "
+    "profit, finance costs, profit before tax, tax, net income; and "
+    "balance-sheet totals/subtotals), take the figure VERBATIM from the "
+    "consolidated statements. Individual account leadsheets, breakdowns, trial "
+    "balances, reconciliations and working-paper schedules must NEVER override "
+    "those face figures, and you must never blend a leadsheet revenue with a "
+    "consolidated gross profit.\n"
+    "   HOWEVER — for line items that are NOT separately presented on the face "
+    "of the consolidated statements but are needed for analysis (e.g. "
+    "depreciation & amortization, breakdowns within cost of sales or operating "
+    "expenses, and balance-sheet components such as receivables, payables, "
+    "inventory, debt), you SHOULD populate them from the supporting "
+    "leadsheets/schedules as SUPPLEMENTARY detail — provided they reconcile "
+    "with (do not contradict) the consolidated subtotals. These supplementary "
+    "lines fill gaps the face statements leave; they do not override anything. "
+    "Do NOT mark such a line \"Not available\" merely because it is absent from "
+    "the face statement when a supporting schedule provides it. Briefly cite the "
+    "source schedule for supplementary lines.\n"
     "3. When a required field is not present, write \"Not available in current "
     "documents\" — never guess or default to industry norms.\n"
     "4. Numbers, currencies, and dates must match the authoritative source "
@@ -112,7 +124,13 @@ _PROFILE_USER_TEMPLATE = """Produce the **Company Profile** page using the markd
 
 _HISTORICAL_FS_USER_TEMPLATE = """Produce the **Historical Financial Statements** page. Show full-period P&L and balance-sheet line items across every period present in the source documents. Periods on columns, line items on rows. State currency and unit clearly. Use markdown tables.
 
-**AUTHORITATIVE SOURCE (read first):** If any document is a prospectus / DRS / F-1 / S-1 / audited annual report containing a Consolidated Statement of Profit or Loss and Consolidated Balance Sheet, take EVERY headline line item (revenue, cost of sales, gross profit, other income, operating expenses, operating profit, finance costs, profit before tax, tax, net income, and all balance-sheet totals) from THOSE consolidated statements. Do NOT substitute figures from individual leadsheets, breakdowns, or working-paper schedules even when they look more granular — those are supporting detail only. The income statement MUST internally reconcile for each period: Revenue − Cost of sales = Gross profit, and Gross profit + Other income − Operating expenses − Finance costs ≈ Profit before tax. If your figures do not tie, you have mixed sources — re-anchor every line on the consolidated statements and use a single consistent source per period.
+**AUTHORITATIVE SOURCE (read first):** If any document is a prospectus / DRS / F-1 / S-1 / audited annual report containing a Consolidated Statement of Profit or Loss and Consolidated Balance Sheet, take EVERY headline line item that appears on the face of those statements (revenue, cost of sales, gross profit, other income, operating expenses, operating profit, finance costs, profit before tax, tax, net income, and all balance-sheet totals) from THOSE consolidated statements. Do NOT substitute those face figures with leadsheet/working-paper numbers even when the leadsheets look more granular. The income statement MUST internally reconcile for each period: Revenue − Cost of sales = Gross profit, and Gross profit + Other income − Operating expenses − Finance costs ≈ Profit before tax. If your figures do not tie, you have mixed sources — re-anchor every line on the consolidated statements and use a single consistent source per period.
+
+**TRANSCRIBE, DO NOT RECOMPUTE:** Copy every figure that appears on the face of the consolidated statement EXACTLY as printed. Do NOT recalculate, re-derive, or adjust any face figure — even to make subtotals tie. The reconciliation note above is a check that you have not MIXED sources, not a licence to compute your own numbers. If a value is printed on the statement, transcribe it verbatim.
+
+**LINE-ITEM MAPPING:** Map the statement's "Profit from operation(s)" / "Operating profit" / "Profit from operating activities" verbatim to the **EBIT / Operating profit** row — this is the printed result BEFORE finance costs, and is DISTINCT from Profit before tax (which is AFTER finance costs). Do not put the Profit-before-tax figure in the EBIT row. Leave **EBITDA** as "Not available in current documents" unless the source prints an EBITDA figure — it is a derived metric computed downstream from EBIT + Depreciation & amortization, not something you should calculate here.
+
+**SUPPLEMENTARY DETAIL (do fill these in):** For rows the consolidated statement does NOT itemize — especially **Depreciation & amortization** (often only in the cash-flow statement, PPE/ROU/lease leadsheets, or notes), EBITDA components, expense breakdowns, and balance-sheet components (receivables, payables, inventory, debt) — DO populate them from the supporting leadsheets/schedules or notes when present, and cite the source in parens. These must reconcile with the consolidated subtotals but they fill gaps the face statement leaves. Do not mark Depreciation & amortization "Not available" if a PPE/lease/depreciation schedule supplies it — downstream EBITDA and QoE analysis depend on it.
 
 ```
 # Historical Financial Statements
