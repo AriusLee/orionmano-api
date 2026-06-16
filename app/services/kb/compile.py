@@ -46,13 +46,26 @@ _BASE_SYSTEM = (
     "Rules (in priority order):\n"
     "1. Use ONLY the information present in the extracted documents below. Do "
     "not invent figures, dates, names, or jurisdictions.\n"
-    "2. When a required field is not present, write \"Not available in current "
+    "2. SOURCE AUTHORITY — when documents disagree on the SAME figure: the "
+    "audited consolidated financial statements (the Consolidated Statement of "
+    "Profit or Loss / Consolidated Balance Sheet found in a prospectus, draft "
+    "registration statement / DRS / F-1 / S-1, or audited annual report — the "
+    "\"F-pages\") are the PRIMARY, AUTHORITATIVE source. Individual account "
+    "leadsheets, breakdowns, trial balances, reconciliations and working-paper "
+    "schedules are SUPPORTING DETAIL ONLY and must NEVER override the "
+    "consolidated-statement figure for the same line item and period. Pick ONE "
+    "source per line item — never blend a leadsheet revenue with a consolidated "
+    "gross profit. If a prospectus/DRS with consolidated statements is present, "
+    "use those statements as the spine for ALL headline P&L and balance-sheet "
+    "figures.\n"
+    "3. When a required field is not present, write \"Not available in current "
     "documents\" — never guess or default to industry norms.\n"
-    "3. Numbers, currencies, and dates must match the source verbatim. Preserve "
-    "the original currency and unit (USD'000 vs USD millions etc).\n"
-    "4. Output ONLY the markdown body. No preamble, no code fences, no closing "
+    "4. Numbers, currencies, and dates must match the authoritative source "
+    "verbatim. Preserve the original currency and unit (USD'000 vs USD millions "
+    "etc).\n"
+    "5. Output ONLY the markdown body. No preamble, no code fences, no closing "
     "summary — just the page content starting with the H1.\n"
-    "5. Be tight: tables for tabular data, short bullets for lists, no flowery "
+    "6. Be tight: tables for tabular data, short bullets for lists, no flowery "
     "prose.\n"
 )
 
@@ -98,6 +111,8 @@ _PROFILE_USER_TEMPLATE = """Produce the **Company Profile** page using the markd
 
 
 _HISTORICAL_FS_USER_TEMPLATE = """Produce the **Historical Financial Statements** page. Show full-period P&L and balance-sheet line items across every period present in the source documents. Periods on columns, line items on rows. State currency and unit clearly. Use markdown tables.
+
+**AUTHORITATIVE SOURCE (read first):** If any document is a prospectus / DRS / F-1 / S-1 / audited annual report containing a Consolidated Statement of Profit or Loss and Consolidated Balance Sheet, take EVERY headline line item (revenue, cost of sales, gross profit, other income, operating expenses, operating profit, finance costs, profit before tax, tax, net income, and all balance-sheet totals) from THOSE consolidated statements. Do NOT substitute figures from individual leadsheets, breakdowns, or working-paper schedules even when they look more granular — those are supporting detail only. The income statement MUST internally reconcile for each period: Revenue − Cost of sales = Gross profit, and Gross profit + Other income − Operating expenses − Finance costs ≈ Profit before tax. If your figures do not tie, you have mixed sources — re-anchor every line on the consolidated statements and use a single consistent source per period.
 
 ```
 # Historical Financial Statements
