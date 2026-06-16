@@ -20,6 +20,22 @@ router = APIRouter(prefix="/companies/{company_id}/documents", tags=["documents"
 # Keep references to background tasks so they don't get GC'd
 _background_tasks: set[asyncio.Task] = set()
 
+# Bound how many documents extract concurrently. Each extraction makes a slow
+# LLM call; without this, bulk upload or "Re-extract all" fans out one task per
+# document and — combined with holding a DB connection across that call — blew
+# the async pool (QueuePool size 5 + overflow 10) on Render. The semaphore is
+# acquired BEFORE any DB session is opened, so waiting tasks hold no connection.
+_EXTRACT_CONCURRENCY = 3
+_extract_sem: asyncio.Semaphore | None = None
+
+
+def _get_extract_sem() -> asyncio.Semaphore:
+    # Lazily created so it binds to the running event loop.
+    global _extract_sem
+    if _extract_sem is None:
+        _extract_sem = asyncio.Semaphore(_EXTRACT_CONCURRENCY)
+    return _extract_sem
+
 
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(
@@ -61,20 +77,49 @@ async def upload_document(
     return doc
 
 
-async def _extract_bg(doc_id: UUID, file_path: str, filename: str | None = None):
+async def _extract_bg(
+    doc_id: UUID,
+    file_path: str,
+    filename: str | None = None,
+    recompile: bool = True,
+) -> UUID | None:
+    """Extract a document in the background. Holds a DB connection only for the
+    brief status/result writes — NEVER across the slow LLM call — and caps global
+    concurrency via the semaphore. Returns the company_id when extraction
+    completed (so a bulk caller can recompile once at the end). When
+    ``recompile`` is True a per-doc KB recompile is kicked off; bulk callers pass
+    False and recompile once themselves."""
     from app.services.ai.document_parser import extract_document
     from app.services.company_intelligence import auto_fill_company
 
-    company_id_for_recompile: UUID | None = None
-    async with async_session() as session:
-        result = await session.execute(select(Document).where(Document.id == doc_id))
-        doc = result.scalar_one_or_none()
-        if not doc:
-            return
-        try:
+    async with _get_extract_sem():
+        # 1) Short session: mark processing + read the filename, then release.
+        async with async_session() as session:
+            doc = (await session.execute(select(Document).where(Document.id == doc_id))).scalar_one_or_none()
+            if not doc:
+                return None
+            fname = filename or doc.filename
             doc.extraction_status = "processing"
             await session.commit()
-            extracted = await extract_document(file_path, filename or doc.filename)
+
+        # 2) Slow LLM extraction — no DB connection held here.
+        try:
+            extracted = await extract_document(file_path, fname)
+        except Exception as e:
+            async with async_session() as session:
+                doc = (await session.execute(select(Document).where(Document.id == doc_id))).scalar_one_or_none()
+                if doc:
+                    doc.extraction_status = "failed"
+                    doc.extraction_error = str(e)
+                    await session.commit()
+            return None
+
+        # 3) Short session: persist the result + classify + auto-fill company.
+        company_id_for_recompile: UUID | None = None
+        async with async_session() as session:
+            doc = (await session.execute(select(Document).where(Document.id == doc_id))).scalar_one_or_none()
+            if not doc:
+                return None
             doc.extracted_data = extracted
             # Auto-classify: sync detected categories (and primary document_type)
             # so the frontend checklist can slot the file across multiple slots.
@@ -90,19 +135,12 @@ async def _extract_bg(doc_id: UUID, file_path: str, filename: str | None = None)
                     doc.category = detected_type.strip().lower()
             doc.extraction_status = "completed"
             await session.commit()
-            # Auto-fill company profile from extracted data
             await auto_fill_company(session, doc.company_id)
             company_id_for_recompile = doc.company_id
-        except Exception as e:
-            doc.extraction_status = "failed"
-            doc.extraction_error = str(e)
-            await session.commit()
 
-    # After extraction completes (and the session above commits), kick a
-    # fire-and-forget recompile of the company's kb pages. Held outside the
-    # session block so the recompile can open its own short-lived sessions
-    # without contention. Failures inside recompile are swallowed.
-    if company_id_for_recompile is not None:
+    # Recompile the company's KB pages outside the semaphore/session. Bulk
+    # callers skip this and recompile once after all docs finish.
+    if recompile and company_id_for_recompile is not None:
         from app.services.kb.compile import recompile_company
 
         async def _recompile_safe(cid: UUID) -> None:
@@ -114,6 +152,8 @@ async def _extract_bg(doc_id: UUID, file_path: str, filename: str | None = None)
         task = asyncio.create_task(_recompile_safe(company_id_for_recompile))
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)
+
+    return company_id_for_recompile
 
 
 @router.get("", response_model=list[DocumentResponse])
@@ -214,28 +254,43 @@ async def reextract_all_documents(
 ):
     """Re-run extraction on every document for the company whose file still
     exists on disk. Kicks one background task per doc and returns immediately;
-    the frontend polls extraction_status as usual."""
+    the frontend polls extraction_status as usual. Extraction concurrency is
+    bounded by the semaphore in _extract_bg, and the KB is recompiled ONCE after
+    all docs finish (not per-doc)."""
     result = await db.execute(select(Document).where(Document.company_id == company_id))
     docs = list(result.scalars().all())
 
-    queued = 0
+    items: list[tuple[UUID, str, str]] = []
     for doc in docs:
         if not doc.file_path or not os.path.exists(doc.file_path):
             continue
         doc.extraction_status = "pending"
         doc.extraction_error = None
-        queued += 1
-    if queued:
+        items.append((doc.id, doc.file_path, doc.filename))
+    if items:
         await db.commit()
 
-    for doc in docs:
-        if not doc.file_path or not os.path.exists(doc.file_path):
-            continue
-        task = asyncio.create_task(_extract_bg(doc.id, doc.file_path, doc.filename))
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
+    task = asyncio.create_task(_reextract_all_bg(company_id, items))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
-    return {"total": len(docs), "queued": queued}
+    return {"total": len(docs), "queued": len(items)}
+
+
+async def _reextract_all_bg(company_id: UUID, items: list[tuple[UUID, str, str]]) -> None:
+    """Re-extract a batch with bounded concurrency (via _extract_bg's semaphore),
+    skipping per-doc recompiles, then recompile the company's KB exactly once."""
+    if not items:
+        return
+    await asyncio.gather(
+        *(_extract_bg(doc_id, fp, fn, recompile=False) for doc_id, fp, fn in items),
+        return_exceptions=True,
+    )
+    from app.services.kb.compile import recompile_company
+    try:
+        await recompile_company(company_id)
+    except Exception:
+        pass
 
 
 @router.get("/{document_id}/raw")
