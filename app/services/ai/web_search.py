@@ -1,21 +1,25 @@
-"""Tavily web-search client with cached responses.
+"""DuckDuckGo web-search client with cached responses.
 
 Cache key is (sha256(normalized_query + max_results), freshness_bucket).
 Freshness bucket = floor(unix_days / 90), so the cache naturally invalidates
 once per quarter — same window as ARTICLE_REUSE_DAYS in config.
 
 Pattern mirrors translation/cache.py: short-lived session per cache op so
-parallel callers don't race the request session."""
+parallel callers don't race the request session.
+
+Provider note: search runs through the keyless `ddgs` library (no API key,
+no billing). The provider is isolated to `_ddg_call`; swapping back to Tavily
+or over to Serper/Brave/etc. is a single-function change — everything else
+(cache, web_search, format_search_results) is provider-agnostic and returns a
+normalized list of {title, content, url} dicts."""
+import asyncio
 import hashlib
 import re
 import time
-from typing import Any
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
-from app.config import settings
 from app.database import async_session
 from app.models.web_search_cache import WebSearchCache
 
@@ -63,36 +67,30 @@ async def _cache_store(query_hash: str, bucket: int, query: str, results: list[d
         pass
 
 
-async def _tavily_call(query: str, max_results: int) -> list[dict]:
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "https://api.tavily.com/search",
-            json={
-                "api_key": settings.TAVILY_API_KEY,
-                "query": query,
-                "max_results": max_results,
-                "include_answer": True,
-                "search_depth": "advanced",
-            },
-            timeout=30.0,
-        )
-        response.raise_for_status()
-        data = response.json()
+def _ddg_search_sync(query: str, max_results: int) -> list[dict]:
+    """Blocking DuckDuckGo call. ddgs' text() is synchronous, so callers must
+    run this in a thread (see _ddg_call) to avoid blocking the event loop."""
+    from ddgs import DDGS
 
+    hits = DDGS().text(query, max_results=max_results) or []
     results: list[dict] = []
-    if data.get("answer"):
-        results.append({
-            "title": "AI Summary",
-            "content": data["answer"],
-            "url": "",
-        })
-    for r in data.get("results", []):
+    for r in hits:
         results.append({
             "title": r.get("title", ""),
-            "content": r.get("content", ""),
-            "url": r.get("url", ""),
+            "content": r.get("body", ""),
+            "url": r.get("href", ""),
         })
     return results
+
+
+async def _ddg_call(query: str, max_results: int) -> list[dict]:
+    """Run the keyless DuckDuckGo search off the event loop. On any failure
+    (rate-limit, network, library error) return [] so report generation
+    degrades to no web context rather than erroring out."""
+    try:
+        return await asyncio.to_thread(_ddg_search_sync, query, max_results)
+    except Exception:
+        return []
 
 
 async def web_search(
@@ -101,7 +99,7 @@ async def web_search(
     freshness_days: int = DEFAULT_FRESHNESS_DAYS,
     use_cache: bool = True,
 ) -> list[dict]:
-    """Search Tavily, hitting the local cache first.
+    """Search DuckDuckGo, hitting the local cache first.
 
     Args:
         freshness_days: Bucket size. Same query within the same N-day window
@@ -116,7 +114,7 @@ async def web_search(
         if hit is not None:
             return hit
 
-    results = await _tavily_call(query, max_results)
+    results = await _ddg_call(query, max_results)
 
     if use_cache and results:
         await _cache_store(qhash, bucket, query, results)
