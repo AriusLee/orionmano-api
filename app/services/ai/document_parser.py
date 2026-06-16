@@ -142,7 +142,12 @@ def _reconcile_categories(
     return ["other"], "default"
 
 
-def extract_text_from_pdf(file_path: str, max_pages: int = 50) -> str:
+def extract_text_from_pdf(file_path: str, max_pages: int = 400) -> str:
+    # Cap is high (not 50) because prospectus / DRS F-pages — the audited
+    # financial statements — sit near the BACK of the document. A low cap meant
+    # the financials were never read, so financial_data came back empty. fitz
+    # text extraction is cheap even for several-hundred-page filings; the real
+    # bound on what reaches the LLM is _focused_excerpt() below.
     doc = fitz.open(file_path)
     text_parts = []
     for i, page in enumerate(doc):
@@ -151,6 +156,154 @@ def extract_text_from_pdf(file_path: str, max_pages: int = 50) -> str:
         text_parts.append(page.get_text())
     doc.close()
     return "\n\n".join(text_parts)
+
+
+def extract_text_from_docx(file_path: str) -> str:
+    """Extract text from a .docx, including TABLE content in document order.
+
+    A .docx is a ZIP archive, not text — the previous code path read it in text
+    mode and got raw ZIP bytes ("PK\\x03\\x04…"), so Word prospectuses were never
+    parsed (not classified, no financials). Financial statements in a prospectus
+    live almost entirely in tables, so we walk the body and render both
+    paragraphs and table rows (cells pipe-joined) in order."""
+    from docx import Document as _Docx
+    from docx.oxml.ns import qn
+
+    document = _Docx(file_path)
+    parts: list[str] = []
+    for child in document.element.body.iterchildren():
+        if child.tag == qn("w:p"):
+            line = "".join(t.text or "" for t in child.findall(".//" + qn("w:t")))
+            if line.strip():
+                parts.append(line)
+        elif child.tag == qn("w:tbl"):
+            for row in child.findall(qn("w:tr")):
+                cells = [
+                    "".join(t.text or "" for t in tc.findall(".//" + qn("w:t"))).strip()
+                    for tc in row.findall(qn("w:tc"))
+                ]
+                if any(cells):
+                    parts.append(" | ".join(cells))
+    return "\n".join(parts)
+
+
+def extract_text_from_xlsx(file_path: str, max_chars: int = 300_000) -> str:
+    """Extract text from a .xlsx/.xlsm, one block per sheet, rows as pipe-joined
+    cells. Same class of bug as .docx — a spreadsheet is a ZIP archive, so the
+    old text-mode read produced garbage and financial models / management
+    accounts / cap tables never got parsed.
+
+    `data_only=True` returns the last cached cell values rather than formula
+    strings, so a financial model yields its numbers (not '=SUM(...)').
+    `read_only=True` streams large books cheaply; we stop at max_chars and let
+    _focused_excerpt() do the final bound for the LLM."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(file_path, data_only=True, read_only=True)
+    parts: list[str] = []
+    size = 0
+    try:
+        for ws in wb.worksheets:
+            parts.append(f"## Sheet: {ws.title}")
+            for row in ws.iter_rows(values_only=True):
+                cells = ["" if v is None else str(v) for v in row]
+                if not any(c.strip() for c in cells):
+                    continue
+                # trim trailing empties so wide-but-sparse rows stay compact
+                while cells and not cells[-1].strip():
+                    cells.pop()
+                line = " | ".join(cells)
+                parts.append(line)
+                size += len(line) + 1
+                if size >= max_chars:
+                    parts.append("[... spreadsheet truncated ...]")
+                    return "\n".join(parts)
+    finally:
+        wb.close()
+    return "\n".join(parts)
+
+
+def extract_text_from_pptx(file_path: str) -> str:
+    """Extract text from a .pptx (pitch deck / company profile), one block per
+    slide, including shape text and TABLE rows. Same ZIP-archive bug class as
+    .docx/.xlsx — must be parsed, not read as text."""
+    from pptx import Presentation
+
+    prs = Presentation(file_path)
+    parts: list[str] = []
+    for idx, slide in enumerate(prs.slides, 1):
+        parts.append(f"## Slide {idx}")
+        for shape in slide.shapes:
+            if shape.has_table:
+                for row in shape.table.rows:
+                    cells = [c.text.strip() for c in row.cells]
+                    if any(cells):
+                        parts.append(" | ".join(cells))
+            elif shape.has_text_frame:
+                txt = shape.text_frame.text
+                if txt and txt.strip():
+                    parts.append(txt.strip())
+    return "\n".join(parts)
+
+
+# Statement-title / line-item anchors that mark the actual audited financial
+# statements (the "F-pages"). IFRS-friendly (HK/SG issuers say "profit/loss for
+# the year", "statements of financial position") plus US-GAAP wording. We use
+# these to locate the financials inside a long filing so the extractor sees them
+# even when they sit 70k+ chars deep. Deliberately excludes the narrative
+# "report of independent registered…" mention, which appears early (Experts/
+# Summary) and is a false anchor for the statements themselves.
+_FIN_STATEMENT_ANCHORS = (
+    "consolidated statements of operations",
+    "consolidated statement of operations",
+    "consolidated statements of profit or loss",
+    "consolidated statements of comprehensive income",
+    "consolidated balance sheet",
+    "consolidated balance sheets",
+    "consolidated statements of financial position",
+    "consolidated statement of financial position",
+    "consolidated statements of cash flows",
+    "total current assets",
+    "total assets",
+)
+
+
+def _focused_excerpt(
+    text: str,
+    head_chars: int = 10_000,
+    window_chars: int = 80_000,
+    total_cap: int = 95_000,
+) -> str:
+    """Bound what gets sent to the extraction LLM while guaranteeing the audited
+    financial statements are included for long filings (prospectus / DRS).
+
+    Short docs (<= total_cap) are returned whole. For long docs we keep the head
+    (cover page / company info → classification + company_info) and splice in the
+    region around the first real financial-statement anchor (→ income statement,
+    balance sheet, cash flows). This is the extraction-time companion to the
+    report-side F-page source hierarchy."""
+    if len(text) <= total_cap:
+        return text
+
+    low = text.lower()
+    fin_pos = None
+    for anchor in _FIN_STATEMENT_ANCHORS:
+        i = low.find(anchor)
+        if i != -1:
+            fin_pos = i if fin_pos is None else min(fin_pos, i)
+
+    # No financials located, or they already fall inside the head window — just
+    # send the head-capped slice.
+    if fin_pos is None or fin_pos < head_chars:
+        return text[:total_cap]
+
+    start = max(fin_pos - 3_000, head_chars)
+    combined = (
+        text[:head_chars]
+        + "\n\n[... intervening narrative sections omitted for extraction ...]\n\n"
+        + text[start:start + window_chars]
+    )
+    return combined[:total_cap]
 
 
 async def extract_document(file_path: str, filename: str | None = None) -> dict:
@@ -182,6 +335,26 @@ async def extract_document(file_path: str, filename: str | None = None) -> dict:
 
     if lower.endswith(".pdf"):
         text = extract_text_from_pdf(file_path)
+    elif lower.endswith(".docx"):
+        # .docx is a ZIP archive — must be parsed, not read as text. If parsing
+        # fails for any reason, fall back to the raw read so the doc still gets
+        # a filename-based classification instead of erroring the whole upload.
+        try:
+            text = extract_text_from_docx(file_path)
+        except Exception:
+            text = ""
+    elif lower.endswith((".xlsx", ".xlsm")):
+        # .xlsx/.xlsm are ZIP archives too — same fix as .docx.
+        try:
+            text = extract_text_from_xlsx(file_path)
+        except Exception:
+            text = ""
+    elif lower.endswith(".pptx"):
+        # .pptx pitch decks / company profiles — same ZIP-archive fix.
+        try:
+            text = extract_text_from_pptx(file_path)
+        except Exception:
+            text = ""
     else:
         with open(file_path, "r", errors="ignore") as f:
             text = f.read()[:50000]
@@ -296,10 +469,15 @@ Only include sections where you found relevant data. Keep values as numbers wher
 For financial data, use the period as key (e.g. {"FY2023": 7522, "FY2024": 15291}).
 """
 
+    # Focused excerpt instead of a blind first-30k slice: for long filings this
+    # guarantees the audited financial statements (F-pages) reach the extractor.
+    # max_tokens lifted to 8192 (DeepSeek ceiling) so multi-period financial
+    # tables don't truncate the JSON and trip the parse-error fallback (which
+    # silently drops financial_data).
     result = await generate_text(
         system_prompt=system_prompt,
-        user_prompt=f"Extract structured data from this document:\n\n{text[:30000]}",
-        max_tokens=4096,
+        user_prompt=f"Extract structured data from this document:\n\n{_focused_excerpt(text)}",
+        max_tokens=8192,
     )
 
     try:

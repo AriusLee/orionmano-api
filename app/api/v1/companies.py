@@ -115,6 +115,61 @@ async def update_company(
     return company
 
 
+@router.delete("/{company_id}", status_code=204)
+async def delete_company(
+    company_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Permanently delete a company and ALL of its data — documents (incl. files
+    on disk), reports, decks, chats, KB pages, and memories. Not all child FKs
+    have ON DELETE CASCADE at the DB level, so we delete dependents explicitly in
+    dependency order; memories and client_kb_pages cascade automatically."""
+    import shutil
+    from sqlalchemy import delete, update
+    from app.models.document import Document
+    from app.models.report import Report, ReportSection
+    from app.models.deck import Deck
+    from app.models.chat import ChatConversation, ChatMessage
+    from app.models.published_article import PublishedArticle
+
+    result = await db.execute(select(Company).where(Company.id == company_id))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    report_ids = select(Report.id).where(Report.company_id == company_id)
+    conv_ids = select(ChatConversation.id).where(ChatConversation.company_id == company_id)
+
+    # Reports: detach article back-references, drop sections, then the reports.
+    await db.execute(
+        update(PublishedArticle)
+        .where(PublishedArticle.first_cited_by_report_id.in_(report_ids))
+        .values(first_cited_by_report_id=None)
+    )
+    await db.execute(delete(ReportSection).where(ReportSection.report_id.in_(report_ids)))
+    await db.execute(delete(Report).where(Report.company_id == company_id))
+
+    # Decks (deck_versions cascade on deck_id) and chats.
+    await db.execute(delete(Deck).where(Deck.company_id == company_id))
+    await db.execute(delete(ChatMessage).where(ChatMessage.conversation_id.in_(conv_ids)))
+    await db.execute(delete(ChatConversation).where(ChatConversation.company_id == company_id))
+
+    # Documents (DB rows here; files on disk handled below).
+    await db.execute(delete(Document).where(Document.company_id == company_id))
+
+    # The company row — memories + client_kb_pages (+ history) cascade in the DB.
+    await db.delete(company)
+    await db.commit()
+
+    # Remove the company's uploaded files directory (best-effort).
+    company_dir = os.path.join(settings.UPLOAD_DIR, str(company_id))
+    if os.path.isdir(company_dir):
+        shutil.rmtree(company_dir, ignore_errors=True)
+
+    return None
+
+
 @router.get("/{company_id}/intelligence")
 async def get_company_intelligence(
     company_id: UUID,
@@ -157,14 +212,50 @@ async def get_company_intelligence(
             seen.add(f["title"])
             unique_flags.append(f)
 
-    # Financial snapshot from extracted data
+    # Financial snapshot — pick the MOST COMPLETE / authoritative source rather
+    # than the first doc that happens to carry an income_statement. Once .xlsx
+    # leadsheets parse, many docs expose a *partial* financial_data (e.g. a
+    # revenue-only leadsheet), so first-match-wins would surface a sparse
+    # leadsheet and drop net_income / total_assets. This scores each doc by
+    # completeness and honors the F-page hierarchy: a prospectus / full-statement
+    # source outscores single-line leadsheets.
+    def _fin_score(doc) -> int:
+        fin = (doc.extracted_data or {}).get("financial_data") or {}
+        if not isinstance(fin, dict):
+            return -1
+        inc = fin.get("income_statement") if isinstance(fin.get("income_statement"), dict) else {}
+        bs = fin.get("balance_sheet") if isinstance(fin.get("balance_sheet"), dict) else {}
+        if not inc and not bs:
+            return -1
+        score = len(inc) + len(bs)
+        if inc.get("revenue"):
+            score += 3
+        if inc.get("net_income"):
+            score += 3
+        if inc.get("gross_profit"):
+            score += 2
+        if bs.get("total_assets"):
+            score += 3
+        cat = (doc.category or "").lower()
+        if cat == "prospectus":
+            score += 8
+        elif cat in ("audit_report", "financial_statements"):
+            score += 2
+        return score
+
     financial_snapshot = None
+    best_doc = None
+    best_score = 0
     for doc in documents:
         if doc.extracted_data and doc.extraction_status == "completed":
-            fin = doc.extracted_data.get("financial_data", {})
-            if isinstance(fin, dict) and fin.get("income_statement"):
-                financial_snapshot = fin
-                break
+            s = _fin_score(doc)
+            if s > best_score:
+                best_score = s
+                best_doc = doc
+    if best_doc is not None:
+        fin = best_doc.extracted_data.get("financial_data", {})
+        if isinstance(fin, dict):
+            financial_snapshot = fin
 
     # Document cross-reference
     extracted_count = sum(1 for d in documents if d.extraction_status == "completed")

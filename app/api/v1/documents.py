@@ -174,6 +174,70 @@ async def reclassify_documents(
     return {"scanned": len(docs), "updated": updated}
 
 
+@router.post("/{document_id}/reextract", response_model=DocumentResponse)
+async def reextract_document(
+    company_id: UUID,
+    document_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Re-run extraction on an already-uploaded document, in place. Useful after
+    upgrading the parser (e.g. Office formats that previously failed) — the file
+    is already on disk, so no re-upload is needed. Reuses the same background
+    extraction path as upload, including KB recompile."""
+    result = await db.execute(
+        select(Document).where(Document.id == document_id, Document.company_id == company_id)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=404, detail="File missing on disk — re-upload required")
+
+    doc.extraction_status = "pending"
+    doc.extraction_error = None
+    await db.commit()
+    await db.refresh(doc)
+
+    task = asyncio.create_task(_extract_bg(doc.id, doc.file_path, doc.filename))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    return doc
+
+
+@router.post("/reextract-all")
+async def reextract_all_documents(
+    company_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Re-run extraction on every document for the company whose file still
+    exists on disk. Kicks one background task per doc and returns immediately;
+    the frontend polls extraction_status as usual."""
+    result = await db.execute(select(Document).where(Document.company_id == company_id))
+    docs = list(result.scalars().all())
+
+    queued = 0
+    for doc in docs:
+        if not doc.file_path or not os.path.exists(doc.file_path):
+            continue
+        doc.extraction_status = "pending"
+        doc.extraction_error = None
+        queued += 1
+    if queued:
+        await db.commit()
+
+    for doc in docs:
+        if not doc.file_path or not os.path.exists(doc.file_path):
+            continue
+        task = asyncio.create_task(_extract_bg(doc.id, doc.file_path, doc.filename))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+
+    return {"total": len(docs), "queued": queued}
+
+
 @router.get("/{document_id}/raw")
 async def get_document_raw(
     company_id: UUID,
