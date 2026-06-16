@@ -27,6 +27,8 @@ class Company(Base):
     enterprise_stage: Mapped[str | None] = mapped_column(String(50))
     engagement_type: Mapped[str | None] = mapped_column(String(50))
     target_exchange: Mapped[str | None] = mapped_column(String(50))
+    fye_annual: Mapped[str | None] = mapped_column(String(50))  # financial year end (annual audit), e.g. "31 December" — anchors how the AI aligns audited figures
+    fye_interim: Mapped[str | None] = mapped_column(String(50))  # financial year end (interim), e.g. "30 June 2025" — cut-off for the latest interim/management period
     target_valuation: Mapped[float | None] = mapped_column(Float)  # saved default for valuation runs; same currency × unit as the workpaper
     valuation_date: Mapped[date | None] = mapped_column(Date)  # saved default for valuation runs; per-run override still allowed on the page
     pinned_overrides: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=dict)  # Eric 2026-05-17 — analyst-fixed params the LLM must preserve verbatim and that calibration must skip when scaling to target

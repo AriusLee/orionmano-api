@@ -25,6 +25,8 @@ REPORT_TITLES = {
     "valuation_report": "Valuation Report",
     "teaser": "Company Teaser",
     "company_deck": "Company Deck",
+    "outstanding_items": "Outstanding Items & Information Request",
+    "alternative_report": "Alternative Report (Available Information)",
 }
 
 # Tier-based section definitions: { report_type: { tier: [(key, title)] } }
@@ -262,6 +264,46 @@ REPORT_SECTIONS = {
             ("management_team", "Management Team"),
             ("growth_strategy", "Growth Strategy"),
             ("transaction_overview", "Transaction Overview"),
+        ],
+    },
+    # Eric 2026-06-16 — Outstanding Items deliverable. A standalone, focused
+    # information-request list produced once the AI has reviewed the available
+    # materials. Same sections across tiers (the list is the list).
+    "outstanding_items": {
+        "standard": [
+            ("review_summary", "Materials Reviewed & Coverage Summary"),
+            ("financial_outstanding", "Outstanding Financial Information"),
+            ("corporate_outstanding", "Outstanding Corporate, Governance & Legal Information"),
+            ("request_list", "Consolidated Information Request List (Prioritised)"),
+        ],
+    },
+    # Eric 2026-06-16 — Alternative Report. A readiness assessment built SOLELY
+    # on currently-available information, with NO outstanding-items / Information
+    # Required list. Mirrors the gap-analysis spine minus the gap-listing slots.
+    "alternative_report": {
+        "essential": [
+            ("listing_path", "Assumptions & Listing Path"),
+            ("financial_highlights", "Financial Analysis — Available Data"),
+            ("equity_bridge", "Financial Bridge to Listing Threshold"),
+            ("scorecard", "IPO Readiness Scorecard"),
+            ("conclusion", "Conclusion — Available-Information Basis"),
+        ],
+        "standard": [
+            ("listing_path", "Assumptions & Listing Path"),
+            ("financial_highlights", "Financial Analysis — Available Data"),
+            ("equity_bridge", "Financial Bridge to Listing Threshold"),
+            ("scorecard", "IPO Readiness Scorecard"),
+            ("transaction_feasibility", "Transaction Feasibility & Peer Positioning"),
+            ("conclusion", "Conclusion — Available-Information Basis"),
+        ],
+        "premium": [
+            ("listing_path", "Assumptions & Listing Path"),
+            ("financial_highlights", "Financial Analysis — Available Data"),
+            ("equity_bridge", "Financial Bridge to Listing Threshold"),
+            ("scorecard", "IPO Readiness Scorecard"),
+            ("peer_comps", "Peer Comparables & Valuation Reality Check"),
+            ("transaction_feasibility", "Transaction Feasibility & Peer Positioning"),
+            ("conclusion", "Conclusion — Available-Information Basis"),
         ],
     },
 }
@@ -544,6 +586,14 @@ def _build_company_context(
         parts.append(f"Engagement: {company.engagement_type}")
     if company.target_exchange:
         parts.append(f"Target Exchange: {company.target_exchange}")
+    # Eric 2026-06-16 — analyst-supplied financial year-ends. These anchor how
+    # the AI aligns and interprets periods in the F-pages and supplemental
+    # schedules (e.g. which figures are the audited annual close vs the latest
+    # interim cut-off). Empty when not yet set in settings.
+    if getattr(company, "fye_annual", None):
+        parts.append(f"Financial Year End (Annual Audit): {company.fye_annual}")
+    if getattr(company, "fye_interim", None):
+        parts.append(f"Financial Year End (Interim): {company.fye_interim}")
 
     if kb_pages:
         parts.append("\n## Company Knowledge Base (compiled from uploaded documents)")
@@ -610,6 +660,18 @@ TIER_INSTRUCTIONS = {
 }
 
 
+# Eric 2026-06-16 — Financial source hierarchy for DRS / prospectus materials.
+# Shared verbatim across gap analysis, DD, and the outstanding-items /
+# alternative-report deliverables so every module treats the F-pages as the
+# single authoritative financial source.
+FINANCIAL_SOURCE_HIERARCHY = """### FINANCIAL SOURCE HIERARCHY — DRS / PROSPECTUS (MANDATORY)
+When the materials include a DRS, draft registration statement, or prospectus, apply this strict source hierarchy for ALL financial figures:
+1. **F-pages are the primary, authoritative source.** The audited financial statements pages (numbered F-1, F-2, F-3 … — the "F-pages") are the starting point for ALL financial analysis. Anchor every financial figure (revenue, gross profit, operating result, net income/loss, total assets, shareholders' equity, cash, etc.) to the F-pages FIRST. Where the F-pages disagree with any other part of the document, the F-pages win.
+2. **Then supplemental schedules / attachments — supplemental periods only.** After establishing the F-page figures, refer to additional financial schedules, exhibits, or attachments ONLY for supplemental time-period data the F-pages do not cover (e.g. an interim/management period after the audited cut-off, or a quarterly/monthly breakdown). NEVER let a supplemental schedule override an audited F-page figure for an overlapping period.
+3. **Pre-F-page sections are background/context only.** Narrative sections appearing ABOVE the F-pages (business overview, MD&A, risk factors, summary/selected financials in the front half) are company background and contextual information to support deeper analysis — NOT the authoritative figure source. Do not pull primary financial figures from these sections when the F-pages cover them; use them to interpret and explain the F-page numbers.
+Align every period to the engagement's financial year-ends — Financial Year End (Annual Audit) and Financial Year End (Interim) — when these are provided in the Company Data below."""
+
+
 # ──────────────────────────────────────────────────────────────
 # Gap Analysis — dedicated prompt & per-section instructions
 # ──────────────────────────────────────────────────────────────
@@ -626,8 +688,10 @@ You are writing a **transaction-grade gap analysis** — a document that will be
 
 ## CRITICAL RULES
 
+{FINANCIAL_SOURCE_HIERARCHY}
+
 ### 1. DATA CONSISTENCY (MANDATORY)
-Before writing ANY section, establish a single set of canonical numbers from the available data and use them consistently throughout the ENTIRE report:
+Before writing ANY section, establish a single set of canonical numbers from the available data and use them consistently throughout the ENTIRE report. Derive these canonical numbers from the F-pages first per the source hierarchy above:
 - Pick ONE shareholders' equity figure and use it everywhere
 - Pick ONE exchange rate and use it everywhere
 - Pick ONE revenue figure and use it everywhere
@@ -918,6 +982,119 @@ MAX_CONCURRENT = 2
 
 
 # ──────────────────────────────────────────────────────────────
+# Outstanding Items & Information Request — dedicated prompt
+# ──────────────────────────────────────────────────────────────
+
+def _build_outstanding_items_prompt(
+    company, tier, tier_instruction, company_context,
+) -> str:
+    """System prompt for the Outstanding Items deliverable — an information
+    request list produced after reviewing the available materials. It does NOT
+    perform the full analysis; it enumerates exactly what is still missing."""
+    return f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong), specialising in Nasdaq IPO advisory and pre-IPO gap analysis for Asia-Pacific companies.
+
+## YOUR ROLE
+You have reviewed all of the materials provided for this engagement. Your task is to produce an **Outstanding Items & Information Request** — a precise, exhaustive checklist of every document and data point that is still REQUIRED to complete a transaction-grade gap analysis / Nasdaq IPO readiness assessment. This is the deliverable a senior banker hands the client to close the information gaps before substantive work proceeds.
+
+## CRITICAL RULES
+
+{FINANCIAL_SOURCE_HIERARCHY}
+
+### 1. REVIEW BEFORE YOU REQUEST
+First take stock of what the available materials already cover (anchored on the F-pages where a DRS/prospectus is present). Only flag something as outstanding if it is genuinely absent or insufficient. Do not request information that the F-pages or other provided materials already satisfy.
+
+### 2. THIS IS A REQUEST LIST, NOT AN ANALYSIS
+Do NOT write the gap analysis itself. Do NOT fabricate or assume missing figures. For each outstanding item, state:
+- **Item** — the specific document or data point needed (be concrete: "FY2024 audited financial statements (full F-pages incl. notes)", not "financials")
+- **Why it matters** — the specific analysis, Nasdaq rule, or SEC requirement that cannot be completed without it
+- **Priority** — Critical / High / Medium (Critical = blocks the core readiness assessment)
+- **Owner** — who should supply it (Company / Legal Counsel / Auditor / Underwriter)
+
+### 3. NO INLINE CITATIONS
+Do NOT use numbered inline citations like [1], [2]. State the basis naturally ("Not present in the provided F-pages", "Referenced in MD&A but schedule not attached", etc.).
+
+### 4. SUPPLEMENTAL-PERIOD AWARENESS
+Explicitly identify any time periods where the F-pages stop and a supplemental schedule / interim/management accounts would be needed to bring the picture up to date (aligned to the engagement's interim financial year-end where provided).
+
+Tier: {tier.upper()} — {tier_instruction}
+
+## Company Data
+{company_context}"""
+
+
+OUTSTANDING_SECTION_INSTRUCTIONS = {
+    "review_summary": """Write the Materials Reviewed & Coverage Summary. Briefly list the categories of material that WERE provided and what they cover (anchored on the F-pages where a DRS/prospectus is present), then state at a high level which areas are well-covered vs which are thin. This frames the request list that follows. Keep it tight — a short orienting paragraph plus a coverage table (Area | Covered? | Source).""",
+
+    "financial_outstanding": """Write the Outstanding Financial Information section. Enumerate every financial document/data point still required to complete the analysis — e.g. missing audited years, full F-page notes, supplemental/interim schedules bridging the audited cut-off to today, trial balance, monthly management accounts, customer/revenue concentration export, debt schedule, NWC detail, tax computations. For each: Item | Why it matters | Priority | Owner. Call out explicitly where the F-pages end and a supplemental period schedule is needed.""",
+
+    "corporate_outstanding": """Write the Outstanding Corporate, Governance & Legal Information section. Enumerate every non-financial document/data point still required — e.g. cap table (fully diluted), org/structure chart, shareholder agreements, board minutes, material contracts, licences/permits, related-party register, ESOP/convertibles terms. For each: Item | Why it matters | Priority | Owner.""",
+
+    "request_list": """Write the Consolidated Information Request List. Merge everything above into a single prioritised checklist a client can action directly. Group by Critical → High → Medium. Present as a clean numbered request list (or table: # | Item | Owner | Priority). This is the takeaway artefact — make it complete and unambiguous.""",
+}
+
+
+# ──────────────────────────────────────────────────────────────
+# Alternative Report — available-information-only, no outstanding list
+# ──────────────────────────────────────────────────────────────
+
+def _build_alternative_report_prompt(
+    company, tier, tier_instruction, company_context,
+) -> str:
+    """System prompt for the Alternative Report — a readiness assessment built
+    SOLELY on currently-available information, with NO outstanding-items list and
+    NO "Information Required" flags. Where data is absent the AI proceeds on
+    clearly-labelled, reasonable assumptions instead of stopping."""
+    return f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong), specialising in Nasdaq IPO advisory for Asia-Pacific companies.
+
+## YOUR ROLE
+You are writing an **Alternative Report** — a transaction-grade Nasdaq IPO readiness assessment based SOLELY on the information currently available. The client wants to know "what can we conclude TODAY with what we have." This reads like a professional advisory memo a senior banker would take seriously.
+
+## CRITICAL RULES
+
+{FINANCIAL_SOURCE_HIERARCHY}
+
+### 1. AVAILABLE-INFORMATION BASIS (DEFINING RULE)
+Work ONLY with the information provided. Where a data point is missing:
+- Do NOT include any "Information Required" flag, outstanding-items list, or information-request section. That is explicitly OUT OF SCOPE for this report.
+- Instead, proceed with the analysis using a clearly-labelled **reasonable assumption** (e.g. "Assuming, pending confirmation, that …") or a stated proxy, and carry it consistently.
+- Where a conclusion genuinely cannot be supported even with a reasonable assumption, state the limitation in one sentence inline and move on — do NOT turn it into a checklist of missing documents.
+
+### 2. DATA CONSISTENCY (MANDATORY)
+Establish a single set of canonical numbers from the available data — derived from the F-pages first per the source hierarchy above — and use them consistently throughout the ENTIRE report. Never let the same metric appear with different values on different pages.
+
+### 3. NO INLINE CITATIONS
+Do NOT use numbered inline citations like [1], [2]. State the basis naturally ("Based on the FY2024 audited financials in the F-pages…", "Per management representations…", "Assuming, pending confirmation…").
+
+### 4. FORWARD-LOOKING TIMELINE
+The report date is today. All recommended actions and timelines must be forward-looking from today.
+
+### 5. STATE THE BASIS UP FRONT
+Open the report by noting it is prepared on an available-information basis and that material assumptions are labelled inline. This sets reader expectations without itemising what is missing.
+
+Tier: {tier.upper()} — {tier_instruction}
+
+## Company Data
+{company_context}"""
+
+
+ALTERNATIVE_SECTION_INSTRUCTIONS = {
+    "listing_path": """Write the Listing Path Assumptions section based only on available information. Cover recommended Nasdaq tier, F-1 vs S-1 (FPI determination), listing vehicle, and IPO mechanism. Where structure detail is missing, proceed on a clearly-labelled reasonable assumption rather than flagging it as required.""",
+
+    "financial_highlights": """Write the Financial Analysis section using ONLY the available data, anchored on the F-pages. Use the canonical numbers established for this report. Present Revenue, Gross Profit/Margin, Operating result, Net income/loss, Total Assets, Shareholders' Equity, Cash, and (if loss-making) burn and runway. Show YoY where multi-period data exists. Where a line is unavailable, omit it or use a labelled estimate — do not list it as missing.""",
+
+    "equity_bridge": """Write the Financial Bridge to Listing Threshold using available figures: current shareholders' equity → planned fundraising → IPO costs → restructuring → operating results → pro forma equity vs the Nasdaq threshold. Where an input is unknown, use a clearly-labelled assumption and show the resulting bridge. Do not stop for missing data.""",
+
+    "scorecard": """Write the IPO Readiness Scorecard across the standard dimensions (financials, structure, governance, audit, disclosure). Score each on available evidence; where evidence is thin, score on a labelled assumption and note "(on available information)". No information-request column.""",
+
+    "peer_comps": """Write the Peer Comparables & Valuation Reality Check using available financials and reasonable public-market comparables. Label any comparable assumptions clearly.""",
+
+    "transaction_feasibility": """Write the Transaction Feasibility & Peer Positioning section: can this transaction realistically proceed on what is known today? Give a reasoned judgment with labelled assumptions where needed.""",
+
+    "conclusion": """Write the Conclusion on an available-information basis. Summarise the readiness verdict, the key assumptions it rests on, and forward-looking priority actions. Do NOT append an outstanding-items / information-required list — close on the verdict and next steps.""",
+}
+
+
+# ──────────────────────────────────────────────────────────────
 # DD Report — Transaction-grade FDD prompt
 # ──────────────────────────────────────────────────────────────
 
@@ -953,8 +1130,10 @@ Top-tier FDD is distinguished from "research memo" output by these markers. Appl
 
 ## CRITICAL RULES
 
+{FINANCIAL_SOURCE_HIERARCHY}
+
 ### 1. DATA CONSISTENCY (MANDATORY)
-Before writing ANY section, establish a single set of canonical numbers and use them throughout the entire report:
+Before writing ANY section, establish a single set of canonical numbers and use them throughout the entire report. Derive these canonical numbers from the F-pages first per the source hierarchy above:
 - Pick ONE revenue figure and use it everywhere
 - Pick ONE EBITDA figure (reported) and ONE Adjusted EBITDA figure
 - Pick ONE net debt figure and ONE NWC figure at the latest balance sheet date
@@ -2066,6 +2245,16 @@ async def generate_report_bg(
                 company, tier, tier_instruction, industry_ctx, company_context,
             )
             references_section = ""
+        elif report_type == "outstanding_items":
+            system_prompt = _build_outstanding_items_prompt(
+                company, tier, tier_instruction, company_context,
+            )
+            references_section = ""
+        elif report_type == "alternative_report":
+            system_prompt = _build_alternative_report_prompt(
+                company, tier, tier_instruction, company_context,
+            )
+            references_section = ""
         else:
             system_prompt = f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong-based), specialising in Nasdaq IPO advisory for Asia-Pacific companies. All deliverables target Nasdaq listing standards (Capital Market / Global Market / Global Select Market), SEC registration (S-1 / F-1 / 20-F / 6-K), PCAOB-audited financials, and US GAAP / IFRS reconciliation paths. Do NOT reference HKEX, HKSIR, SEHK, Bursa Malaysia, or other non-US listing regimes as the regulatory perimeter.
 Generate professional report content. Be concise, data-driven, and specific.
@@ -2107,8 +2296,9 @@ Tier: {tier.upper()} — {tier_instruction}
             system_prompt += f"\n\n## Guidelines from past feedback (follow these strictly):\n{rules_text}\n"
 
         max_tokens_per_section = {"essential": 800, "standard": 1500, "premium": 2500}.get(tier, 1500)
-        # Gap analysis and DD report need more tokens for the detailed transaction-grade sections
-        if report_type in ("gap_analysis", "dd_report"):
+        # Gap analysis and DD report need more tokens for the detailed transaction-grade sections.
+        # Outstanding-items and alternative reports share the same transaction-grade envelope.
+        if report_type in ("gap_analysis", "dd_report", "outstanding_items", "alternative_report"):
             max_tokens_per_section = {"essential": 1000, "standard": 2000, "premium": 3000}.get(tier, 2000)
         # Industry reports pack chart JSON + markdown tables + dense prose +
         # several <cite/> tags into every section. The standard envelope was
@@ -2131,6 +2321,19 @@ Tier: {tier.upper()} — {tier_instruction}
                 " Do NOT use inline citation numbers like [1], [2]. "
                 "State the basis of information naturally (e.g., 'Based on FY2025 audited financials' or 'Per management representations'). "
                 "If information is not available, clearly state 'Information Required' and describe what data is needed."
+            )
+        elif report_type == "outstanding_items":
+            gap_user_suffix = (
+                " Do NOT use inline citation numbers like [1], [2]. State the basis naturally. "
+                "This is an information REQUEST list: enumerate what is still outstanding with why-it-matters, "
+                "priority, and owner. Do NOT perform the full analysis, and do NOT invent missing figures."
+            )
+        elif report_type == "alternative_report":
+            gap_user_suffix = (
+                " Do NOT use inline citation numbers like [1], [2]. State the basis naturally. "
+                "Work SOLELY from available information. Do NOT include any 'Information Required' flags, "
+                "outstanding-items list, or information-request section. Where data is missing, proceed on a "
+                "clearly-labelled reasonable assumption (e.g. 'Assuming, pending confirmation, …') rather than stopping."
             )
         elif report_type == "industry_report":
             gap_user_suffix = (
@@ -2176,6 +2379,10 @@ Tier: {tier.upper()} — {tier_instruction}
                     section_instruction = GAP_SECTION_INSTRUCTIONS.get(section_key, "")
                 elif report_type == "dd_report":
                     section_instruction = DD_SECTION_INSTRUCTIONS.get(section_key, "")
+                elif report_type == "outstanding_items":
+                    section_instruction = OUTSTANDING_SECTION_INSTRUCTIONS.get(section_key, "")
+                elif report_type == "alternative_report":
+                    section_instruction = ALTERNATIVE_SECTION_INSTRUCTIONS.get(section_key, "")
                 elif report_type == "industry_report":
                     section_instruction = INDUSTRY_SECTION_INSTRUCTIONS.get(section_key, "")
                     use_reasoner = section_key in INDUSTRY_REASONER_SECTIONS

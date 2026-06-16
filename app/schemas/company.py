@@ -17,6 +17,8 @@ class CompanyCreate(BaseModel):
     website: str | None = None
     engagement_type: str | None = None
     target_exchange: str | None = None
+    fye_annual: str | None = None
+    fye_interim: str | None = None
     target_valuation: float | None = None
     valuation_date: date | None = None
     pinned_overrides: dict[str, Any] | None = None
@@ -38,6 +40,8 @@ class CompanyUpdate(BaseModel):
     website: str | None = None
     engagement_type: str | None = None
     target_exchange: str | None = None
+    fye_annual: str | None = None
+    fye_interim: str | None = None
     target_valuation: float | None = None
     valuation_date: date | None = None
     pinned_overrides: dict[str, Any] | None = None
@@ -63,6 +67,8 @@ class CompanyResponse(BaseModel):
     enterprise_stage: str | None = None
     engagement_type: str | None = None
     target_exchange: str | None = None
+    fye_annual: str | None = None
+    fye_interim: str | None = None
     target_valuation: float | None = None
     valuation_date: date | None = None
     pinned_overrides: dict[str, Any] | None = None
