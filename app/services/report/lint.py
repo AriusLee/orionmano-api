@@ -210,7 +210,9 @@ _INTERNAL_REFERENCE_PATTERNS: list[tuple[str, str]] = [
     (r"Value_Summary", "internal worksheet name"),
     (r"segments_table|Inputs\s+sheet|named\s+range", "internal worksheet reference"),
     (r"\bpinned\b", "pinned-parameter mechanics"),
-    (r"\b\w+_y[0-9]\b", "machine parameter ID"),
+    # Lowercase-only: machine IDs are snake_case (revenue_growth_y1); uppercase
+    # finance notation like FCFF_Y5 in a Gordon Growth formula is legitimate.
+    (r"(?-i:\b[a-z][a-z0-9_]*_y[0-9]\b)", "machine parameter ID"),
     (r"Eric\s+item|Eric\s+20\d\d", "internal process note"),
 ]
 

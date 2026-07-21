@@ -152,6 +152,13 @@ class GenerateValuationWorkpaperSkill(Skill):
             if not isinstance(inputs_override, dict):
                 return SkillResult.failed("Override inputs must be a JSON object")
             payload = inputs_override
+            # The producer normally loads ctx.company; this path skips it,
+            # which left the output filename slug falling back to "company"
+            # and the linked report tier falling back to "standard".
+            try:
+                await ctx.load_company_data()
+            except Exception:
+                pass
         else:
             # 1b. Standard path: produce inputs JSON via the producer skill.
             producer = registry.get("produce_valuation_inputs")
