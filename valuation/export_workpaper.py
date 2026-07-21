@@ -76,6 +76,7 @@ SCALAR_PATHS: dict[str, str] = {
     "terminal_growth_rate": "terminal.growth_rate",
     "terminal_exit_multiple_type": "terminal.exit_multiple_type",
     "terminal_exit_multiple_value": "terminal.exit_multiple_value",
+    "terminal_nominal_gdp_growth": "terminal.nominal_gdp_growth",
     # WACC shared
     "risk_free_rate": "wacc.shared.risk_free_rate",
     "risk_free_rate_source": "wacc.shared.risk_free_rate_source",
@@ -514,7 +515,9 @@ def populate_tables(wb, payload: dict, vr: ValidationResult) -> int:
 
     # Segments table (Eric 2026-05-08 item 2) — optional segmented revenue model.
     # Layout: col 1=name, 2=start_year, 3=initial revenue (revenue_y0 if start_year=0,
-    # else initial_revenue), 4-8=revenue_growth Y1-Y5, 9-13=gross_margin Y1-Y5.
+    # else initial_revenue), 4-8=revenue_growth Y1-Y5, 9-13=gross_margin Y1-Y5,
+    # 14-18=per-stream opex % Y1-Y5 (carve-out trigger), 19=source,
+    # 20=growth_basis, 21=contractual_support.
     if "segments_table" in wb.defined_names:
         dn = wb.defined_names["segments_table"]
         text = dn.attr_text
@@ -542,6 +545,12 @@ def populate_tables(wb, payload: dict, vr: ValidationResult) -> int:
                 gm = [None if c is None else 1.0 - c for c in seg["cogs_pct"]]
             for k, g in enumerate(gm[:5]):
                 inputs_ws.cell(row=r, column=9 + k, value=g)
+            opex = seg.get("opex_pct_revenue") or []
+            for k, o in enumerate(opex[:5]):
+                inputs_ws.cell(row=r, column=14 + k, value=o)
+            inputs_ws.cell(row=r, column=19, value=seg.get("source"))
+            inputs_ws.cell(row=r, column=20, value=seg.get("growth_basis"))
+            inputs_ws.cell(row=r, column=21, value=seg.get("contractual_support"))
             written += 1
 
     # Precedent table

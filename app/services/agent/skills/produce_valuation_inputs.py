@@ -20,6 +20,7 @@ from app.config import settings
 from app.services.agent.context import AgentContext
 from app.services.agent.skill import Skill, SkillResult
 from app.services.agent.skills.valuation_inputs_schema import validate as validate_inputs
+from app.services.ai.web_search import format_search_results, web_search
 
 
 # Resolve from backend/ root (parents[4]) so the path holds in deploys that ship
@@ -101,6 +102,7 @@ PINNABLE_PARAMS: dict[str, tuple[str, str]] = {
     "gross_margin_y4":            ("projections.gross_margin.3",                "percent"),
     "gross_margin_y5":            ("projections.gross_margin.4",                "percent"),
     "terminal_growth_rate":       ("terminal.growth_rate",                      "percent"),
+    "nominal_gdp_growth":         ("terminal.nominal_gdp_growth",               "percent"),
     "risk_free_rate":             ("wacc.shared.risk_free_rate",                "percent"),
     "equity_risk_premium":        ("wacc.shared.equity_risk_premium",           "percent"),
     "country_risk_premium":       ("wacc.shared.country_risk_premium",          "percent"),
@@ -348,9 +350,14 @@ def _calibrate_to_target(payload: dict, target_actual: float, pinned_keys: list[
         # segments; when segments are present, their arrays drive the totals).
         # Segments inherit the same scaling but DON'T inherit pin protection —
         # pinned overrides are scoped to top-level arrays only for now.
+        # User-defined additional revenue streams (user_locked) are NEVER
+        # scaled — their base revenue and growth profile are authoritative
+        # analyst inputs, not goal-seek levers.
         segs = proj.get("segments") or []
         for s in segs:
             if not isinstance(s, dict):
+                continue
+            if s.get("user_locked"):
                 continue
             if isinstance(s.get("revenue_growth"), list):
                 s["revenue_growth"] = [
@@ -414,6 +421,234 @@ def _calibrate_to_target(payload: dict, target_actual: float, pinned_keys: list[
             hi = mid
     apply((lo + hi) / 2)
     return (lo + hi) / 2
+
+
+# ─── User-defined additional revenue streams ─────────────────────────────────
+# Settings-panel feature: the analyst defines revenue streams (name, base-year
+# revenue in ACTUAL currency, optional growth/margin/opex overrides). The
+# producer web-researches market growth for streams without an override,
+# injects everything into the prompt as authoritative context, and enforces
+# the user's values on the returned payload post-LLM.
+
+def _normalize_user_streams(raw: Any) -> list[dict[str, Any]]:
+    """Coerce Company.additional_revenue_streams JSONB into a clean list."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for s in raw:
+        if not isinstance(s, dict):
+            continue
+        name = str(s.get("name") or "").strip()
+        try:
+            base = float(s.get("base_year_revenue"))
+        except (TypeError, ValueError):
+            base = None
+        if not name or not base or base <= 0:
+            continue
+
+        def fnum(key: str) -> float | None:
+            v = s.get(key)
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        out.append({
+            "name": name,
+            "description": str(s.get("description") or "").strip(),
+            "base_year_revenue": base,
+            "start_year": int(s.get("start_year") or 1),
+            "growth_override": fnum("growth_override"),
+            "gross_margin_override": fnum("gross_margin_override"),
+            "opex_pct_override": fnum("opex_pct_override"),
+            "contractual_support": str(s.get("contractual_support") or "").strip(),
+        })
+    return out
+
+
+async def _research_stream_growth(streams: list[dict], industry: str | None) -> dict[str, str]:
+    """For streams without a growth override, run a web search for market growth
+    data and return {stream_name: formatted_results}. Degrades to empty strings
+    on search failure — the LLM then falls back to a documented analyst-range
+    estimate."""
+    out: dict[str, str] = {}
+    for s in streams:
+        if s.get("growth_override") is not None:
+            continue
+        query = f"{s['name']} {industry or ''} market size growth rate CAGR forecast industry report".strip()
+        try:
+            results = await web_search(query, max_results=5)
+        except Exception:
+            results = []
+        out[s["name"]] = format_search_results(results)
+    return out
+
+
+def _build_streams_prompt_block(streams: list[dict], research: dict[str, str]) -> str:
+    parts = [
+        "USER-DEFINED ADDITIONAL REVENUE STREAMS (AUTHORITATIVE — the analyst "
+        "entered these in the settings panel; they MUST appear in "
+        "`projections.segments[]` exactly as specified):",
+        "",
+        "Rules for these streams:",
+        "- Emit ONE `projections.segments[]` entry per stream with "
+        "`source=\"additional_stream\"`, the exact `name` shown, and the stated "
+        "`start_year`. Also emit the rest of the business as one or more "
+        "`source=\"core\"` segments so segment totals reproduce the full company.",
+        "- `base_year_revenue` below is in ACTUAL currency units (NOT scaled by "
+        "`currency.unit`) — convert it to the workpaper unit for the segment's "
+        "`initial_revenue` (or `revenue_y0` when start_year=0). E.g. 1,200,000 "
+        "actual with unit '000 becomes 1200.",
+        "- When a growth override is given, it is the stream's Y1 growth — anchor "
+        "the growth vector to it (decay defensibly in later years) and set "
+        "`growth_basis` to \"Analyst override\".",
+        "- When NO override is given, derive a defensible growth vector from the "
+        "web research supplied below (industry reports, sector growth statistics). "
+        "Cite the specific statistic and source in `growth_basis` (e.g. "
+        "\"Web research: EV charging CAGR ~24% (BloombergNEF, retrieved 2026-07)\") "
+        "and add a `sources.<id>` entry for the stream's growth. If the research "
+        "is thin, use a conservative analyst-range estimate and say so honestly "
+        "in `growth_basis`.",
+        "- Give each stream its own `gross_margin[]` (or `cogs_pct[]`) AND its own "
+        "`opex_pct_revenue[]` (the incremental S&M / distribution / support cost "
+        "ratio logically linked to that stream) — use the analyst overrides below "
+        "when given, else derive from the stream's economics. These drive the "
+        "per-stream COGS and related-opex breakdown in the model outputs.",
+        "- Carry `contractual_support` through verbatim on the segment. Do not "
+        "invent support that isn't stated.",
+        "- The top-level `revenue_growth` / `gross_margin` arrays must reproduce "
+        "the SUM across all segments (streams included).",
+        "",
+    ]
+    for i, s in enumerate(streams, 1):
+        parts.append(f"Stream {i}: {s['name']}")
+        if s.get("description"):
+            parts.append(f"  - Description: {s['description']}")
+        parts.append(f"  - Base-year revenue (ACTUAL currency): {s['base_year_revenue']:,.0f}")
+        parts.append(f"  - Start year: Y{s['start_year']}")
+        if s.get("growth_override") is not None:
+            parts.append(f"  - Growth override (authoritative Y1 growth): {s['growth_override']*100:.2f}%")
+        else:
+            parts.append("  - Growth override: none — estimate market growth from the research below")
+        if s.get("gross_margin_override") is not None:
+            parts.append(f"  - Gross margin override: {s['gross_margin_override']*100:.2f}%")
+        if s.get("opex_pct_override") is not None:
+            parts.append(f"  - Related opex override (% of stream revenue): {s['opex_pct_override']*100:.2f}%")
+        if s.get("contractual_support"):
+            parts.append(f"  - Contractual support: {s['contractual_support']}")
+        research_text = research.get(s["name"])
+        if research_text:
+            parts.append(f"\n  Market growth research for \"{s['name']}\":\n{research_text}")
+        parts.append("")
+    return "\n".join(parts)
+
+
+def _apply_user_streams(payload: dict, streams: list[dict]) -> None:
+    """Post-LLM enforcement: every user-defined stream must exist in
+    projections.segments with the user's values verbatim. Injects a segment if
+    the LLM dropped one; forces base revenue (unit-converted), start_year, and
+    any overrides; marks streams user_locked so calibration never scales them."""
+    if not streams:
+        return
+    proj = payload.setdefault("projections", {})
+    if not isinstance(proj, dict):
+        return
+    segs = proj.get("segments")
+    if not isinstance(segs, list):
+        segs = []
+        proj["segments"] = segs
+    n_years_core = int(proj.get("years") or 5)
+    stream_names = {s["name"].lower() for s in streams}
+    has_core = any(
+        isinstance(s, dict)
+        and str(s.get("name") or "").strip().lower() not in stream_names
+        for s in segs
+    )
+    if not has_core:
+        # The LLM emitted no core segment (or no segments at all) — without
+        # one, the segmented cascade would consist of the user streams alone
+        # and the existing business would vanish from totals. Synthesize the
+        # core from the top-level arrays.
+        segs.insert(0, {
+            "name": "Core business",
+            "start_year": 0,
+            "revenue_y0": proj.get("revenue_y0"),
+            "revenue_growth": list(proj.get("revenue_growth") or [0.0] * n_years_core),
+            # Segment gross_margin is segment-local indexed from Y0; top-level
+            # gross_margin is indexed from Y1 — prepend a Y0 placeholder.
+            "gross_margin": [None] + list(proj.get("gross_margin") or [0.0] * n_years_core),
+            "source": "core",
+        })
+    unit_mult = _unit_multiplier((payload.get("currency") or {}).get("unit"))
+    by_name = {
+        str(s.get("name") or "").strip().lower(): s
+        for s in segs if isinstance(s, dict)
+    }
+    n_years = int(proj.get("years") or 5)
+    for stream in streams:
+        seg = by_name.get(stream["name"].lower())
+        if seg is None:
+            seg = {"name": stream["name"]}
+            segs.append(seg)
+        start = int(stream["start_year"])
+        seg["start_year"] = start
+        base_workpaper = stream["base_year_revenue"] / (unit_mult or 1.0)
+        if start == 0:
+            seg["revenue_y0"] = base_workpaper
+            seg.pop("initial_revenue", None)
+        else:
+            seg["initial_revenue"] = base_workpaper
+            seg.pop("revenue_y0", None)
+        growth = seg.get("revenue_growth")
+        if not isinstance(growth, list) or not growth:
+            growth = [0.10] * n_years
+        if stream.get("growth_override") is not None:
+            growth = list(growth)
+            growth[0] = stream["growth_override"]
+            seg["growth_basis"] = "Analyst override"
+        seg["revenue_growth"] = growth
+        if stream.get("gross_margin_override") is not None:
+            seg["gross_margin"] = [stream["gross_margin_override"]] * n_years
+            seg.pop("cogs_pct", None)
+        elif not seg.get("gross_margin") and not seg.get("cogs_pct"):
+            seg["gross_margin"] = list(proj.get("gross_margin") or [0.3] * n_years)
+        if stream.get("opex_pct_override") is not None:
+            seg["opex_pct_revenue"] = [stream["opex_pct_override"]] * n_years
+        seg["source"] = "additional_stream"
+        seg["contractual_support"] = stream.get("contractual_support") or seg.get("contractual_support") or ""
+        if stream.get("description") and not seg.get("description"):
+            seg["description"] = stream["description"]
+        seg["user_locked"] = True
+
+
+def _sync_top_level_to_segments(payload: dict) -> None:
+    """When segments exist they drive the Python cascade, but the xlsx Total
+    Revenue cascade reads the TOP-LEVEL revenue_growth / gross_margin named
+    ranges. Deterministically recompute those arrays from the segment
+    aggregates so the two engines cannot disagree."""
+    proj = payload.get("projections")
+    if not isinstance(proj, dict) or not proj.get("segments"):
+        return
+    try:
+        from compute import _projections as _compute_projections  # type: ignore
+        series = _compute_projections(payload)
+        rev = series["revenue"]
+        gp = series["gross_profit"]
+        n = len(rev) - 1
+        if n <= 0 or any(r is None for r in rev):
+            return
+        growth = []
+        margins = []
+        for y in range(n):
+            growth.append(rev[y + 1] / rev[y] - 1 if rev[y] else 0.0)
+            margins.append(gp[y] / rev[y + 1] if rev[y + 1] else 0.0)
+        proj["revenue_growth"] = growth
+        proj["gross_margin"] = margins
+        proj["revenue_y0"] = rev[0]
+    except Exception:
+        # Sync is a consistency guarantee, not a correctness gate — leave the
+        # LLM's top-level arrays in place on any failure.
+        pass
 
 
 SYSTEM_INSTRUCTION = (
@@ -521,9 +756,9 @@ Every section listed below MUST be present in the output:
 - `projections` — years (typically 5), revenue_growth_method, **revenue_y0** (last reported full-year revenue, in the same currency × unit as the workpaper), **nwc_y0** (audited Y0 NWC = current assets ex-cash − current liabilities ex-debt), and Y1-Y5 arrays for revenue_growth, **revenue_growth_primary**, gross_margin, opex_pct_revenue, capex_pct_revenue, dep_pct_revenue, nwc_pct_sales (all 7 arrays, each length-5). **revenue_y0 is the cascade base — without it the workpaper math is dead.** ALSO populate **gross_profit_y0**, **opex_y0** (negative), **ebitda_y0**, **ebit_y0**, **tax_y0** (negative), **net_income_y0** from the most recent full-year audited income statement (`historical_fs.gross_profit[-1]`, `historical_fs.opex_total[-1]`, `historical_fs.ebitda[-1]`, `historical_fs.ebit[-1]`, `historical_fs.tax_expense[-1]`, `historical_fs.net_income[-1]`) so the Projections sheet's Y0 column shows real audited values, not blanks. Eric 2026-05-18 / 2026-05-19 #1.
 
 **Primary vs. Total revenue growth (Eric 2026-05-19)**: `revenue_growth` is the **TOTAL** growth the calibration tunes to hit `target_valuation`. `revenue_growth_primary` is the **CONSERVATIVE** baseline track — what the business does if it just continues its historical trend, with NO additional BDP-driven stretch. Anchor `revenue_growth_primary` to the 3-year historical revenue CAGR (compute from `historical_fs.revenue[-3:]`), allowing ±2pp tolerance for cyclical normalization. **Cap `revenue_growth_primary` at 10% absolute** even if historical CAGR is higher (anything above that needs BDP justification → goes into Additional). The Projections sheet displays Primary, Additional (= Total − Primary), and Total as three separate rows — Additional represents the BDP-justified stretch that the analyst must defend in the written report. Always populate `revenue_growth_primary` even when uncertain (fallback: copy `revenue_growth` clamped to [0, 0.10]).
-- `projections.segments` (OPTIONAL but RECOMMENDED when the target has distinct business lines) — array of segments, each `{{name, start_year, revenue_y0 (if start_year=0) or initial_revenue (if start_year>0), revenue_growth[], gross_margin[] OR cogs_pct[]}}`. When provided, total revenue & gross profit at each year are the SUM across all active segments; the top-level revenue_growth + gross_margin arrays are then IGNORED for the cascade (still emit them for back-compat, but make the segment numbers the authoritative breakdown). Segments with `start_year > 0` model new revenue streams launched mid-projection (Eric 2026-05-08 item 2: "user can add new revenue streams with corresponding COGS during the projection period"). The sum of all segment revenue_y0 (for start_year=0 segments) MUST equal the top-level revenue_y0 — otherwise the workpaper Y0 base mismatches the audited FS.
+- `projections.segments` (OPTIONAL but RECOMMENDED when the target has distinct business lines; REQUIRED when user-defined additional revenue streams are supplied in the context) — array of segments, each `{{name, start_year, revenue_y0 (if start_year=0) or initial_revenue (if start_year>0), revenue_growth[], gross_margin[] OR cogs_pct[], source ("core" | "additional_stream"), opex_pct_revenue[] (per-stream related S&M/distribution opex as % of stream revenue — REQUIRED for additional_stream segments so incremental costs scale with the stream), growth_basis (one-line defence of the growth vector, citing the market statistic and source used), contractual_support (contracts/backlog/MOUs supporting the stream; empty string if none)}}`. When provided, total revenue & gross profit at each year are the SUM across all active segments; the top-level revenue_growth + gross_margin arrays are then IGNORED for the cascade (still emit them consistent with the segment aggregate — the pipeline re-derives them deterministically). Segments with `start_year > 0` model new revenue streams launched mid-projection (Eric 2026-05-08 item 2: "user can add new revenue streams with corresponding COGS during the projection period"). The sum of all segment revenue_y0 (for start_year=0 segments) MUST equal the top-level revenue_y0 — otherwise the workpaper Y0 base mismatches the audited FS.
 - `historical_fs` — 5-year arrays (FY-5..FY-1, oldest first; pad with null where data is missing) for: revenue, cogs, gross_profit, opex_total, sga, rnd, ebitda, da, ebit, interest_expense, other_income_expense, profit_before_tax, tax_expense, net_income, cash, accounts_receivable, inventory, prepaid_expenses, total_current_assets, ppe, intangibles, other_lt_assets, total_assets, accounts_payable, short_term_debt, other_current_liabilities, total_current_liabilities, long_term_debt, other_lt_liabilities, total_liabilities, total_equity. Pull from audited financial statements when available — fewer than 5 years OK; pad missing years with `null` (NOT 0).
-- `terminal` — method ("gordon_growth"), growth_rate, exit_multiple_type, exit_multiple_value
+- `terminal` — method ("gordon_growth"), growth_rate, exit_multiple_type, exit_multiple_value, **nominal_gdp_growth** (long-run nominal GDP growth of the target's primary operating jurisdiction, as a decimal, citing IMF WEO or World Bank with a retrieval date in `sources.nominal_gdp_growth`; the pipeline flags any terminal growth_rate at or above nominal_gdp_growth − 50bps for explicit justification)
 - `wacc.shared` — risk_free_rate, risk_free_rate_source, equity_risk_premium, country_risk_premium
 - `wacc.per_management` — unlevered_beta, target_debt_to_equity, size_premium, specific_risk_premium, pretax_cost_of_debt, target_debt_weight, target_equity_weight
 - `wacc.independent` — same fields, slightly more conservative (higher beta, higher specific risk, higher D/E)
@@ -534,7 +769,7 @@ Every section listed below MUST be present in the output:
 - `precedents` — array of 0-15 transactions with (include, date, acquirer, target, ev_usd_mm, ev_revenue, ev_ebitda, premium, rationale)
 - `bridge` — surplus_assets, net_debt_override (null OK — defaults to short_term_debt + long_term_debt − cash from Historical FS), minority_interests, non_operating_assets, dlom_pct, dloc_pct, equity_interest_pct, shares_outstanding, shares_outstanding_diluted (null OK), pre_money_pct (null OK)
 - `adjustments` — capitalize_rd, rd_amortization_years, convert_operating_leases, lease_discount_rate (null OK)
-- `football_field` — weight_dcf, weight_comps, weight_precedent, weight_nav (sum must equal 1.0; weight_nav typically 0). Also produce an initial `selected_low`, `selected_mid`, `selected_high` band — set selected_mid to your best estimate of EV (using the company context + projections), and selected_low/high to ±15% around the mid as an initial range for the analyst to refine.
+- `football_field` — **ALWAYS emit `weight_dcf: 1.0, weight_comps: 0.0, weight_precedent: 0.0, weight_nav: 0.0`.** The DCF approach is the SOLE primary valuation methodology; the Market Approach (comps) and Recent Transaction Approach are retained only as cross-checks against the DCF enterprise value (the pipeline computes their implied EVs and flags any variance beyond ±10%). Also produce an initial `selected_low`, `selected_mid`, `selected_high` band — set selected_mid to your best estimate of the DCF (per-management) EV, and selected_low/high to ±15% around the mid as an initial range for the analyst to refine.
 - `sensitivity` — wacc_step (0.005), wacc_count (5), terminal_g_step (0.005), terminal_g_count (5), revenue_g_step (0.02), ebitda_margin_step (0.02)
 - `sources` — **MANDATORY**: every scalar parameter you assign a non-null value MUST have a corresponding `sources.<id>` entry of shape `{{source, detail, notes, rationale}}`. The `source` field must be one of: "Audited FS", "Management Projections", "Capital IQ", "Bloomberg", "Damodaran", "Kroll", "Mercer", "Prospectus", "Engagement Letter", "Calculated", "Manual". The `detail` field cites the specific document/page/figure (e.g. "FY2024 Audited FS, Note 3 — Revenue, p.42"). For Damodaran data: cite "Damodaran NYU Stern, [country/industry] page, retrieved <date>". This audit trail is non-negotiable; without sources the workpaper cannot be defended. At minimum, populate sources for: company_name, valuation_date, target_valuation (when provided), tax_rate_high, revenue_y0, nwc_y0, risk_free_rate, equity_risk_premium, country_risk_premium, unlevered_beta_per_mgmt, dlom_pct, dloc_pct, shares_outstanding, terminal_growth_rate.
 - The `rationale` field (Eric 2026-05-08 item 7) is the "why" for the chosen number — 1–3 sentences explaining how this SPECIFIC value was derived for THIS company, citing the target's BDP / segment trajectory / comp set / industry context. This is what the report uses to defend the number to the client. **REQUIRED for**: target_valuation (when set — explain how the goal-seek levers were tuned), revenue_growth_y1 (top-level or per-segment), gross_margin_y1, terminal_growth_rate, unlevered_beta_per_mgmt, dlom_pct, dloc_pct, equity_risk_premium, risk_free_rate. **Strongly encouraged for**: every other scalar where the choice is non-obvious. **Skip rationale for** routine pass-through fields (e.g. company_name, valuation_date). Example: `"rationale": "30% Y1 revenue growth reflects management's 2025 BDP (slide 12), which assumes the Atlas migration concludes Q3 and unlocks the enterprise tier. This is below Datadog's 35% LTM growth at comparable scale and above the comp-set median of 24%, so the trajectory is defensible without breaking the size-vs-growth norm for Tier-1 SaaS."`
@@ -732,6 +967,24 @@ class ProduceValuationInputsSkill(Skill):
                 "assumptions — every projection lever you choose MUST be "
                 "traceable to a specific driver in this plan):\n"
                 + bdp_raw.strip()
+                + "\n\n"
+                + company_context
+            )
+
+        # User-defined additional revenue streams (settings panel). For streams
+        # without a growth override, research market growth on the web BEFORE
+        # the Claude call (the producer has no tool loop) and inject the
+        # findings into the prompt. The post-LLM step enforces the user's
+        # values verbatim regardless of what the LLM emits.
+        user_streams = _normalize_user_streams(
+            getattr(company_obj, "additional_revenue_streams", None)
+        )
+        if user_streams:
+            stream_research = await _research_stream_growth(
+                user_streams, getattr(company_obj, "industry", None)
+            )
+            company_context = (
+                _build_streams_prompt_block(user_streams, stream_research)
                 + "\n\n"
                 + company_context
             )
@@ -1068,6 +1321,12 @@ class ProduceValuationInputsSkill(Skill):
                     "notes": "Auto-derived by the pipeline; re-levered to target capital structure inside the DCF.",
                 }
 
+            # User-defined additional revenue streams — enforce the analyst's
+            # values verbatim (inject dropped streams, force base revenue with
+            # unit conversion, apply overrides, mark user_locked so calibration
+            # never scales them).
+            _apply_user_streams(payload, user_streams)
+
             # Eric 2026-05-19 — guarantee revenue_growth_primary is populated
             # so the Projections sheet's Primary cascade has values to read.
             # If the LLM omitted or under-filled the field, fall back to
@@ -1082,6 +1341,11 @@ class ProduceValuationInputsSkill(Skill):
             # comp-derived value. This is the deterministic "preserve these
             # exact values run-to-run" guarantee.
             applied_pinned_keys: list[str] = _apply_pinned_overrides(payload, pinned_overrides)
+
+            # Keep the xlsx-driving top-level arrays consistent with the
+            # segment aggregates that drive the Python cascade (no-op when no
+            # segments are present).
+            _sync_top_level_to_segments(payload)
 
             last_payload = payload
 
@@ -1157,6 +1421,9 @@ class ProduceValuationInputsSkill(Skill):
                     # clobber an analyst pin silently.
                     if pinned_overrides:
                         _apply_pinned_overrides(payload, pinned_overrides)
+                    # Calibration rescaled segment arrays — re-sync the
+                    # top-level arrays the xlsx cascade reads.
+                    _sync_top_level_to_segments(payload)
                     # Recompute implied EV with calibrated growth array
                     last_implied_ev = _implied_dcf_ev_actual(payload)
                     # Note the calibration in sources so the audit trail is honest

@@ -1,153 +1,97 @@
 # Valuation Report Template
 
-**Audience:** Customer, Underwriter, Investor
+**Audience:** Customer, Underwriter, Investor (client-facing)
 **Format:** PDF/Word, **~40 pages target (Eric 2026-05-19 #10c)**
-**Purpose:** Independent valuation of the target company
+**Purpose:** Independent valuation of the target company — DCF as the sole primary methodology; market approaches as cross-checks
+
+## Methodology rule (client feedback 2026-07)
+
+- The **income approach (DCF)** is the SOLE primary methodology: projected FCFF over the explicit horizon plus terminal value, discounted at WACC. The concluded enterprise value derives from the DCF alone.
+- The **market approach (comparable companies)** and **recent transactions** are cross-checks only: implied EVs are compared against the DCF EV within a ±10% band. Both inside → "within reasonable range"; either outside → "outside cross-check range" with a short explanation (limited comparables, outlier transactions, sector conditions). NO weighted averages of methodologies.
+- Valuation prepared on an IFRS 13 fair value basis.
+
+## Section format rule (every major section)
+
+Heading → 3-5 bullet **Key Takeaways** → tables/charts → short analytical narrative with clear sub-headings. Charts for revenue/margin/FCFF evolution, terminal-value contribution, and scenario comparison.
 
 ## Concision rule (Eric 2026-05-19 #10c)
 
-The analyst must be able to review every number end-to-end. Aim for ~40 pages total — never exceed 45. Achieve this by:
+Aim for ~40 pages total — never exceed 45. Tables over prose; one assumption = one sentence + its basis stated naturally; no restating context covered in the DD/Industry reports; appendices capped at 5 pages (the xlsx workpaper IS the detailed model).
 
-- **Tables over prose** wherever a table communicates the same content with fewer words. The DCF / comps / WACC sections are largely tabular by nature.
-- **One assumption = one sentence + one source citation**, not a paragraph. Use the rationale field from the inputs JSON verbatim where possible.
-- **No restating context** — Company Overview cross-references the DD Report ("see DD Report §2.1"), Industry Context cross-references the Industry Report ("see Industry Report §3.2"). Don't reproduce.
-- **Skip "considered but not applied" methodologies** when they're not material. A one-line note in the methodology section is sufficient.
-- **Appendices belong in the xlsx**, not the PDF. The workpaper IS the detailed model — the report's appendix should only carry irreducible reference tables (e.g., comp profiles), not the full DCF cascade. Cap appendices at 5 pages total.
+## Suppression rule (ABSOLUTE)
+
+The client-facing report NEVER references: goal-seek or target valuations, calibration, pinned parameters, internal worksheet/sheet names, machine parameter IDs, or report-writing process notes.
 
 ## Document Structure
 
 ### Front Matter
-- Cover Page (same style as DD Report, with valuation-themed icon)
-- Important Notice and Disclaimer
-- Engagement Letter
+- Cover Page (valuation-themed icon)
+- Purpose and Use of this Report (boxed): valuation date; IFRS 13 fair value basis; prepared to support Nasdaq IPO pricing discussions and board decision-making; not intended for incorporation into any F-1/FWP registration statement; not a fairness opinion; concise disclaimer (not an offer/solicitation; forward-looking caveats; investment decisions must rely on the formal registration statement)
 - Table of Contents
 
 ### Main Body
 
 #### 1. Executive Summary (2 pages)
-- Valuation conclusion (range and point estimate)
-- Methodologies applied and weighting
-- Key assumptions summary
-- Valuation date and currency
-- Summary valuation table:
+1. Business snapshot + 4-6 investment-highlight bullets (business model, market, differentiation, growth/margin themes)
+2. Headline valuation conclusion table: EV range, equity value range, implied per-share range, methodology line "DCF primary; market approaches as cross-checks"
+3. Key analytical drivers table: revenue growth profile, margin trajectory, capital intensity, WACC, terminal g, DLOM/DLOC — headline numbers with one-line justifications
+4. Principal risks and mitigants (3-5 bullets)
 
-| Methodology | Low | Mid | High | Weight |
-|-------------|-----|-----|------|--------|
-| DCF | $XXM | $XXM | $XXM | XX% |
-| Comparable Companies | $XXM | $XXM | $XXM | XX% |
-| Precedent Transactions | $XXM | $XXM | $XXM | XX% |
-| **Weighted Average** | **$XXM** | **$XXM** | **$XXM** | **100%** |
+#### 2. Business & Industry Overview (2-3 pages)
+- Each revenue stream described in business terms (what it is, who buys, value proposition) — additional/new streams clearly identified with the market data/sources used for their growth profile
+- Product/solution summary, customer types, value proposition
+- Market sizing and growth with named sources
+- 3-5 investment-highlight bullets linking business model to valuation story
+- Every growth/margin claim tied to an operating driver (contracts, capacity, backlog) or market statistic (TAM, share)
 
-- Implied per-share value (pre/post-IPO)
-- Key value drivers and sensitivities
+#### 3. Key Operating Metrics (1 page — premium tier)
+- 3-6 KPIs (customers, backlog vs projected revenue, installed base, projects, revenue by segment/geography), connected to valuation where possible (backlog coverage %, concentration → specific risk premium)
 
-#### 2. Company Overview (2 pages)
-- Brief business description (reference DD Report for detail)
-- Corporate structure
-- Key financial highlights (3-year summary)
-- Growth trajectory
-- Management assessment
+#### 4. Financial Projections & Revenue Streams (3-4 pages)
+- Projection summary table (revenue, GP, EBITDA, EBIT, FCFF, Y0-Y5)
+- Per-stream breakdown: base revenue, growth + growth basis (market data used), gross margin, incremental COGS and related opex per stream ("COGS — Stream A", "Related opex — Stream A") and how incremental costs were derived
+- Charts: revenue by stream (stacked), margin evolution
+- Unproven-segment disclosure where flagged
 
-#### 3. Industry Context (1-2 pages — cross-reference Industry Report)
-- Market opportunity summary (reference Industry Report)
-- Growth outlook
-- Competitive positioning
-- Key industry multiples
+#### 5. DCF Analysis — FCFF & Present Value (4-5 pages, mostly tabular)
+- FCFF construction by year; discounting at WACC; PV explicit vs PV terminal split (+% contribution); chart: FCFF evolution
 
-#### 4. Valuation Methodology Selection (1 page)
-- Rationale for selected methodologies
-- Weighting justification
-- Methodologies considered but not applied (with reasons)
-- Compliance with IFRS 13 / ASC 820
+#### 6. Terminal Value Analysis (1-2 pages)
+- Method + terminal growth justified vs nominal GDP (flagged growth explicitly justified)
+- ALWAYS: WACC × terminal-g sensitivity matrix with 2-3 sentences interpreting the plausible region (g ≤ nominal GDP)
 
-#### 5. Discounted Cash Flow Analysis (6 pages — mostly tabular)
-- **5.1 Revenue Projections** — by segment with assumptions
-- **5.2 Profitability Projections** — margin assumptions
-- **5.3 Working Capital Projections** — efficiency ratio assumptions
-- **5.4 Capital Expenditure Projections**
-- **5.5 Free Cash Flow Schedule** — 5-10 year projection table
-- **5.6 WACC Calculation:**
-  - Risk-free rate (source, value)
-  - Equity risk premium (source, value)
-  - Beta (comparable betas, unlevering/relevering)
-  - Size premium
-  - Country risk premium
-  - Company-specific risk premium
-  - Cost of equity (Ke)
-  - Cost of debt (Kd)
-  - Target capital structure
-  - WACC result
-- **5.7 Terminal Value**
-  - Method selected (Gordon Growth / Exit Multiple)
-  - Assumptions
-  - Terminal value calculation
-  - Terminal value as % of total EV
-- **5.8 DCF Valuation Summary**
-  - PV of projected cash flows
-  - PV of terminal value
-  - Enterprise value
-  - Bridge to equity value (- net debt, + non-operating assets, - minority interests)
-  - Equity value
+#### 7. Discount Rate (WACC) Summary (1-2 pages — concise; theory → appendix)
+- Build-up table per scenario: risk-free rate, levered β × ERP, country risk premium, size premium, **Company-Specific Risk Premium** (own labelled row), = Ke; after-tax Kd; weights; = WACC
+- One-line rationale per component; specific-risk drivers explained (concentration, governance, scale)
 
-#### 6. Comparable Company Analysis (4 pages)
-- **6.1 Comparable Company Selection** — criteria and rationale
-- **6.2 Comparable Company Summary Table:**
+#### 8. Comparable Company Selection & Rationale (1-2 pages — premium tier)
+- Screening criteria, selected set table, β-driving comps; comps serve cross-check + WACC only
 
-| Company | Country | Mkt Cap | EV | Rev | EBITDA | EV/Rev | EV/EBITDA | P/E | Growth |
-|---------|---------|---------|----|----|--------|--------|-----------|-----|--------|
-| Comp 1 | | | | | | | | | |
-| ... | | | | | | | | | |
-| **Mean** | | | | | | | | | |
-| **Median** | | | | | | | | | |
+#### 9. EV-to-Equity Bridge (1-2 pages)
+- Waterfall: EV → surplus/non-op assets → net debt → minority → equity; DLOM/DLOC application with one-line justifications
 
-- **6.3 Multiple Selection** — which multiples used and why
-- **6.4 Applied Multiples** — premium/discount to median with justification
-- **6.5 Implied Valuation** — application to target company metrics
+#### 10. Concluded Valuation Range (1 page)
+- The single concluded EV and equity range (DCF, management scenario anchor); why DCF is adopted as primary; how bounds were set. No competing headline numbers.
 
-#### 7. Precedent Transaction Analysis (2-3 pages, if applicable)
-- **7.1 Transaction Selection Criteria**
-- **7.2 Transaction Summary Table**
-- **7.3 Multiple Analysis** — control premium considerations
-- **7.4 Implied Valuation**
+#### 11. Cross-Checks and Sensitivities (2 pages)
+- ONE consolidated table of all materially different EVs (management DCF, independent DCF, comps-implied, precedent-implied) with % variance vs concluded + one-line commentary each
+- Cross-check verdict (±10% band) — flagged and explained when outside
+- Downside/independent cases framed as diligence reference points, not competing headlines
 
-#### 8. Asset-Based Approach (1-2 pages, if applicable — skip entirely when DCF + Comps already cover the engagement)
-- Adjusted NAV calculation
-- Key adjustments from book value
+#### 12. Key Assumptions and Rationale (1-2 pages)
+- Bulleted: revenue growth (base + per-stream with rationale), margins/costs evolution, working capital & capex, terminal value justification
 
-#### 9. Valuation Reconciliation (2 pages)
-- **Football field chart** — visual showing ranges from each methodology
-- **Weighting rationale**
-- **Selected valuation range**
-- **Bridge from Enterprise Value to Equity Value:**
-  - Enterprise Value
-  - Less: Net Debt
-  - Less: Minority Interests
-  - Plus: Non-operating Assets
-  - = Equity Value
-- **Per-share value** (pre and post IPO if applicable)
+#### 13. Principal Risks and Mitigants (1 page — premium tier)
+- 3-5 risks (unproven streams, concentration → specific risk premium, assumption-support gaps) each with mitigant; all validation flags disclosed
 
-#### 10. Sensitivity Analysis (1-2 pages — tables only, minimal prose)
-- **WACC vs. Terminal Growth Rate sensitivity table**
-- **Revenue Growth vs. EBITDA Margin sensitivity table**
-- **Multiple vs. Base Metric sensitivity table**
-- Key observations from sensitivity analysis
+#### 14. Data Sources (1 page)
+- Categorised, quotable: company-provided information (audited FS, management projections/BDP); market and industry growth data (Damodaran, sovereign yields, IMF/World Bank, named industry reports/web research for stream growth); comparable trading + transaction data (public filings, exchange data) — with retrieval/as-of dates
 
-#### 11. Key Assumptions and Limitations (1 page)
-- Complete list of material assumptions
-- Scope limitations
-- Reliance on management projections caveat
-- Market data currency
+#### Appendix — Methodology & Technical References (5 pages MAX)
+- Extended DCF/WACC theory, IFRS 13 extracts, Damodaran/Kroll references, DLOM/DLOC studies, long legal/accounting citations — moved here from the body
+- A. Comparable company profiles; B. Precedent transaction details (when material)
 
-#### Appendices (5 pages MAX)
-The xlsx workpaper IS the detailed model. Only include appendices that aren't already in the workpaper:
-- A. Comparable company profiles (one-page table — company, ticker, business_description, key multiples, source)
-- B. Precedent transaction details (when material)
-- C. Disclaimer / engagement scope (legal boilerplate)
+#### 15. Valuation Conclusion (half page)
+- Restate concluded range + basis; signature-block-ready
 
-DO NOT include in PDF:
-- Full DCF cascade (in xlsx)
-- WACC build-up detail (in xlsx)
-- Beta calculation detail (in xlsx)
-- Financial projection detail (in xlsx)
-
-Cross-reference the xlsx for these: "See [Workpaper].xlsx, 'DCF' sheet for the full cascade."
+DO NOT include in PDF (in xlsx instead): full DCF cascade, beta calculation detail, financial projection detail. Cross-reference: "See the valuation workpaper for the full model."

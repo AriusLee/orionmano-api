@@ -126,6 +126,8 @@ SECTIONS: list[Section] = [
         Param("terminal_growth_rate", "Terminal growth rate", "percentage"),
         Param("terminal_exit_multiple_type", "Exit multiple metric", "enum"),
         Param("terminal_exit_multiple_value", "Exit multiple value", "number"),
+        Param("terminal_nominal_gdp_growth", "Nominal GDP growth (reference ceiling)", "percentage",
+              notes="Long-run nominal GDP of the operating jurisdiction; terminal g at/above GDP − 50bps is flagged"),
     ]),
     Section("F", "WACC inputs", "Core", [
         Param("risk_free_rate", "Risk-free rate", "percentage"),
@@ -465,8 +467,37 @@ SEGMENT_HEADERS = [
     "Initial revenue",
     "Growth Y1", "Growth Y2", "Growth Y3", "Growth Y4", "Growth Y5",
     "GM Y1", "GM Y2", "GM Y3", "GM Y4", "GM Y5",
+    # Per-stream related opex (S&M / distribution) as % of stream revenue.
+    # When any Opex% cell is filled the stream is carved out of the top-level
+    # opex base on Projections and charged its own ratio instead.
+    "Opex% Y1", "Opex% Y2", "Opex% Y3", "Opex% Y4", "Opex% Y5",
+    "Source",              # core | additional_stream (user-defined via settings)
+    "Growth basis",        # one-line defence of the growth vector (incl. web-research citation)
+    "Contractual support", # contracts/backlog/MOUs; empty may trigger the unproven-segment flag
 ]
 SEGMENT_ROWS = 5  # placeholder rows; raise if a target genuinely has more lines
+
+# Segments-table column indices (1-based) used by Projections formulas
+SEG_COL_NAME = 1
+SEG_COL_START = 2
+SEG_COL_INIT = 3
+SEG_COL_GROWTH0 = 3   # growth Y-k lives at column 3 + k
+SEG_COL_GM0 = 8       # GM segment-local index j lives at column 9 + j (clamped at 13)
+SEG_COL_GM_LAST = 13
+SEG_COL_OPEX0 = 13    # Opex% segment-local index j lives at column 14 + j (clamped at 18)
+SEG_COL_OPEX_FIRST = 14
+SEG_COL_OPEX_LAST = 18
+
+# Projections sheet — per-segment breakdown block (rows appended BELOW the FCFF
+# section so no existing cross-sheet reference shifts). Each of the 5 segment
+# slots gets Revenue / COGS / Related-opex rows; two helper rows feed the
+# top-level opex carve-out.
+SEG_BLOCK_SECTION_ROW = 42
+SEG_BLOCK_NOTE_ROW = 43
+SEG_SLOT_FIRST_ROW = 44   # slot i (1-based) revenue row = 44 + (i-1)*4
+SEG_SLOT_STRIDE = 4       # revenue, cogs, opex, spacer
+R_SEG_CARVED = 64         # per-year revenue of streams with their own Opex%
+R_SEG_OWN_OPEX = 65       # per-year related-opex subtotal of those streams
 
 
 PROJECTION_YEARS = 5  # explicit forecast horizon; matches sample_inputs.json
@@ -590,7 +621,15 @@ def build_projections_formulas(ws):
         cur = col_for_year(y)
         ws[f"{cur}{R_GP}"] = f"={cur}{R_REV}*gross_margin_y{y}"
         ws[f"{cur}{R_GM}"] = f"=gross_margin_y{y}"
-        ws[f"{cur}{R_OPEX}"] = f"=-{cur}{R_REV}*opex_pct_revenue_y{y}"
+        # Opex carve-out: revenue of streams carrying their own Opex% (rows 42+
+        # / segments table cols 14-18) is excluded from the top-level base and
+        # charged its own ratio via the streams subtotal row. With no such
+        # streams both helper cells are 0 and this reduces to the original
+        # -Total Revenue × opex_pct formula.
+        ws[f"{cur}{R_OPEX}"] = (
+            f"=-({cur}{R_REV}-{cur}{R_SEG_CARVED})*opex_pct_revenue_y{y}"
+            f"+{cur}{R_SEG_OWN_OPEX}"
+        )
         ws[f"{cur}{R_EBITDA}"] = f"={cur}{R_GP}+{cur}{R_OPEX}"
         ws[f"{cur}{R_EBITDAM}"] = f"=IFERROR({cur}{R_EBITDA}/{cur}{R_REV},0)"
         ws[f"{cur}{R_DEP}"] = f"=-{cur}{R_REV}*dep_pct_revenue_y{y}"
@@ -665,6 +704,102 @@ def build_projections_formulas(ws):
     for r in money_rows:
         for y in range(0, PROJECTION_YEARS + 1):
             ws.cell(row=r, column=3 + y).number_format = "#,##0"
+
+    # ----- Revenue streams — per-segment breakdown -----
+    # Mirrors compute.py by_segment: per-stream Revenue / COGS / Related opex so
+    # the incremental impact of each revenue stream is visible on the workpaper.
+    # Streams with their own Opex% (segments table cols 14-18) are carved out of
+    # the top-level opex base (see R_OPEX above); others show an allocation at
+    # the top-level ratio.
+    section(SEG_BLOCK_SECTION_ROW, "Revenue streams — per-segment breakdown")
+    ws.cell(row=SEG_BLOCK_NOTE_ROW, column=1, value=(
+        "Driven by the Inputs 'Revenue segments' table. Unused slots stay blank. "
+        "'Related opex' uses the stream's own Opex% when provided (carved out of "
+        "the top-level opex base), otherwise an allocation at the top-level ratio."
+    )).font = SMALL_FONT
+    ws.merge_cells(start_row=SEG_BLOCK_NOTE_ROW, start_column=1,
+                   end_row=SEG_BLOCK_NOTE_ROW, end_column=8)
+
+    def seg_ref(i: int, col: int) -> str:
+        return f"INDEX(segments_table,{i},{col})"
+
+    slot_rev_rows: list[int] = []
+    slot_opex_rows: list[int] = []
+    for i in range(1, SEGMENT_ROWS + 1):
+        base = SEG_SLOT_FIRST_ROW + (i - 1) * SEG_SLOT_STRIDE
+        r_rev, r_cogs, r_opex = base, base + 1, base + 2
+        slot_rev_rows.append(r_rev)
+        slot_opex_rows.append(r_opex)
+        unused = f'{seg_ref(i, SEG_COL_NAME)}=""'
+        s_expr = f"N({seg_ref(i, SEG_COL_START)})"
+        init = f"N({seg_ref(i, SEG_COL_INIT)})"
+        has_ratio = (
+            f"COUNT(INDEX(segments_table,{i},{SEG_COL_OPEX_FIRST})"
+            f":INDEX(segments_table,{i},{SEG_COL_OPEX_LAST}))>0"
+        )
+        ws.cell(row=r_rev, column=1, value=(
+            f'=IF({unused},"(segment slot {i} — unused)",'
+            f'"Revenue — "&{seg_ref(i, SEG_COL_NAME)})'
+        )).font = NORMAL_FONT
+        ws.cell(row=r_cogs, column=1, value=(
+            f'=IF({unused},"","COGS — "&{seg_ref(i, SEG_COL_NAME)})'
+        )).font = NORMAL_FONT
+        ws.cell(row=r_opex, column=1, value=(
+            f'=IF({unused},"",IF({has_ratio},'
+            f'"Related opex — "&{seg_ref(i, SEG_COL_NAME)},'
+            f'"Related opex (allocated) — "&{seg_ref(i, SEG_COL_NAME)}))'
+        )).font = NORMAL_FONT
+        # Y0 revenue: only start_year=0 segments exist at Y0
+        ws[f"C{r_rev}"] = f"=IF({unused},0,IF({s_expr}=0,{init},0))"
+        for y in range(1, PROJECTION_YEARS + 1):
+            cur = col_for_year(y)
+            prev = col_for_year(y - 1)
+            growth = f"N(INDEX(segments_table,{i},{SEG_COL_GROWTH0}+({y}-{s_expr})))"
+            gm = (
+                f"N(INDEX(segments_table,{i},"
+                f"MIN({SEG_COL_GM0 + 1}+({y}-{s_expr}),{SEG_COL_GM_LAST})))"
+            )
+            opct = (
+                f"N(INDEX(segments_table,{i},"
+                f"MIN({SEG_COL_OPEX_FIRST}+({y}-{s_expr}),{SEG_COL_OPEX_LAST})))"
+            )
+            ws[f"{cur}{r_rev}"] = (
+                f"=IF({unused},0,IF({y}<{s_expr},0,IF({y}={s_expr},{init},"
+                f"{prev}{r_rev}*(1+{growth}))))"
+            )
+            ws[f"{cur}{r_cogs}"] = f'=IF({unused},"",-{cur}{r_rev}*(1-{gm}))'
+            ws[f"{cur}{r_opex}"] = (
+                f'=IF({unused},"",IF({has_ratio},'
+                f"-{cur}{r_rev}*{opct},"
+                f"-{cur}{r_rev}*opex_pct_revenue_y{y}))"
+            )
+        for r in (r_rev, r_cogs, r_opex):
+            for y in range(0, PROJECTION_YEARS + 1):
+                ws.cell(row=r, column=3 + y).number_format = "#,##0"
+
+    # Helper rows feeding the top-level opex carve-out (referenced by R_OPEX)
+    ws.cell(row=R_SEG_CARVED, column=1,
+            value="Carved-out revenue (streams with own Opex%)").font = SMALL_FONT
+    ws.cell(row=R_SEG_OWN_OPEX, column=1,
+            value="Related opex — carved-out streams subtotal").font = SMALL_FONT
+    for y in range(1, PROJECTION_YEARS + 1):
+        cur = col_for_year(y)
+        carved_terms = []
+        own_terms = []
+        for i in range(1, SEGMENT_ROWS + 1):
+            has_ratio = (
+                f"COUNT(INDEX(segments_table,{i},{SEG_COL_OPEX_FIRST})"
+                f":INDEX(segments_table,{i},{SEG_COL_OPEX_LAST}))>0"
+            )
+            carved_terms.append(f"IF({has_ratio},{cur}{slot_rev_rows[i - 1]},0)")
+            own_terms.append(f"IF({has_ratio},N({cur}{slot_opex_rows[i - 1]}),0)")
+        ws[f"{cur}{R_SEG_CARVED}"] = "=" + "+".join(carved_terms)
+        ws[f"{cur}{R_SEG_OWN_OPEX}"] = "=" + "+".join(own_terms)
+        ws.cell(row=R_SEG_CARVED, column=3 + y).number_format = "#,##0"
+        ws.cell(row=R_SEG_OWN_OPEX, column=3 + y).number_format = "#,##0"
+    # Y0 helper cells default to 0 so C-column references stay clean
+    ws[f"C{R_SEG_CARVED}"] = 0
+    ws[f"C{R_SEG_OWN_OPEX}"] = 0
 
 
 def build_wacc_formulas(ws):
@@ -1492,11 +1627,12 @@ def build_comps_formulas(ws):
 
 def build_football_field_formulas(ws):
     """Football Field — methodology range comparison + weighted valuation."""
-    write_header_band(ws, 1, "Football Field — methodology range reconciliation")
+    write_header_band(ws, 1, "Football Field — methodology ranges (DCF primary; others cross-checks)")
     ws.cell(row=2, column=1, value=(
-        "Range chart input. DCF range comes from the two WACC scenarios. Comps range "
-        "from CoCo Q1/Median/Q3. Precedent range from precedents_table (when populated). "
-        "Apply football_field weights to compute weighted-average EV."
+        "Range chart input. DCF range comes from the two WACC scenarios and is the "
+        "primary methodology (weight_dcf = 1.0). Comps range from CoCo Q1/Median/Q3 and "
+        "Precedent range from precedents_table are retained as cross-checks against the "
+        "DCF EV (±10% band, see rows 22-26)."
     )).font = SMALL_FONT
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=7)
 
@@ -1583,12 +1719,14 @@ def build_football_field_formulas(ws):
          "Mean EV/EBITDA × Y1 EBITDA across included precedents")
     ws.cell(row=R_PREC, column=1).font = Font(bold=True)
 
-    # ----- Weighted average -----
-    section(14, "Weighted-average valuation")
+    # ----- Concluded valuation (DCF primary) -----
+    # The weighted formula is retained for backward compatibility, but the
+    # producer now always emits weight_dcf=1.0 so this row equals the DCF mid.
+    section(14, "Concluded valuation (DCF primary)")
     R_TOTAL_W, R_WAVG, R_SEL_LOW, R_SEL_MID, R_SEL_HIGH = 15, 16, 18, 19, 20
     ws.cell(row=R_TOTAL_W, column=1, value="Total weight applied").font = NORMAL_FONT
     ws.cell(row=R_TOTAL_W, column=5, value=f"=E{R_DCF}+E{R_C_COMBO}+E{R_PREC}").number_format = "0.0%"
-    ws.cell(row=R_WAVG, column=1, value="Weighted-average EV (calculated)").font = Font(bold=True)
+    ws.cell(row=R_WAVG, column=1, value="Concluded EV (DCF primary)").font = Font(bold=True)
     ws.cell(row=R_WAVG, column=6,
             value=f"=IFERROR((F{R_DCF}+F{R_C_COMBO}+F{R_PREC})/E{R_TOTAL_W},0)").number_format = "#,##0"
     ws.cell(row=R_WAVG, column=6).font = Font(bold=True)
@@ -1603,6 +1741,42 @@ def build_football_field_formulas(ws):
     for r in (R_SEL_LOW, R_SEL_MID, R_SEL_HIGH):
         for c in range(1, 8):
             ws.cell(row=r, column=c).border = BORDER
+
+    # ----- Cross-checks vs DCF (±10%) -----
+    # DCF (per-management) EV is the primary conclusion; the market approaches
+    # are compared against it. Variance = implied / DCF − 1.
+    section(22, "Cross-checks vs DCF enterprise value (±10% band)")
+    R_XC_HDR, R_XC_COMPS, R_XC_PREC, R_XC_VERDICT = 23, 24, 25, 26
+    DCF_EV = "'DCF'!I27"
+    for i, h in enumerate(["Cross-check", "Implied EV", "Variance vs DCF", "Assessment", "", "", ""], 1):
+        c = ws.cell(row=R_XC_HDR, column=i, value=h)
+        c.font = HEADER_FONT
+        c.fill = HEADER_FILL
+        c.border = BORDER
+    for r, label, mid_cell in (
+        (R_XC_COMPS, "Market approach (Comps combined)", f"C{R_C_COMBO}"),
+        (R_XC_PREC, "Precedent transactions", f"C{R_PREC}"),
+    ):
+        ws.cell(row=r, column=1, value=label).font = NORMAL_FONT
+        ws.cell(row=r, column=2, value=f"={mid_cell}").number_format = "#,##0"
+        ws.cell(row=r, column=3,
+                value=f'=IF(OR({mid_cell}=0,{DCF_EV}=0),"n/a",{mid_cell}/{DCF_EV}-1)'
+                ).number_format = "0.0%"
+        ws.cell(row=r, column=4, value=(
+            f'=IF(OR({mid_cell}=0,{DCF_EV}=0),"Not available",'
+            f'IF(ABS({mid_cell}/{DCF_EV}-1)<=0.1,"Within reasonable range",'
+            f'"Outside cross-check range"))'
+        ))
+        for c in range(1, 8):
+            ws.cell(row=r, column=c).border = BORDER
+    ws.cell(row=R_XC_VERDICT, column=1, value="Overall cross-check verdict").font = Font(bold=True)
+    ws.cell(row=R_XC_VERDICT, column=4, value=(
+        f'=IF(AND(D{R_XC_COMPS}="Not available",D{R_XC_PREC}="Not available"),"Not available",'
+        f'IF(OR(D{R_XC_COMPS}="Outside cross-check range",D{R_XC_PREC}="Outside cross-check range"),'
+        f'"Outside cross-check range","Within reasonable range"))'
+    )).font = Font(bold=True)
+    for c in range(1, 8):
+        ws.cell(row=R_XC_VERDICT, column=c).border = BORDER
 
 
 def build_sensitivity_formulas(ws):
@@ -2293,8 +2467,8 @@ def build_dashboard_sheet(ws):
         c.border = BORDER
     method_rows = [
         ("DCF (across scenarios)",   "='Football Field'!C7",  "='Football Field'!D7",  "='Football Field'!E7",  "=weight_dcf",       "='Football Field'!F7",  "Per-Mgmt vs Independent WACC."),
-        ("Comparable Companies",     "='Football Field'!C11", "='Football Field'!D11", "='Football Field'!E11", "=weight_comps",     "='Football Field'!F11", "NTM medians × target metrics."),
-        ("Precedent Transactions",   "='Football Field'!C12", "='Football Field'!D12", "='Football Field'!E12", "=weight_precedent", "='Football Field'!F12", "Mean EV/EBITDA × Y1 EBITDA."),
+        ("Comparable Companies",     "='Football Field'!C11", "='Football Field'!D11", "='Football Field'!E11", "=weight_comps",     "='Football Field'!F11", "Cross-check vs DCF (±10% band)."),
+        ("Precedent Transactions",   "='Football Field'!C12", "='Football Field'!D12", "='Football Field'!E12", "=weight_precedent", "='Football Field'!F12", "Cross-check vs DCF (±10% band)."),
     ]
     for i, row in enumerate(method_rows):
         r = 13 + i
@@ -2308,9 +2482,9 @@ def build_dashboard_sheet(ws):
                 c.number_format = "0.0%"
             if j in (3, 4, 5, 6, 7):
                 c.alignment = Alignment(horizontal="center")
-    # Weighted average row
+    # Concluded row (DCF primary; weighted formula retained with weight_dcf=1.0)
     r = 13 + len(method_rows) + 1
-    ws.cell(row=r, column=2, value="Weighted-average EV").font = Font(bold=True, size=10)
+    ws.cell(row=r, column=2, value="Concluded EV (DCF primary)").font = Font(bold=True, size=10)
     wa = ws.cell(row=r, column=7, value="='Football Field'!F16")
     wa.number_format = "#,##0"
     wa.font = Font(bold=True, size=11)

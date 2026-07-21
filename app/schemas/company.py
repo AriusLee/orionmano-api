@@ -24,6 +24,7 @@ class CompanyCreate(BaseModel):
     pinned_overrides: dict[str, Any] | None = None
     pinned_cocos: dict[str, Any] | None = None
     business_development_plan: str | None = None
+    additional_revenue_streams: list[dict[str, Any]] | None = None
     industry_report_addendum: str | None = None
 
 
@@ -47,6 +48,7 @@ class CompanyUpdate(BaseModel):
     pinned_overrides: dict[str, Any] | None = None
     pinned_cocos: dict[str, Any] | None = None
     business_development_plan: str | None = None
+    additional_revenue_streams: list[dict[str, Any]] | None = None
     industry_report_addendum: str | None = None
     report_tier: str | None = None
 
@@ -74,6 +76,7 @@ class CompanyResponse(BaseModel):
     pinned_overrides: dict[str, Any] | None = None
     pinned_cocos: dict[str, Any] | None = None
     business_development_plan: str | None = None
+    additional_revenue_streams: list[dict[str, Any]] | None = None
     industry_report_addendum: str | None = None
     report_tier: str = "standard"
     logo_path: str | None = None

@@ -84,6 +84,16 @@ def _scenario_wacc(inputs: dict, scenario: str) -> dict[str, float]:
     }
 
 
+def _at(arr: list | None, idx: int) -> float:
+    """Segment-local array access: clamp to last value past the end, 0 before start."""
+    if not arr:
+        return 0.0
+    if idx < 0:
+        return 0.0
+    v = arr[-1] if idx >= len(arr) else arr[idx]
+    return float(v) if v is not None else 0.0
+
+
 def _segment_series(seg: dict, n_years: int) -> tuple[list[float], list[float]]:
     """For one segment, return (revenue, gross_profit) arrays of length n_years+1
     indexed by y_index 0..n_years (0=Y0). Inactive years are zero. Eric
@@ -97,17 +107,6 @@ def _segment_series(seg: dict, n_years: int) -> tuple[list[float], list[float]]:
     gm_arr = seg.get("gross_margin")
     cogs_arr = seg.get("cogs_pct")
 
-    def at(arr, idx):
-        if not arr:
-            return 0.0
-        if idx < 0:
-            return 0.0
-        if idx >= len(arr):
-            v = arr[-1]
-        else:
-            v = arr[idx]
-        return float(v) if v is not None else 0.0
-
     revenue = [0.0] * (n_years + 1)
     gross_profit = [0.0] * (n_years + 1)
     for y in range(n_years + 1):
@@ -116,13 +115,13 @@ def _segment_series(seg: dict, n_years: int) -> tuple[list[float], list[float]]:
         if y == start:
             revenue[y] = r0
         else:
-            g = at(growth, (y - start) - 1)
+            g = _at(growth, (y - start) - 1)
             revenue[y] = revenue[y - 1] * (1 + g)
         # Gross margin indexed from segment-local year 0 = start year
         if gm_arr:
-            gm = at(gm_arr, y - start)
+            gm = _at(gm_arr, y - start)
         elif cogs_arr:
-            gm = 1 - at(cogs_arr, y - start)
+            gm = 1 - _at(cogs_arr, y - start)
         else:
             gm = 0.0
         gross_profit[y] = revenue[y] * gm
@@ -161,16 +160,14 @@ def _projections(inputs: dict) -> dict[str, list[float]]:
     eff_tax = float(eff_tax)
 
     segments = p.get("segments") or []
+    seg_series: list[tuple[dict, list[float], list[float]]] = []
     if segments:
         # Path (b): aggregate per-segment revenue + gross_profit across all segments
-        seg_revs = []
-        seg_gps = []
         for s in segments:
             r, gp = _segment_series(s, n_years)
-            seg_revs.append(r)
-            seg_gps.append(gp)
-        revenue = [sum(sr[y] for sr in seg_revs) for y in range(n_years + 1)]
-        gross_profit = [sum(sg[y] for sg in seg_gps) for y in range(1, n_years + 1)]
+            seg_series.append((s, r, gp))
+        revenue = [sum(r[y] for _, r, _ in seg_series) for y in range(n_years + 1)]
+        gross_profit = [sum(gp[y] for _, _, gp in seg_series) for y in range(1, n_years + 1)]
     else:
         # Path (a): existing flat cascade
         growth = vec("revenue_growth")
@@ -181,7 +178,23 @@ def _projections(inputs: dict) -> dict[str, list[float]]:
         gross_profit = [revenue[y + 1] * gm[y] for y in range(n_years)]
     # revenue[0] = Y0, revenue[1..n] = Y1..Yn; gross_profit indexed 0..n-1 = Y1..Yn
 
-    opex_amt = [-revenue[y + 1] * opex[y] for y in range(n_years)]
+    # Opex carve-out: segments carrying their own opex_pct_revenue (related
+    # S&M/distribution costs of an additional revenue stream) are excluded from
+    # the top-level opex base and charged their own ratio instead. Segments
+    # without a ratio stay on the top-level ratio, so with no carve-outs this
+    # reduces exactly to -revenue_total * opex_pct (the original formula).
+    def _seg_opex_amt(s: dict, r: list[float]) -> list[float]:
+        start = int(s.get("start_year") or 0)
+        arr = s.get("opex_pct_revenue") or []
+        return [-r[y + 1] * _at(arr, (y + 1) - start) for y in range(n_years)]
+
+    carved = [(s, r) for s, r, _ in seg_series if s.get("opex_pct_revenue")]
+    carved_opex = [_seg_opex_amt(s, r) for s, r in carved]
+    opex_amt = []
+    for y in range(n_years):
+        carved_rev = sum(r[y + 1] for _, r in carved)
+        base = -(revenue[y + 1] - carved_rev) * opex[y]
+        opex_amt.append(base + sum(co[y] for co in carved_opex))
     ebitda = [gross_profit[y] + opex_amt[y] for y in range(n_years)]
     da = [-revenue[y + 1] * dep[y] for y in range(n_years)]
     ebit = [ebitda[y] + da[y] for y in range(n_years)]
@@ -195,6 +208,29 @@ def _projections(inputs: dict) -> dict[str, list[float]]:
         prev_nwc = nwc[y]
     fcff = [ebit[y] + tax_amt[y] + (-da[y]) + capex_amt[y] + d_nwc[y] for y in range(n_years)]
 
+    # Per-stream breakdown so incremental COGS / related opex from each revenue
+    # stream is visible in outputs ("COGS – Stream A", "Related Opex – Stream A").
+    by_segment: list[dict[str, Any]] = []
+    for s, r, gp in seg_series:
+        has_own_opex = bool(s.get("opex_pct_revenue"))
+        if has_own_opex:
+            seg_opex = _seg_opex_amt(s, r)
+        else:
+            # Allocation at the top-level ratio — display-only, does not change totals
+            seg_opex = [-r[y + 1] * opex[y] for y in range(n_years)]
+        by_segment.append({
+            "name": s.get("name"),
+            "source": s.get("source") or ("additional_stream" if int(s.get("start_year") or 0) > 0 else "core"),
+            "start_year": int(s.get("start_year") or 0),
+            "revenue": r,
+            "gross_profit": gp[1:],
+            "cogs": [-(r[y + 1] - gp[y + 1]) for y in range(n_years)],
+            "opex": seg_opex,
+            "opex_is_allocation": not has_own_opex,
+            "growth_basis": s.get("growth_basis"),
+            "contractual_support": s.get("contractual_support"),
+        })
+
     return {
         "revenue": revenue,
         "gross_profit": gross_profit,
@@ -206,6 +242,7 @@ def _projections(inputs: dict) -> dict[str, list[float]]:
         "nwc": nwc,
         "d_nwc": d_nwc,
         "fcff": fcff,
+        "by_segment": by_segment,
     }
 
 
@@ -436,6 +473,124 @@ def _football_field(dcf_ev_pm: float, dcf_ev_indep: float,
     }
 
 
+CROSS_CHECK_TOLERANCE = 0.10
+
+
+def _cross_checks(dcf_ev_pm: float, ff: dict, coco_stats: dict, inputs: dict) -> dict[str, Any]:
+    """DCF is the sole primary methodology; Market Approach and Recent
+    Transactions are cross-checks. Each implied EV is compared against the DCF
+    EV: both within ±10% ⇒ 'within_reasonable_range', either outside ⇒
+    'outside_cross_check_range' (report must flag and explain)."""
+    comps_n = max(
+        (int((coco_stats.get(m) or {}).get("n") or 0)
+         for m in ("ev_sales_ntm", "ev_ebitda_ntm", "pe_ntm")),
+        default=0,
+    )
+    precedents = _g(inputs, "precedents", default=[]) or []
+    prec_n = sum(1 for p in precedents if p.get("include", True) and p.get("ev_ebitda"))
+
+    checks = []
+    for method, block, n in (
+        ("market_approach_comps", ff.get("comps") or {}, comps_n),
+        ("precedent_transactions", ff.get("precedent") or {}, prec_n),
+    ):
+        implied = float(block.get("mid") or 0)
+        if not implied or not dcf_ev_pm:
+            checks.append({
+                "method": method, "implied_ev": implied or None,
+                "low": block.get("low"), "high": block.get("high"),
+                "variance_pct": None, "within_range": None,
+                "available": False, "n": n,
+            })
+            continue
+        variance = (implied - dcf_ev_pm) / dcf_ev_pm
+        checks.append({
+            "method": method, "implied_ev": implied,
+            "low": block.get("low"), "high": block.get("high"),
+            "variance_pct": variance,
+            "within_range": abs(variance) <= CROSS_CHECK_TOLERANCE,
+            "available": True, "n": n,
+        })
+
+    available = [c for c in checks if c["available"]]
+    if not available:
+        verdict = "not_available"
+    elif all(c["within_range"] for c in available):
+        verdict = "within_reasonable_range"
+    else:
+        verdict = "outside_cross_check_range"
+    return {
+        "primary_ev": dcf_ev_pm,
+        "tolerance_pct": CROSS_CHECK_TOLERANCE,
+        "checks": checks,
+        "verdict": verdict,
+    }
+
+
+DEFAULT_NOMINAL_GDP_GROWTH = 0.04  # long-run US nominal GDP proxy when inputs omit it
+
+
+def _validation_flags(inputs: dict, proj: dict, cross_checks: dict) -> list[dict[str, Any]]:
+    """Deterministic checks the report must disclose (client requirement, item 9):
+    (a) terminal g at/above nominal GDP − 50bps; (b) EV heavily driven by
+    unproven new segments without contractual support; (c) cross-check outside
+    the ±10% range."""
+    flags: list[dict[str, Any]] = []
+
+    terminal = _g(inputs, "terminal", default={}) or {}
+    t_growth = float(terminal.get("growth_rate") or 0)
+    gdp_raw = terminal.get("nominal_gdp_growth")
+    gdp = float(gdp_raw) if gdp_raw is not None else DEFAULT_NOMINAL_GDP_GROWTH
+    if t_growth >= gdp - 0.005:
+        flags.append({
+            "code": "terminal_g_vs_gdp",
+            "severity": "warning",
+            "message": (
+                f"Terminal growth rate {t_growth:.2%} is at or above nominal GDP "
+                f"{gdp:.2%} − 50bps and must be explicitly justified in the report."
+            ),
+            "data": {"terminal_g": t_growth, "nominal_gdp": gdp,
+                     "gdp_is_default": gdp_raw is None, "threshold": gdp - 0.005},
+        })
+
+    new_segs = [s for s in (proj.get("by_segment") or [])
+                if s.get("source") == "additional_stream" or (s.get("start_year") or 0) > 0]
+    total_y_final = proj["revenue"][-1] if proj.get("revenue") else 0
+    if new_segs and total_y_final:
+        new_rev = sum(s["revenue"][-1] for s in new_segs)
+        share = new_rev / total_y_final
+        unsupported = [s.get("name") or "?" for s in new_segs
+                       if not (s.get("contractual_support") or "").strip()]
+        if share > 0.30 and unsupported:
+            flags.append({
+                "code": "unproven_segment_concentration",
+                "severity": "warning",
+                "message": (
+                    f"New/unproven revenue streams contribute {share:.0%} of final-year "
+                    f"revenue without contractual support ({', '.join(unsupported)}). "
+                    f"This must be clearly disclosed in the risk and assumption sections."
+                ),
+                "data": {"y_final_revenue_share_new_segments": share,
+                         "segments_without_support": unsupported},
+            })
+
+    if cross_checks.get("verdict") == "outside_cross_check_range":
+        outside = [c["method"] for c in cross_checks.get("checks", [])
+                   if c.get("available") and not c.get("within_range")]
+        flags.append({
+            "code": "cross_check_variance",
+            "severity": "info",
+            "message": (
+                f"Cross-check implied EV outside ±10% of the DCF enterprise value: "
+                f"{', '.join(outside)}. The report must flag this and briefly comment "
+                f"on likely reasons (limited comparables, outlier transactions, sector conditions)."
+            ),
+            "data": {"methods_outside": outside},
+        })
+
+    return flags
+
+
 def _sensitivity_grid(fcff: list[float], wacc_base: float, terminal_g_base: float,
                       inputs: dict) -> dict[str, Any]:
     """7×7 grid (WACC × terminal g) of EV under Gordon-growth terminal."""
@@ -497,6 +652,22 @@ def compute_summary(inputs: dict) -> dict[str, Any]:
                          inputs, bridge_pm)
     sens = _sensitivity_grid(proj["fcff"], wacc_pm["wacc"], t_growth, inputs)
 
+    cross = _cross_checks(dcf_pm["ev"], ff, coco_stats, inputs)
+    flags = _validation_flags(inputs, proj, cross)
+
+    # Concluded range: DCF is the sole primary methodology. Band from the
+    # analyst-selected range when set, else DCF EV at WACC ± one sensitivity step.
+    low = ff.get("selected_low")
+    high = ff.get("selected_high")
+    if low is None or high is None:
+        grid, br, bc = sens["grid"], sens["base_row"], sens["base_col"]
+        lo_cell = grid[br + 1][bc] if br + 1 < len(grid) else None  # higher WACC ⇒ lower EV
+        hi_cell = grid[br - 1][bc] if br - 1 >= 0 else None
+        low = low if low is not None else lo_cell
+        high = high if high is not None else hi_cell
+    concluded = {"basis": "dcf_per_management", "ev": dcf_pm["ev"],
+                 "low": low, "high": high}
+
     eng = _g(inputs, "engagement", default={}) or {}
     cu = _g(inputs, "currency", default={}) or {}
 
@@ -534,5 +705,9 @@ def compute_summary(inputs: dict) -> dict[str, Any]:
         "coco_stats": coco_stats,
         "football_field": ff,
         "sensitivity": sens,
-        "terminal": {"method": t_method, "growth_rate": t_growth},
+        "concluded": concluded,
+        "cross_checks": cross,
+        "validation_flags": flags,
+        "terminal": {"method": t_method, "growth_rate": t_growth,
+                     "nominal_gdp_growth": terminal.get("nominal_gdp_growth")},
     }

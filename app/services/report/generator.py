@@ -184,36 +184,45 @@ REPORT_SECTIONS = {
     },
     "valuation_report": {
         "essential": [
-            ("value_summary", "Value Summary"),
-            ("dcf_summary", "DCF Analysis Summary"),
+            ("purpose_and_use", "Purpose and Use of this Report"),
+            ("executive_summary", "Executive Summary"),
+            ("dcf_analysis", "DCF Analysis — FCFF & Present Value"),
+            ("concluded_range", "Concluded Valuation Range"),
             ("conclusion", "Valuation Conclusion"),
         ],
         "standard": [
+            ("purpose_and_use", "Purpose and Use of this Report"),
             ("executive_summary", "Executive Summary"),
-            ("financial_projections", "Financial Projection Highlights"),
-            ("dcf_analysis", "DCF Analysis — FCFF & Present Value"),
-            ("wacc", "Discount Rate / WACC Derivation"),
-            ("coco_benchmarking", "Comparable Company Benchmarking"),
-            ("implied_multiples", "Implied Multiples Cross-Check"),
-            ("ev_equity_bridge", "EV-to-Equity Bridge (Net Debt, DLOM, DLOC)"),
-            ("sensitivity", "Sensitivity Analysis"),
-            ("assumptions", "Key Assumptions and Limitations"),
-        ],
-        "premium": [
-            ("executive_summary", "Executive Summary"),
-            ("company_overview", "Company & Historical Financials Overview"),
-            ("financial_projections", "Financial Projection Highlights"),
+            ("business_industry_overview", "Business & Industry Overview"),
+            ("financial_projections", "Financial Projections & Revenue Streams"),
             ("dcf_analysis", "DCF Analysis — FCFF & Present Value"),
             ("terminal_value", "Terminal Value Analysis"),
-            ("wacc", "Discount Rate / WACC Build-Up"),
+            ("wacc", "Discount Rate (WACC) Summary"),
+            ("ev_equity_bridge", "EV-to-Equity Bridge (Net Debt, DLOM, DLOC)"),
+            ("concluded_range", "Concluded Valuation Range"),
+            ("cross_checks", "Cross-Checks and Sensitivities"),
+            ("assumptions_rationale", "Key Assumptions and Rationale"),
+            ("data_sources", "Data Sources"),
+            ("conclusion", "Valuation Conclusion"),
+        ],
+        "premium": [
+            ("purpose_and_use", "Purpose and Use of this Report"),
+            ("executive_summary", "Executive Summary"),
+            ("business_industry_overview", "Business & Industry Overview"),
+            ("key_operating_metrics", "Key Operating Metrics"),
+            ("financial_projections", "Financial Projections & Revenue Streams"),
+            ("dcf_analysis", "DCF Analysis — FCFF & Present Value"),
+            ("terminal_value", "Terminal Value Analysis"),
+            ("wacc", "Discount Rate (WACC) Summary"),
             ("coco_selection", "Comparable Company Selection & Rationale"),
-            ("coco_benchmarking", "CoCo Multiples & Fundamentals Benchmarking"),
-            ("implied_multiples", "Implied Multiples Cross-Check"),
             ("ev_equity_bridge", "EV-to-Equity Bridge (Net Debt, Surplus Assets, DLOM, DLOC)"),
-            ("backtesting", "Back-Testing — Projections vs Actuals"),
-            ("sensitivity", "Sensitivity Analysis (WACC vs Terminal Growth)"),
-            ("parallel_analysis", "Parallel / Independent Analysis"),
-            ("assumptions", "Key Assumptions and Limitations"),
+            ("concluded_range", "Concluded Valuation Range"),
+            ("cross_checks", "Cross-Checks and Sensitivities"),
+            ("assumptions_rationale", "Key Assumptions and Rationale"),
+            ("risk_factors", "Principal Risks and Mitigants"),
+            ("data_sources", "Data Sources"),
+            ("appendix_methodology", "Appendix — Methodology & Technical References"),
+            ("conclusion", "Valuation Conclusion"),
         ],
     },
     "sales_deck": {
@@ -455,8 +464,10 @@ def _load_workpaper_context_for_report(company_id: UUID) -> str:
     eng = inputs.get("engagement") or {}
     if eng:
         parts.append("\n### Engagement parameters")
+        # NOTE: target_valuation is deliberately excluded — the client-facing
+        # report must never reference internal targets or goal-seek mechanics.
         for k in ("company_name", "valuation_date", "company_country", "company_industry_us",
-                  "report_purpose", "accounting_standard", "target_valuation",
+                  "report_purpose", "accounting_standard",
                   "exchange_platform", "client_name"):
             v = eng.get(k)
             if v not in (None, ""):
@@ -478,22 +489,61 @@ def _load_workpaper_context_for_report(company_id: UUID) -> str:
                 parts.append(f"- {k}: {arr}")
         segs = proj.get("segments")
         if segs:
-            parts.append(f"- segments: {len(segs)} business lines breaking out revenue/COGS")
+            parts.append(f"\n### Revenue streams / segments ({len(segs)} business lines)")
             for s in segs:
-                parts.append(f"  - {s.get('name')} (start_year={s.get('start_year', 0)})")
+                if not isinstance(s, dict):
+                    continue
+                bits = [f"start_year={s.get('start_year', 0)}"]
+                if s.get("source"):
+                    bits.append(f"type={s['source']}")
+                parts.append(f"- **{s.get('name')}** ({', '.join(bits)})")
+                if s.get("description"):
+                    parts.append(f"  - What it is: {s['description']}")
+                if s.get("growth_basis"):
+                    parts.append(f"  - Growth basis: {s['growth_basis']}")
+                if s.get("opex_pct_revenue"):
+                    parts.append(f"  - Related opex ratio (% of stream revenue): {s['opex_pct_revenue']}")
+                cs = (s.get("contractual_support") or "").strip()
+                parts.append(f"  - Contractual support: {cs if cs else 'None stated — treat as unproven and disclose in risks'}")
+
+    seg_series = (summary.get("projections") or {}).get("by_segment") or []
+    if seg_series:
+        parts.append("\n### Per-stream computed series (workpaper units; costs negative; Y0..Y5)")
+        for s in seg_series[:8]:
+            parts.append(f"- **{s.get('name')}**")
+            parts.append(f"  - Revenue: {[round(v) for v in (s.get('revenue') or [])[:6]]}")
+            parts.append(f"  - COGS: {[round(v) for v in (s.get('cogs') or [])[:6]]}")
+            alloc = " (allocation at top-level ratio)" if s.get("opex_is_allocation") else " (stream-specific ratio)"
+            parts.append(f"  - Related opex{alloc}: {[round(v) for v in (s.get('opex') or [])[:6]]}")
 
     term = inputs.get("terminal") or {}
     if term:
         parts.append("\n### Terminal value")
         parts.append(f"- method: {term.get('method')}, growth_rate: {term.get('growth_rate')}")
+        if term.get("nominal_gdp_growth") is not None:
+            parts.append(f"- nominal_gdp_growth (reference ceiling): {term.get('nominal_gdp_growth')}")
 
     wacc = inputs.get("wacc") or {}
     if wacc:
         sh = wacc.get("shared") or {}
-        pm = wacc.get("per_management") or {}
         parts.append("\n### WACC inputs")
         parts.append(f"- shared: rf={sh.get('risk_free_rate')}, erp={sh.get('equity_risk_premium')}, crp={sh.get('country_risk_premium')}")
-        parts.append(f"- per_management: β_unl={pm.get('unlevered_beta')}, D/E={pm.get('target_debt_to_equity')}, size_prem={pm.get('size_premium')}, spec_risk={pm.get('specific_risk_premium')}, pretax_kd={pm.get('pretax_cost_of_debt')}")
+        for scen_key, scen_label in (("per_management", "management scenario"), ("independent", "independent scenario")):
+            sc = wacc.get(scen_key) or {}
+            if sc:
+                parts.append(
+                    f"- {scen_label}: β_unl={sc.get('unlevered_beta')}, D/E={sc.get('target_debt_to_equity')}, "
+                    f"size_prem={sc.get('size_premium')}, specific_risk_prem={sc.get('specific_risk_premium')}, "
+                    f"pretax_kd={sc.get('pretax_cost_of_debt')}"
+                )
+        for scen_key, scen_label in (("per_management", "management"), ("independent", "independent")):
+            w = (summary.get("wacc") or {}).get(scen_key) or {}
+            if w.get("wacc") is not None:
+                parts.append(
+                    f"- Computed {scen_label} WACC: {w.get('wacc'):.4f} "
+                    f"(Ke={w.get('cost_of_equity'):.4f}, levered β={w.get('levered_beta'):.3f}, "
+                    f"after-tax Kd={w.get('aftertax_cost_of_debt'):.4f})"
+                )
 
     cocos = inputs.get("cocos") or []
     if cocos:
@@ -515,12 +565,19 @@ def _load_workpaper_context_for_report(company_id: UUID) -> str:
         parts.append(f"- shares_outstanding: {bridge.get('shares_outstanding')}")
 
     if sources:
-        parts.append("\n### Assumption rationales (Eric item 7 — embed these verbatim in the relevant report sections)")
+        parts.append("\n### Assumption support notes (internal working material — paraphrase into client-facing narrative; NEVER quote these labels, IDs, or this heading in the report)")
+        _internal_re = re.compile(r"goal[\s-]?seek|target valuation|calibrat|back[\s-]?solv", re.IGNORECASE)
         for sid, entry in sources.items():
             if not isinstance(entry, dict):
                 continue
+            # target_valuation's rationale describes goal-seek mechanics —
+            # never surface it to the report writer.
+            if sid == "target_valuation":
+                continue
             rationale = entry.get("rationale")
             if not rationale:
+                continue
+            if _internal_re.search(str(rationale)) or _internal_re.search(str(entry.get("notes") or "")):
                 continue
             src = entry.get("source", "")
             detail = entry.get("detail", "")
@@ -529,28 +586,88 @@ def _load_workpaper_context_for_report(company_id: UUID) -> str:
             if detail:
                 parts.append(f"- Detail: {detail}")
 
-    dcf_pm = (summary.get("dcf") or {}).get("per_management") or {}
-    bridge_pm = (summary.get("bridge") or {}).get("per_management") or {}
-    pps_pm = (summary.get("per_share") or {}).get("per_management") or {}
-    if dcf_pm or bridge_pm:
-        parts.append("\n### Computed valuation outputs (per-management scenario)")
-        if dcf_pm.get("ev") is not None:
-            parts.append(f"- DCF Enterprise Value: {dcf_pm.get('ev'):.0f}")
-            parts.append(f"- Sum PV explicit: {dcf_pm.get('sum_pv_explicit'):.0f}, PV terminal: {dcf_pm.get('pv_terminal'):.0f}")
-        if bridge_pm.get("after_dloc") is not None:
-            parts.append(f"- Equity value after DLOM/DLOC: {bridge_pm.get('after_dloc'):.0f}")
-        if pps_pm.get("basic") is not None:
-            parts.append(f"- Implied per-share (basic): {pps_pm.get('basic')}")
+    parts.append("\n### Computed valuation outputs (both scenarios — use for the consolidated EV table)")
+    for scen_key, scen_label in (("per_management", "Management scenario"), ("independent", "Independent scenario")):
+        dcf_s = (summary.get("dcf") or {}).get(scen_key) or {}
+        bridge_s = (summary.get("bridge") or {}).get(scen_key) or {}
+        pps_s = (summary.get("per_share") or {}).get(scen_key) or {}
+        if not (dcf_s or bridge_s):
+            continue
+        parts.append(f"- **{scen_label}**:")
+        if dcf_s.get("ev") is not None:
+            parts.append(f"  - DCF Enterprise Value: {dcf_s.get('ev'):.0f}")
+            parts.append(f"  - Sum PV explicit: {dcf_s.get('sum_pv_explicit'):.0f}, PV terminal: {dcf_s.get('pv_terminal'):.0f}")
+        if bridge_s.get("after_dloc") is not None:
+            parts.append(f"  - Equity value after DLOM/DLOC: {bridge_s.get('after_dloc'):.0f}")
+        if pps_s.get("basic") is not None:
+            parts.append(f"  - Implied per-share (basic): {pps_s.get('basic')}")
 
-    target_val = eng.get("target_valuation")
-    if target_val and dcf_pm.get("ev"):
-        gap = (dcf_pm["ev"] - target_val) / target_val * 100
-        parts.append(f"\n### Target vs implied")
-        parts.append(f"- Client target: {target_val}")
-        parts.append(f"- Model implied DCF EV: {dcf_pm['ev']:.0f}")
-        parts.append(f"- Gap: {gap:+.1f}% (positive = model above target)")
+    concluded = summary.get("concluded") or {}
+    if concluded.get("ev") is not None:
+        parts.append("\n### Concluded valuation (DCF primary)")
+        parts.append(f"- Concluded EV: {concluded.get('ev'):.0f} (basis: DCF, management scenario)")
+        if concluded.get("low") is not None and concluded.get("high") is not None:
+            parts.append(f"- Concluded range: {concluded.get('low'):.0f} – {concluded.get('high'):.0f}")
 
-    parts.append("\n**Report writing rule:** quote the specific assumption values above when explaining each section. Where a rationale is provided, use it as the basis for the section's narrative — that's how the workpaper defends the number. Do NOT invent alternative assumptions in the report; the model is the source of truth.")
+    cross = summary.get("cross_checks") or {}
+    if cross.get("checks"):
+        verdict_text = {
+            "within_reasonable_range": "WITHIN REASONABLE RANGE — both cross-checks fall inside ±10% of the DCF EV; the report states this.",
+            "outside_cross_check_range": "OUTSIDE CROSS-CHECK RANGE — at least one implied value falls outside ±10% of the DCF EV; the report MUST flag this clearly and briefly comment on likely reasons (limited comparables, outlier transactions, sector conditions).",
+            "not_available": "NOT AVAILABLE — insufficient comparable/transaction data for a meaningful cross-check.",
+        }.get(cross.get("verdict"), str(cross.get("verdict")))
+        parts.append("\n### Cross-checks vs DCF enterprise value (DCF is the sole primary methodology)")
+        parts.append(f"- Primary (DCF) EV: {cross.get('primary_ev'):.0f}; tolerance band: ±{(cross.get('tolerance_pct') or 0.10)*100:.0f}%")
+        for chk in cross.get("checks") or []:
+            label = {"market_approach_comps": "Market approach (comparable companies)",
+                     "precedent_transactions": "Recent transactions (precedents)"}.get(chk.get("method"), chk.get("method"))
+            if not chk.get("available"):
+                parts.append(f"- {label}: not available (insufficient data, n={chk.get('n')})")
+                continue
+            var = chk.get("variance_pct")
+            parts.append(
+                f"- {label}: implied EV {chk.get('implied_ev'):.0f}, variance {var:+.1%} vs DCF, "
+                f"{'within' if chk.get('within_range') else 'OUTSIDE'} the ±10% band (n={chk.get('n')})"
+            )
+        parts.append(f"- Verdict: {verdict_text}")
+
+    flags = summary.get("validation_flags") or []
+    if flags:
+        parts.append("\n### Model validation flags (each flag MUST be disclosed and justified in the relevant report section — terminal-value flags in Terminal Value Analysis, segment flags in the projections/risk sections, cross-check flags in Cross-Checks)")
+        for f in flags:
+            parts.append(f"- [{f.get('severity')}] {f.get('code')}: {f.get('message')}")
+
+    sens = summary.get("sensitivity") or {}
+    grid = sens.get("grid") or []
+    if grid:
+        try:
+            br, bc = int(sens.get("base_row") or 0), int(sens.get("base_col") or 0)
+            w_axis = sens.get("wacc_axis") or []
+            g_axis = sens.get("terminal_g_axis") or []
+            r0, r1 = max(0, br - 2), min(len(grid), br + 3)
+            c0, c1 = max(0, bc - 2), min(len(g_axis), bc + 3)
+            parts.append("\n### Sensitivity matrix — EV at WACC × terminal growth (5×5 window around base; use in the Terminal Value section)")
+            header = "| WACC \\\\ g | " + " | ".join(f"{g_axis[c]:.1%}" for c in range(c0, c1)) + " |"
+            parts.append(header)
+            parts.append("|" + "---|" * (c1 - c0 + 1))
+            for r in range(r0, r1):
+                cells = []
+                for c in range(c0, c1):
+                    v = grid[r][c] if c < len(grid[r]) else None
+                    cells.append(f"{v:.0f}" if isinstance(v, (int, float)) else "n/m")
+                marker = " (base)" if r == br else ""
+                parts.append(f"| {w_axis[r]:.1%}{marker} | " + " | ".join(cells) + " |")
+        except (IndexError, TypeError, ValueError):
+            pass
+
+    parts.append(
+        "\n**Report writing rule:** quote the specific assumption values above when explaining each section, "
+        "paraphrased into natural client-facing prose. Do NOT invent alternative assumptions; the model is the "
+        "source of truth. NEVER mention: goal-seek or target valuations, calibration, pinned parameters, "
+        "internal worksheet/sheet names (e.g. 'Value_Summary_Primary', 'Inputs sheet'), parameter IDs "
+        "(e.g. 'revenue_growth_y1'), or any of this context block's headings. The reader sees only the finished "
+        "valuation narrative."
+    )
 
     return "\n".join(parts)
 
@@ -687,6 +804,9 @@ def _build_gap_analysis_prompt(
 You are writing a **transaction-grade gap analysis** — a document that will be presented to prospects and used for advisory decision-making. This is NOT an AI research memo or narrative summary. It must read like a professional advisory memo that a senior banker or securities lawyer would take seriously.
 
 ## CRITICAL RULES
+
+### 0. NO FABRICATION (ABSOLUTE — THIS REPORT IS USED FOR ADVISORY DECISIONS)
+NEVER state a figure, ratio, name, fact, scenario, asset or document that is not in the Company Data or directly arithmetically derived from it (simple arithmetic on provided numbers only — not assumptions or "typical" amounts presented as the Company's). Never invent financials, adjustments, valuations, or facts. In any framework/placeholder table, empty cells read "to be provided" — never a made-up number. When something is unavailable, say so plainly or omit it; a shorter sourced report beats a longer one with one invented number.
 
 {FINANCIAL_SOURCE_HIERARCHY}
 
@@ -1130,12 +1250,19 @@ Top-tier FDD is distinguished from "research memo" output by these markers. Appl
 
 ## CRITICAL RULES
 
+### 0. NO FABRICATION (ABSOLUTE — THIS REPORT GOES TO INVESTORS AND UNDERWRITERS)
+This report supports a live securities offering. Inventing a figure, name, fact, adjustment, scenario, asset, location or document that is not in the Company Data is a serious error that misleads investors and creates liability.
+- NEVER state a specific value (a figure, an EBITDA adjustment, a forecast, a margin, a ratio) that is not present in, or *directly arithmetically derived from*, the provided data. "Directly derived" = simple arithmetic on provided numbers (EBIT + D&A; AR ÷ revenue × 365; opening equity + profit − closing equity). It does NOT include assumptions, industry estimates, or "typical" amounts presented as the Company's figures.
+- NEVER invent management EBITDA adjustments, owner-compensation amounts, run-rate estimates, property/asset values, office or facility names, personnel, customer names, or contract terms. If it is not in the data, it does not exist for this report.
+- NEVER present an illustrative/placeholder figure as if it were actual. In any framework table, empty cells must read "to be provided" — never a number you made up.
+- A shorter, fully-sourced report is far better than a longer one containing one invented number. When something is unavailable, say so plainly or omit it.
+
 {FINANCIAL_SOURCE_HIERARCHY}
 
 ### 1. DATA CONSISTENCY (MANDATORY)
 Before writing ANY section, establish a single set of canonical numbers and use them throughout the entire report. Derive these canonical numbers from the F-pages first per the source hierarchy above:
 - Pick ONE revenue figure and use it everywhere
-- Pick ONE EBITDA figure (reported) and ONE Adjusted EBITDA figure
+- Pick ONE Reported EBITDA figure (always computable); state ONE Adjusted EBITDA figure ONLY if a management add-back schedule was provided — otherwise Adjusted EBITDA is not presented (do not invent it)
 - Pick ONE net debt figure and ONE NWC figure at the latest balance sheet date
 - Pick ONE FX rate and use it everywhere; state the rate and the as-of date in the basis section
 - If source materials conflict, pick the most recent audited figure and note the discrepancy ONCE in the scope/basis section
@@ -1165,16 +1292,10 @@ The report date is today. All recommended actions and timelines must be forward-
 - For non-US issuers, consider FPI (Foreign Private Issuer) status implications: IFRS acceptance, 20-F/6-K filing, Reg FD inapplicability, audit committee independence still required
 - Where the issuer prepares under MFRS or local GAAP, flag the US GAAP / IFRS reconciliation that will be required for SEC filing — this is operationally relevant for DD scope
 
-### 6. THE QoE BRIDGE IS THE CENTERPIECE
-The Quality of Earnings section produces a **dual-column EBITDA bridge** (management-proposed vs Orionmano-validated). This is the single most-read artefact in the report. Every adjustment must:
-- Classify into one of the FIVE canonical buckets:
-  1. Non-recurring / one-time
-  2. Owner / management compensation normalisation
-  3. Run-rate adjustments (≥2 quarters of demonstrated performance required)
-  4. Pro forma adjustments (known contracted future changes)
-  5. Accounting policy / GAAP–IFRS adjustments
-- State the source artefact (invoice, contract, payroll register, etc.)
-- Show management's proposed amount AND Orionmano's validated amount, with one-line rationale on any rejection or modification
+### 6. THE QoE BRIDGE — REPORTED EBITDA ALWAYS; ADJUSTED ONLY FROM A REAL SCHEDULE
+Reported EBITDA (= EBIT + D&A) is ALWAYS computed and shown as a hard number per period.
+A **dual-column Adjusted EBITDA bridge** (management-proposed vs Orionmano-validated) is produced ONLY when a management add-back schedule is actually present in the data. In that case each adjustment is classified into one of the FIVE buckets (non-recurring; owner-comp; run-rate ≥2 quarters; pro forma; accounting policy), cites its source artefact, and shows both amounts with a one-line rationale on any rejection.
+**If no management add-back schedule was provided (the usual case): do NOT invent adjustments or amounts.** Set Adjusted EBITDA = Reported EBITDA, state that no adjustments could be validated absent the schedule, and (if useful) name the candidate adjustment *categories* in prose with NO figures. Inventing owner-comp, pro-forma or run-rate amounts here is the single most common and most dangerous failure — do not do it.
 
 ### 7. FINDINGS PRIORITISATION
 Every observation classifies as one of these exact labels:
@@ -1208,17 +1329,18 @@ DD_SECTION_INSTRUCTIONS = {
     "executive_summary": """Write the Executive Summary — the single-most-read section. Order MUST be:
 1. **Deal context** (1 short paragraph) — issuer, transaction (Nasdaq IPO target tier / pre-IPO round), engagement scope.
 2. **Headline numbers** in a markdown table:
-   - Reported EBITDA → Adjusted EBITDA (Orionmano-validated), with delta in absolute and %
-   - Net debt + debt-like items at latest balance sheet date
-   - Recommended target NWC peg
-   - QoE adjustment ratio = (Adjusted − Reported) / Reported
+   - **Reported EBITDA** — ALWAYS state this as a hard number. It is derivable from the audited statements: Reported EBITDA = Operating profit (EBIT / "Profit from operation") + Depreciation & amortization, both of which are in the company data. NEVER write "Information Required" for Reported EBITDA when operating profit and D&A are available — compute it and show the period.
+   - **Adjusted EBITDA (Orionmano-validated)** — only write "Information Required: management add-back schedule" here if no management adjustment schedule was provided. (Adjusted EBITDA, not Reported, is what needs the add-back schedule.)
+   - **Delta (Adjusted − Reported)** and **QoE adjustment ratio = (Adjusted − Reported) / Reported** — derivable only once Adjusted EBITDA is known; "Information Required" only if Adjusted EBITDA is.
+   - **Net debt + debt-like items** at the latest balance sheet date — compute from the available balance-sheet components (bank borrowings, lease/hire-purchase liabilities, cash & equivalents); do not blanket-flag this as Information Required when those line items are present. Flag only the specific debt-like items that lack data.
+   - **Recommended target NWC peg** — Information Required if monthly working-capital data is absent (this one genuinely needs it).
 3. **Matters for buyer attention** — three labelled lists:
    - Deal-breakers
    - Price-impacting
    - Informational
 4. **Recommended next-step diligence** — what additional procedures should be commissioned before pricing.
 
-Use only canonical numbers established for this report. Where numbers are not yet derivable, write "Information Required: [what's needed]" instead of fabricating.""",
+Use only canonical numbers established for this report. Distinguish DERIVABLE metrics (Reported EBITDA, Net Debt from the audited statements) — which you MUST compute and show — from metrics that genuinely need un-provided documents (Adjusted EBITDA, NWC peg). Only write "Information Required: [what's needed]" for the latter; never use it as a default for a figure you can compute from the audited statements.""",
 
     "scope_basis": """Write the Scope, Basis and Limitations section. Cover:
 1. **Engagement scope** — five workstreams: A. Corporate & Organization, B. Business Operations, C. Financial Statement & Accounting Policy Review, D. Internal Control & Risk Assessment, E. Targeted Procedures.
@@ -1230,31 +1352,17 @@ Use only canonical numbers established for this report. Where numbers are not ye
 
     "business_overview": """Write the Business Overview. Concise — anchor a new reader before the QoE. Cover: corporate structure (entities, jurisdictions, ownership %), business model (revenue model, key products/services, value chain position), operating footprint, customer base overview (concentration detailed in the Revenue Quality section, not here), supplier base overview, key contracts (material customers, suppliers, IP licences, leases), management team (names, tenure, prior credentials), strategic milestones (funding rounds, M&A history, key product launches). If any element is not in the source material, flag as Information Required.""",
 
-    "qoe_bridge": """Write the Quality of Earnings — Adjusted EBITDA Bridge section. THIS IS THE CENTERPIECE OF THE REPORT.
+    "qoe_bridge": """Write the Quality of Earnings — Reported EBITDA & Normalisation section.
 
-Produce a **dual-column markdown table** with these exact columns:
-| Adjustment | Bucket | Management-Proposed | Orionmano-Validated | Source / Basis | Comment |
+**1. Reported EBITDA anchor (always a hard number).** State Reported EBITDA for each period, computed as Operating profit (EBIT / "Profit from operation") + Depreciation & amortization — both are in the company data. Show the one-line arithmetic per period (e.g. "FY2025: EBIT 13,111,468 + D&A 901,895 = 14,013,363"). This is NEVER "Information Required".
 
-Rows:
-1. Start with "Reported EBITDA (audited)" — anchor to the audited figure.
-2. List each adjustment, one per row, classified into ONE of the five canonical buckets:
-   - (1) Non-recurring / one-time
-   - (2) Owner-comp normalisation
-   - (3) Run-rate (require ≥2 quarters of demonstrated performance)
-   - (4) Pro forma
-   - (5) Accounting policy / GAAP–IFRS
-3. End with "Adjusted EBITDA" subtotal — both columns.
+**2. Adjusted EBITDA — ONLY from a real management add-back schedule.** If a management add-back schedule is present in the data, build the dual-column table | Adjustment | Bucket | Management-Proposed | Orionmano-Validated | Source / Basis | Comment | with each adjustment classified into one of the five buckets (non-recurring; owner-comp; run-rate; pro forma; accounting policy), the validated amount, and a one-line rationale on any rejection.
+**If NO add-back schedule was provided (the usual case): do NOT invent adjustments or amounts.** Set Adjusted EBITDA = Reported EBITDA, state plainly that no adjustments could be validated because the schedule was not provided, and — if useful — name the candidate categories (pre-IPO professional fees, owner-comp normalisation, related-party pricing) in PROSE with NO numbers. Do NOT output a table of "to be quantified" rows; a clean prose note is better.
 
-For each adjustment row:
-- State the management-proposed amount AND the Orionmano-validated amount.
-- If validated < proposed, give a one-line rationale (insufficient documentation / recurring in nature / double-counted / fails 2-quarter run-rate threshold / supportive analytical evidence absent).
-- Cite the source artefact (specific document, dated).
-
-After the table, add:
-- **Forward-looking pivot** — which add-backs persist into forward periods, which drop out, what this means for forward Adjusted EBITDA run-rate.
-- **Key judgment areas** — 2–3 bullets on the most material analytical calls.
-
-If trial balance / detailed financial data is not available, flag clearly as "Information Required" and provide the analytical framework with placeholder rows showing what adjustments WOULD typically be evaluated for this kind of business.""",
+**3. Earnings-quality analysis (do this with the data you have).**
+- **H1/H2 split:** if half-year (interim) figures exist, derive the second half of the most recent audited year (full year less the first half) for revenue, gross profit and net profit. A margin or profit heavily concentrated in one half means the full-year figure is NOT a stable run-rate — flag it and identify the weaker half for investigation.
+- **Concentration effect:** note how customer concentration affects the reliability of any forward run-rate.
+- **One-offs visible in the data** (e.g. credit-loss reversals, disposal gains, related-party items in cost of sales).""",
 
     "revenue_quality": """Write the Revenue Quality section. Cover:
 1. **Customer concentration** — Top 5, Top 10, Top 20 customers as % of revenue, presented in a markdown table. Top customer >25% should be flagged as deal-breaker level. If customer-level data not available, flag Information Required.
@@ -1264,10 +1372,10 @@ If trial balance / detailed financial data is not available, flag clearly as "In
 5. **Revenue recognition policy** — point-in-time vs over-time per ASC 606 / IFRS 15. Note any cut-off testing concerns (channel stuffing, Q4 spike pattern).""",
 
     "cost_margin": """Write the Cost & Margin Analysis section. Cover:
-1. **Monthly gross margin trend** — minimum 36 months, presented as a markdown table or note "Information Required: monthly P&L for last 36 months" if only annual is available. Annual hides seasonality, channel stuffing, run-rate inflections.
-2. **Margin decomposition** — input cost inflation, pricing actions, mix, volume leverage, one-time effects. Quantify each driver where possible.
-3. **Cost composition** — fixed vs variable, headcount-to-revenue ratio.
-4. **Sensitivity** — gross margin at ±5% / ±10% on key input assumptions, customer-Y leaving scenario, pricing reverting to industry mean.""",
+1. **Margin profile — annual, interim and annualised.** Present a table of Revenue, Cost of sales, Gross profit, Gross margin, Administrative expenses, EBIT, EBIT margin, Net profit, Net margin across ALL periods available: the audited years AND the interim half-years, PLUS an annualised (×2) column for the latest half-year. (If only annual data exists, present the annual columns and say so.)
+2. **H1/H2 split of the latest audited year — ALWAYS compute when interim data exists.** Derive H2 = full year less the first half, for revenue, cost of sales, gross profit and net profit. Compute the H2 gross and net margins. If a half's margin or profit collapses or spikes versus the other halves, the full-year figure is NOT a stable run-rate — flag the specific half as the priority investigation and state the quantum (e.g. "H2 booked HK$X revenue at Y% gross margin vs ~Z% in the other halves").
+3. **Margin decomposition** — input cost inflation, pricing, mix, volume leverage, one-offs; identify whether any compression is structural or concentrated in one period. Note related-party cost-of-sales exposure.
+4. **Sensitivity** — gross margin scenarios (±, and reverting to the underlying half-yearly norm) on the latest revenue, with the gross-profit quantum.""",
 
     "working_capital": """Write the Working Capital section — trend, days metrics, peg. Cover:
 1. **Monthly NWC trend** — trailing 18–24 months, markdown table. Long enough to capture seasonality. Flag Information Required if only annuals are available.
@@ -1299,27 +1407,24 @@ Lines (include all that are applicable):
   - Customer rebates / chargebacks accrued
 - **Total Net Debt + Debt-Like Items**
 
-Each item: quantified, source-cited, with one-line buyer-vs-seller dispute classification. Accrued bonus and deferred revenue are typically the most contested in practice — call those out explicitly.""",
+Each item: quantified, source-cited, with one-line buyer-vs-seller dispute classification. Accrued bonus and deferred revenue are typically the most contested in practice — call those out explicitly.
 
-    "proof_of_cash": """Write the Proof of Cash section. Reconcile bank statement deposits and disbursements to reported revenue and EBITDA over 12+ months.
+COMPUTE the schedule from whatever balance-sheet components ARE available — bank borrowings, lease/hire-purchase liabilities, and cash & equivalents are typically present in the audited balance sheet and the supporting leadsheets, so produce a **Bank net debt** subtotal from them as a hard number. Flag "Information Required" ONLY against the specific debt-like line items that lack data (e.g. accrued bonuses, deferred revenue) — do NOT collapse the entire schedule to "Information Required" when the core debt and cash figures are available. State the as-of date.""",
 
-Output should include:
-1. Reconciliation table: Reported Revenue (P&L) → Bank Deposits Tied to Sales → Variance, by quarter or month
-2. Reconciliation: EBITDA → Operating Cash Flow → Variance
-3. Discussion of unreconciled items >5% of revenue or EBITDA
-4. Flags for: revenue recognised but not deposited, deposits not accounted for in revenue, large round-number transfers, intercompany flows masquerading as third-party
+    "proof_of_cash": """Write the Cash Movement / Proof of Cash section.
 
-If bank statements are not available, flag clearly as Information Required: bank statements for the trailing 12 months for all material operating accounts. Without these, proof of cash cannot be performed and a key forensic-grade procedure is missing from the report.""",
+**1. Cash movement analysis (do this WITHOUT bank statements — from the balance-sheet movements).** Explain the change in the cash balance over the latest year via a **sources-and-uses** table built from the period-over-period balance-sheet deltas: sources = net profit, decreases in non-cash assets (e.g. recovery of a related-party receivable), increases in liabilities (borrowings, payables); uses = asset increases (PPE/property, receivables, contract assets), and any distribution. The sources and uses must reconcile to the actual change in cash. Key reads to surface: (a) if cash *rose* despite a large distribution, the distribution was substantially **non-cash** (settled via related-party/shareholder accounts) — state this; (b) what funded any large asset purchase (borrowings vs related-party recovery vs operating cash); (c) whether operating cash was absorbed by working-capital growth.
+2. **Proof of cash (only if bank statements are provided).** Reconcile reported revenue → bank deposits tied to sales → variance (by quarter/month); EBITDA → operating cash flow → variance; flag unreconciled items >5% and any round-number / intercompany / related-party transfers. If bank statements are NOT provided, state that the formal proof of cash is deferred to the next phase — do not fabricate a reconciliation.""",
 
-    "balance_sheet_review": """Write the Balance Sheet Review — account-by-account walk of every material balance. For each line, follow the per-line-item pattern:
-1. State the change (absolute + % YoY)
-2. Explain the driver
-3. Assess reasonableness
-4. Flag risks (collectability, impairment, classification, disclosure)
+    "balance_sheet_review": """Write the Balance Sheet Review. Start by reproducing the **full consolidated balance sheet** (every material line, ALL periods available including interim) as a markdown table, then walk the material lines (change absolute + %, driver, reasonableness, risk).
 
-Cover (omit lines not material to this business): AR (aging, ECL adequacy, concentration, RPT exposure), prepayments (RPT exposure, IPO-cost prepayments), inventory (aging, NRV, obsolescence), PPE (additions/disposals, utilisation, impairment indicators), intangibles (nature, amortisation policy, internally generated vs acquired), ROU assets, investments (classification, impairment), goodwill (impairment testing), AP (aging, RPT), other payables / accruals (deferred rev, customer deposits, IPO accruals), borrowings (covenants, repayment schedule, fixed/floating), convertibles (terms, classification), lease liabilities, deferred tax.
+**MANDATORY ANALYSES — these surface the most important findings, so always perform them when the data allows:**
+- **Equity roll-forward / distribution detection.** For each period reconcile: opening equity + net profit − closing equity. ANY residual implies a distribution or capital movement — quantify it and flag a pre-IPO distribution as price-impacting. State whether it appears cash or non-cash (cross-check the cash movement).
+- **Related-party balances.** Track every "amount due from / to a related company / shareholder / director" across ALL periods. A large related-party receivable (especially one that is a big % of total assets), or one that is recovered and then re-advanced, is a deal-breaker-grade related-party finding — quantify each movement and call out any recurring pattern.
+- **Leverage.** Compute net debt (bank borrowings + lease liabilities − cash) and **net gearing (net debt / equity)** and the equity ratio for each period. Flag a balance sheet entering the IPO highly geared (e.g. gearing > 100%), and note where large bank borrowings are classified current vs cash.
+- **PP&E / property step-changes.** A large PPE increase (especially debt-funded) requires the commercial rationale, an independent valuation, and the classification (operational vs investment / owner-related). Tie it to the funding (borrowings, related-party recovery).
 
-Use bold underlined headers per line item. Include a Focus Areas table at the end summarising the material items requiring further scrutiny.""",
+Then cover the remaining material lines (AR aging/ECL/concentration, contract assets/unbilled, prepayments, PPE, ROU, AP, accruals, borrowings covenants, lease liabilities, deferred tax). Use bold headers per line item and a Focus Areas table at the end.""",
 
     "capex": """Write the Capex section. Cover:
 1. **Maintenance vs growth split** — 3-year history with categorisation. Critical for FCF defensibility.
@@ -1777,6 +1882,147 @@ async def _load_industry_report_for_drs(
             cleaned = _chart_block_to_table(s.content)
             parts.append(f"## {s.section_title}\n\n{cleaned}")
     return "\n\n".join(parts)
+
+
+def _build_valuation_report_prompt(
+    company, tier, tier_instruction, template,
+    extra_knowledge, company_context,
+) -> str:
+    """System prompt for the client-facing valuation report. DCF-primary
+    methodology, investor-facing tone, natural basis statements (no inline
+    citations), and hard suppression of all internal process references."""
+    return f"""You are a senior valuation partner at Orionmano Assurance Services (Hong Kong-based), specialising in Nasdaq IPO advisory for Asia-Pacific companies. You are writing the client-facing **Valuation Report** that explains the financial model in the Valuation Workpaper Context below. All deliverables target Nasdaq listing standards and SEC registration paths; do NOT reference HKEX, HKSIR, SEHK, Bursa Malaysia, or other non-US listing regimes as the regulatory perimeter.
+
+## VALUATION FRAMEWORK (MANDATORY)
+- The **income approach (DCF)** is the SOLE primary valuation methodology: projected free cash flows to the firm over the explicit forecast horizon plus a terminal value, discounted at the WACC. The concluded enterprise value and equity value derive from the DCF alone.
+- The **market approach (comparable companies)** and **recent transactions (precedents)** are retained ONLY as cross-checks: their implied enterprise values are compared against the DCF EV within a ±10% band. When both fall inside the band, state that the cross-checks are "within reasonable range". When either falls outside, flag it clearly ("outside cross-check range") and briefly comment on likely reasons (limited comparables, outlier transactions, sector conditions). NEVER present a weighted average or blend of methodologies as the conclusion.
+- The valuation is prepared on an IFRS 13 fair value basis.
+
+## SECTION FORMAT (EVERY SECTION)
+1. Open with a **"Key Takeaways"** block of 3-5 bullets stating the section's conclusions.
+2. Then tables and/or charts carrying the quantitative content.
+3. Then short analytical narrative — short paragraphs, clear sub-headings, investor-facing tone. Non-specialists (issuer management, underwriters) must grasp the key points quickly.
+Use markdown tables for every quantitative exhibit. Where a chart is requested, emit a ```chart fenced JSON block with this EXACT schema (a markdown table with the same numbers immediately below it):
+
+```chart
+{{
+  "type": "bar" | "stacked-bar" | "line" | "pie" | "horizontal-bar",
+  "title": "[description]",
+  "x_label": "string", "y_label": "string", "y_unit": "USD '000" | "%" | etc.,
+  "data": [{{"x": "Y1", "Series A": 123.4}}, {{"x": "Y2", "Series A": 150.1}}],
+  "series": ["Series A"]
+}}
+```
+Rules: time-series → `bar`/`line` with x = year label; revenue-by-stream over time → `stacked-bar` with one key per stream; `data` values MUST be numeric only.
+
+## ANCHORING RULE
+Every growth or margin assumption you present MUST be explicitly tied to either an operating driver (contracts, capacity, backlog, signed customers) or a market statistic (sector CAGR, TAM, market share) from the context. No unanchored optimism.
+
+## NO INLINE CITATIONS
+Do NOT use numbered inline citations like [1], [2]. Do NOT use `[^n]` or `<cite/>` syntax. State the basis of information naturally: "Based on the FY2025 audited financial statements…", "Per management's business development plan…", "Per Damodaran's implied equity risk premium data (retrieved …)…".
+
+## SUPPRESSION RULE (ABSOLUTE — THIS IS A CLIENT-FACING DOCUMENT)
+NEVER mention, in any form: goal-seek or target valuations; calibration or back-solving; pinned or analyst-locked parameters; internal worksheet, sheet, or named-range identifiers (e.g. "Value_Summary_Primary", "Inputs sheet", "segments_table"); machine parameter IDs (e.g. "revenue_growth_y1", "specific_risk_premium_pm"); report-writing instructions; or the existence of this context block. Translate everything into natural client-facing valuation language.
+
+## NO FABRICATION
+Never state a figure that is not present in, or directly arithmetically derived from, the workpaper context and company data. Where information is genuinely unavailable, say so plainly rather than inventing it.
+
+Tier: {tier.upper()} — {tier_instruction}
+
+## Report Template Reference
+{template[:2000]}{extra_knowledge}
+
+## Company Data
+{company_context}"""
+
+
+_VALUATION_PURPOSE_STATEMENT = (
+    "This report has been prepared to support Nasdaq IPO pricing discussions and board "
+    "decision-making. It is not intended for incorporation into any F-1 registration "
+    "statement or free-writing prospectus, and it does not constitute a fairness opinion."
+)
+
+VALUATION_SECTION_INSTRUCTIONS = {
+    "purpose_and_use": f"""Write the "Purpose and Use of this Report" box — a short, boxed opening statement (use a blockquote). It MUST state, in this order:
+1. The valuation date and the subject company.
+2. That the valuation is prepared on an IFRS 13 fair value basis.
+3. Intended use — use this exact positioning: "{_VALUATION_PURPOSE_STATEMENT}"
+4. A concise 3-4 line disclaimer: this report is not an offer or solicitation to buy or sell securities; it contains forward-looking statements subject to risks and uncertainties and actual results may differ materially; any investment decision should rely on the formal registration statement and offering documents, not this report.
+Keep the whole section under half a page. No Key Takeaways block for this section — it IS the box.""",
+
+    "executive_summary": """Write the Executive Summary in EXACTLY four blocks, in this order:
+1. **Business snapshot & investment highlights** — one short paragraph on what the company does, then 4-6 investment-highlight bullets (business model, market, differentiation, growth/margin themes), each anchored to an operating driver or market statistic.
+2. **Headline valuation conclusion** — a markdown table with: concluded enterprise value (and range), equity value after DLOM/DLOC (and range), implied per-share value, and the methodology line "Income approach (DCF) as the primary methodology; market approach and recent transactions as cross-checks".
+3. **Key analytical drivers** — a table of the main drivers (revenue growth profile, margin trajectory, capital intensity, WACC, terminal growth, DLOM/DLOC), each with the headline number and a ONE-LINE justification.
+4. **Principal risks and mitigants** — 3-5 bullets (e.g. execution risk on new revenue streams, customer concentration, assumption-support gaps), each with its mitigant.
+Investor-facing tone, consistent with the underlying model numbers.""",
+
+    "business_industry_overview": """Write the Business & Industry Overview — it precedes the projections and DCF, so anchor a new reader:
+1. **Revenue streams in business terms** — for EACH revenue stream/segment in the workpaper context: what it is, who buys it, and the value proposition. Additional/new streams must be clearly identified as such, with what market data or sources were used to estimate their growth profile (use each stream's growth basis from the context).
+2. **Products/solutions, customer types, and value proposition** — a concise summary.
+3. **Market sizing and growth** — the relevant market's size and growth for the company's operating footprint, with named sources and natural basis statements.
+4. **Investment highlights** — 3-5 bullets linking the business model to the valuation story.
+Every growth or margin claim MUST be tied to an operating driver (contracts, capacity, backlog) or a market statistic (TAM, share assumption).""",
+
+    "key_operating_metrics": """Write the Key Operating Metrics subsection: 3-6 KPIs available from the company data (e.g. number of customers, order backlog vs projected revenue, installed base/capacity, number of projects, revenue by segment or geography). Present as a table. Where possible, connect each KPI to the valuation: e.g. "backlog covers X% of Y1 projected revenue", "the top customers represent Y% of revenue, informing the company-specific risk premium". Only use KPIs actually present in the data — do not invent figures; omit KPIs that are unavailable.""",
+
+    "financial_projections": """Write the Financial Projections & Revenue Streams section:
+1. **Projection summary table** — revenue, gross profit, EBITDA, EBIT, FCFF for Y0-Y5 from the workpaper context.
+2. **Per-stream breakdown table** — for each revenue stream: base revenue, growth profile, the basis for that growth (market data/sources used, from the stream's growth basis), gross margin, and the related incremental costs (COGS and related opex such as sales & marketing/distribution) so the reader sees each stream's impact on free cash flow. Label rows per stream (e.g. "COGS — Stream A"). Explain HOW incremental costs were derived (cost ratios linked to stream revenue).
+3. A chart fence for revenue by stream (stacked) and one for margin evolution.
+4. If a validation flag marks unproven new segments, disclose it here plainly.""",
+
+    "dcf_analysis": """Write the DCF Analysis — FCFF & Present Value section:
+1. FCFF construction table by year (EBIT, tax, D&A add-back, capex, ΔNWC, FCFF).
+2. Present value: discount factors at the WACC, PV of explicit-period FCFF, PV of terminal value, enterprise value — show the split between explicit-period value and terminal value (and its % contribution).
+3. A chart fence for FCFF evolution.
+4. Narrative: what drives the cash-flow trajectory (tie to operating drivers), and note the second (independent) scenario exists as a conservative reference discussed under Cross-Checks.""",
+
+    "terminal_value": """Write the Terminal Value Analysis section:
+1. Method (Gordon growth or exit multiple) and the terminal growth rate, with justification referenced against long-run nominal GDP of the operating jurisdiction — the terminal growth rate should not exceed nominal GDP; if a validation flag shows it is at or above nominal GDP − 50bps, justify it explicitly here.
+2. Terminal value and its share of enterprise value.
+3. ALWAYS include the WACC × terminal growth sensitivity matrix from the context as a markdown table, followed by 2-3 sentences interpreting the economically plausible region.""",
+
+    "wacc": """Write the Discount Rate (WACC) Summary — CONCISE, main-body version (extended theory belongs in the appendix):
+1. A build-up table with each component as its own labelled row for both scenarios: risk-free rate, levered beta × equity risk premium, country risk premium, size premium, **Company-Specific Risk Premium** (its own clearly-labelled row), = cost of equity; after-tax cost of debt; capital-structure weights; = WACC.
+2. One-line rationale per component (source and reasoning, stated naturally).
+3. For the company-specific risk premium, explain what company factors drive it (concentration, governance maturity, scale) and note that it directly raises the discount rate and lowers the enterprise value.
+Do NOT include IFRS extracts or extended Damodaran/Kroll methodology discussion here — that is appendix material.""",
+
+    "coco_selection": """Write the Comparable Company Selection & Rationale section: the screening criteria (exchange, size, sub-industry, geography, margin profile), the selected comparable set with one-line business descriptions, and which comps drive the beta. Present the comp set as a table. Note that the comparables serve the cross-check and WACC derivation — not the primary valuation.""",
+
+    "ev_equity_bridge": """Write the EV-to-Equity Bridge section: a waterfall table from enterprise value through surplus/non-operating assets, net debt, minority interests to equity value, then DLOM and DLOC application to the concluded equity value, with one-line justification for the DLOM and DLOC rates. Show both scenarios' end-points where available.""",
+
+    "concluded_range": """Write the Concluded Valuation Range section — the single place the conclusion lives:
+1. State the concluded enterprise value range and concluded equity value range, derived from the DCF (management scenario as the anchor).
+2. Explain WHY the DCF is adopted as the primary methodology (visibility of company-specific cash-flow drivers, stage of the company, limitations of market benchmarks for this profile).
+3. State which scenario anchors the range and how the range bounds were set.
+NO competing headline numbers here — cross-checks and downside cases belong in the next section.""",
+
+    "cross_checks": """Write the Cross-Checks and Sensitivities section:
+1. **ONE consolidated table of ALL materially different enterprise values**: management-scenario DCF, independent-scenario DCF, market-approach implied EV, recent-transactions implied EV — each with its % variance vs the concluded (DCF) value and a one-line commentary.
+2. **Cross-check verdict** — state plainly whether the market approach and recent transactions fall within the ±10% band of the DCF EV ("within reasonable range") or not ("outside cross-check range"). If either is outside, add a short explanation subsection commenting on likely reasons (limited comparables, outlier transactions, sector conditions, stage/profile mismatch).
+3. **Sensitivities** — summarise the WACC × terminal growth matrix and any stress considerations. Frame the independent/downside cases explicitly as diligence reference points supporting the robustness of the conclusion, NOT as competing headline valuations.""",
+
+    "assumptions_rationale": """Write the Key Assumptions and Rationale section as clear bullet groups:
+1. **Revenue growth** — base business and each additional revenue stream, with brief rationale per assumption (sector CAGR, company market share, product adoption, contracts/backlog) drawn from the assumption support notes — paraphrased naturally, never quoting internal labels.
+2. **Margins and costs** — COGS/gross margin and operating expense assumptions and how they evolve over the forecast, including per-stream cost ratios.
+3. **Working capital and capex** — the % of revenue assumptions and their basis.
+4. **Terminal value** — the long-term growth rate (or exit multiple) and its justification vs nominal GDP and industry maturity.
+Each bullet: assumption → value → one-to-two-line rationale with its basis stated naturally.""",
+
+    "risk_factors": """Write the Principal Risks and Mitigants section: 3-5 risks tied to the model's characteristics — e.g. execution risk on new/unproven revenue streams (especially any flagged by validation as lacking contractual support), customer concentration (link to the company-specific risk premium), assumption-support gaps, market conditions. Each risk: 2-3 sentences plus a mitigant. Every validation flag in the context that has not been disclosed in an earlier section MUST be covered here.""",
+
+    "data_sources": """Write the Data Sources subsection — categorised, accurate, and quotable. Cover as categories, listing the actual sources used per the workpaper context with retrieval/as-of dates where available:
+1. Company historical financials and management projections (company-provided information: audited financial statements, management accounts, business development plan).
+2. Market and industry growth data (quotable third-party sources: e.g. Damodaran NYU Stern datasets, sovereign bond yields, IMF/World Bank GDP data, named industry reports and web research used for revenue-stream growth).
+3. Comparable company trading data and transaction data (public filings, stock exchange data, reputable financial data platforms).
+List only sources actually reflected in the workpaper context — do not pad with generic providers that were not used.""",
+
+    "appendix_methodology": """Write the Appendix — Methodology & Technical References: the extended material deliberately kept out of the main body. Cover: the DCF methodology in full (FCFF definition, discounting convention, terminal value theory); the WACC framework (CAPM, Hamada re-levering, size and specific risk premia with references to Damodaran/Kroll data); IFRS 13 fair value hierarchy context; DLOM/DLOC theory and reference studies; and any extended legal/accounting citations. This is the ONLY section where extended theoretical discussion belongs.""",
+
+    "conclusion": """Write the Valuation Conclusion: restate the concluded enterprise value and equity value range and the basis (income approach / DCF as primary, cross-checked against market approaches within the stated band), the valuation date, and the intended use (consistent with the Purpose and Use section). Two short paragraphs maximum, signature-block-ready.""",
+}
 
 
 def _build_industry_drs_prompt(
@@ -2255,6 +2501,14 @@ async def generate_report_bg(
                 company, tier, tier_instruction, company_context,
             )
             references_section = ""
+        elif report_type == "valuation_report":
+            system_prompt = _build_valuation_report_prompt(
+                company, tier, tier_instruction, template,
+                extra_knowledge, company_context,
+            )
+            # Valuation report: natural basis statements, no numbered citations,
+            # no references section.
+            references_section = ""
         else:
             system_prompt = f"""You are a senior financial advisor at Orionmano Assurance Services (Hong Kong-based), specialising in Nasdaq IPO advisory for Asia-Pacific companies. All deliverables target Nasdaq listing standards (Capital Market / Global Market / Global Select Market), SEC registration (S-1 / F-1 / 20-F / 6-K), PCAOB-audited financials, and US GAAP / IFRS reconciliation paths. Do NOT reference HKEX, HKSIR, SEHK, Bursa Malaysia, or other non-US listing regimes as the regulatory perimeter.
 Generate professional report content. Be concise, data-driven, and specific.
@@ -2300,6 +2554,9 @@ Tier: {tier.upper()} — {tier_instruction}
         # Outstanding-items and alternative reports share the same transaction-grade envelope.
         if report_type in ("gap_analysis", "dd_report", "outstanding_items", "alternative_report"):
             max_tokens_per_section = {"essential": 1000, "standard": 2000, "premium": 3000}.get(tier, 2000)
+        # Valuation sections carry Key Takeaways + tables + chart fences + narrative.
+        if report_type == "valuation_report":
+            max_tokens_per_section = {"essential": 1200, "standard": 2400, "premium": 3500}.get(tier, 2400)
         # Industry reports pack chart JSON + markdown tables + dense prose +
         # several <cite/> tags into every section. The standard envelope was
         # truncating mid-cite-tag and mid-chart-JSON, so widen it.
@@ -2334,6 +2591,14 @@ Tier: {tier.upper()} — {tier_instruction}
                 "Work SOLELY from available information. Do NOT include any 'Information Required' flags, "
                 "outstanding-items list, or information-request section. Where data is missing, proceed on a "
                 "clearly-labelled reasonable assumption (e.g. 'Assuming, pending confirmation, …') rather than stopping."
+            )
+        elif report_type == "valuation_report":
+            gap_user_suffix = (
+                " Do NOT use inline citation numbers like [1], [2]. State the basis of information naturally "
+                "(e.g., 'Based on the FY2025 audited financial statements' or 'Per Damodaran's implied ERP data'). "
+                "Open with 3-5 'Key Takeaways' bullets, then tables/charts, then short narrative. "
+                "NEVER reference goal-seek, target valuations, calibration, pinned parameters, internal "
+                "worksheet/sheet names, or machine parameter IDs — this is a client-facing document."
             )
         elif report_type == "industry_report":
             gap_user_suffix = (
@@ -2383,6 +2648,8 @@ Tier: {tier.upper()} — {tier_instruction}
                     section_instruction = OUTSTANDING_SECTION_INSTRUCTIONS.get(section_key, "")
                 elif report_type == "alternative_report":
                     section_instruction = ALTERNATIVE_SECTION_INSTRUCTIONS.get(section_key, "")
+                elif report_type == "valuation_report":
+                    section_instruction = VALUATION_SECTION_INSTRUCTIONS.get(section_key, "")
                 elif report_type == "industry_report":
                     section_instruction = INDUSTRY_SECTION_INSTRUCTIONS.get(section_key, "")
                     use_reasoner = section_key in INDUSTRY_REASONER_SECTIONS
@@ -2570,6 +2837,20 @@ Tier: {tier.upper()} — {tier_instruction}
                     timeout=180,
                 )
                 report.lint_findings = findings
+            except Exception:
+                report.lint_findings = None
+
+        # Valuation report: deterministic internal-reference scan (client
+        # requirement — goal-seek / worksheet-name / process references must
+        # never reach the client-facing document). Pure string matching, no
+        # LLM call.
+        if report_type == "valuation_report":
+            from app.services.report.lint import internal_reference_findings
+            await db.refresh(report)
+            try:
+                report.lint_findings = internal_reference_findings(
+                    sorted(report.sections, key=lambda s: s.sort_order)
+                ) or None
             except Exception:
                 report.lint_findings = None
 

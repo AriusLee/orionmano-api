@@ -83,6 +83,34 @@ def _overlay_xlsx_authoritative_values(summary: dict[str, Any], xlsx_path: Path)
         w_in = wacc.setdefault("independent", {})
         if pm_wacc is not None: w_pm["wacc"] = pm_wacc
         if in_wacc is not None: w_in["wacc"] = in_wacc
+
+        # Keep the DCF-primary conclusion + cross-check variances consistent
+        # with the authoritative xlsx EV (compute.py derived them from the
+        # Python EV, which can drift ~1-2% from the recalc'd workbook).
+        if pm_ev is not None:
+            concluded = summary.get("concluded")
+            if isinstance(concluded, dict):
+                concluded["ev"] = pm_ev
+            cross = summary.get("cross_checks")
+            if isinstance(cross, dict):
+                cross["primary_ev"] = pm_ev
+                tol = float(cross.get("tolerance_pct") or 0.10)
+                any_available = False
+                any_outside = False
+                for chk in cross.get("checks") or []:
+                    if not chk.get("available"):
+                        continue
+                    implied = chk.get("implied_ev")
+                    if not implied or not pm_ev:
+                        continue
+                    variance = (float(implied) - pm_ev) / pm_ev
+                    chk["variance_pct"] = variance
+                    chk["within_range"] = abs(variance) <= tol
+                    any_available = True
+                    any_outside = any_outside or not chk["within_range"]
+                if any_available:
+                    cross["verdict"] = ("outside_cross_check_range" if any_outside
+                                        else "within_reasonable_range")
     except Exception:
         # Non-fatal — Python-computed summary stays in place.
         pass

@@ -195,6 +195,54 @@ async def apply_lint_fix(
     return new_a.strip(), new_b.strip(), None
 
 
+# ─── Deterministic internal-reference scan (valuation reports) ───────────────
+# Client requirement (2026-07 feedback, item 9c): the client-facing valuation
+# report must never reference internal process/worksheet artifacts. The prompt
+# forbids them; this scan is the deterministic backstop. Pure string matching —
+# no LLM call, cannot fail the report.
+
+_INTERNAL_REFERENCE_PATTERNS: list[tuple[str, str]] = [
+    (r"goal[\s-]?seek", "goal-seek mechanics"),
+    (r"back[\s-]?solv", "back-solving language"),
+    (r"target\s+valuation", "client target valuation"),
+    # Negative lookahead: comps like Transcat legitimately sell "calibration services"
+    (r"calibrat(?!ion[\s-]serv|ed instrument)", "calibration mechanics"),
+    (r"Value_Summary", "internal worksheet name"),
+    (r"segments_table|Inputs\s+sheet|named\s+range", "internal worksheet reference"),
+    (r"\bpinned\b", "pinned-parameter mechanics"),
+    (r"\b\w+_y[0-9]\b", "machine parameter ID"),
+    (r"Eric\s+item|Eric\s+20\d\d", "internal process note"),
+]
+
+
+def internal_reference_findings(sections: list[Any]) -> list[dict[str, Any]]:
+    """Scan section content for internal references that must not appear in a
+    client-facing valuation report. Returns findings in the same shape as the
+    LLM lint pass so they render in the same UI."""
+    out: list[dict[str, Any]] = []
+    for s in sections:
+        title = getattr(s, "section_title", None) or ""
+        content = getattr(s, "content", None) or ""
+        if not content.strip():
+            continue
+        for pattern, label in _INTERNAL_REFERENCE_PATTERNS:
+            for m in re.finditer(pattern, content, re.IGNORECASE):
+                start = max(0, m.start() - 80)
+                snippet = content[start:m.end() + 80].replace("\n", " ").strip()
+                out.append({
+                    "severity": "high",
+                    "kind": "other",
+                    "section_a": title,
+                    "section_b": title,
+                    "claim_a": snippet[:200],
+                    "claim_b": "",
+                    "issue": f"Internal reference leaked into client-facing report: {label} ('{m.group(0)}').",
+                    "suggested_fix": "Remove or rephrase into natural client-facing valuation language before delivery.",
+                })
+                break  # one finding per pattern per section is enough
+    return out
+
+
 async def lint_report(
     report_id: uuid.UUID,
     company_id: uuid.UUID | None,

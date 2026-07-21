@@ -78,6 +78,10 @@ class Segment(_Permissive):
     revenue_growth: list[float | None] | None = None  # growth rates from start_year onward
     gross_margin: list[float | None] | None = None  # per-year GM; either this OR cogs_pct
     cogs_pct: list[float | None] | None = None  # alternative to gross_margin (cogs_pct = 1 − gross_margin)
+    source: str | None = None  # "core" | "additional_stream" (user-defined via settings panel)
+    opex_pct_revenue: list[float | None] | None = None  # per-stream related opex (S&M/distribution) as % of stream revenue; when set the stream is carved out of the top-level opex base
+    growth_basis: str | None = None  # one-liner defending the growth vector, e.g. "Analyst override" or "Web research: <stat> (<source>, retrieved <date>)"
+    contractual_support: str | None = None  # contracts/backlog/MOUs supporting the stream; empty ⇒ unproven-segment validation flag may fire
 
 
 class Projections(_Permissive):
@@ -172,6 +176,7 @@ class Terminal(_Permissive):
     growth_rate: float | None = None
     exit_multiple_type: str | None = None
     exit_multiple_value: float | None = None
+    nominal_gdp_growth: float | None = None  # long-run nominal GDP growth of the operating jurisdiction; reference ceiling for growth_rate (validation flags g ≥ GDP − 50bps)
 
 
 # ─── Section F: WACC tri-scenario ────────────────────────────────────────────

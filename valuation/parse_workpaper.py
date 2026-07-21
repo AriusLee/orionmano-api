@@ -60,6 +60,7 @@ _SCALAR_MAP_OVERRIDES: dict[str, list[str]] = {
     "terminal_growth_rate": ["terminal", "growth_rate"],
     "terminal_exit_multiple_type": ["terminal", "exit_multiple_type"],
     "terminal_exit_multiple_value": ["terminal", "exit_multiple_value"],
+    "terminal_nominal_gdp_growth": ["terminal", "nominal_gdp_growth"],
     # Section F — WACC shared
     "risk_free_rate": ["wacc", "shared", "risk_free_rate"],
     "risk_free_rate_source": ["wacc", "shared", "risk_free_rate_source"],
@@ -378,7 +379,9 @@ def parse(xlsx_path: str | Path) -> dict[str, Any]:
 
     # 5. Segments table (Eric 2026-05-08 item 2) — overlay rows from the
     # optional segmented revenue model. Layout: col 0=name, 1=start_year,
-    # 2=initial revenue, 3-7=revenue_growth Y1-Y5, 8-12=gross_margin Y1-Y5.
+    # 2=initial revenue, 3-7=revenue_growth Y1-Y5, 8-12=gross_margin Y1-Y5,
+    # 13-17=opex_pct_revenue Y1-Y5, 18=source, 19=growth_basis,
+    # 20=contractual_support.
     seg_rows = _range_rows(wb, "segments_table")
     if seg_rows:
         kept_seg: list[dict[str, Any]] = []
@@ -396,23 +399,76 @@ def parse(xlsx_path: str | Path) -> dict[str, Any]:
                     entry["revenue_y0"] = initial
                 else:
                     entry["initial_revenue"] = initial
-            growth = [_coerce(row[3 + k] if 3 + k < len(row) else None, "percentage") for k in range(5)]
-            # Trim trailing Nones — keep only the contiguous filled prefix.
-            while growth and growth[-1] is None:
-                growth.pop()
+
+            def _vec(first_col: int) -> list[Any]:
+                arr = [_coerce(row[first_col + k] if first_col + k < len(row) else None,
+                               "percentage") for k in range(5)]
+                # Trim trailing Nones — keep only the contiguous filled prefix.
+                while arr and arr[-1] is None:
+                    arr.pop()
+                return arr
+
+            growth = _vec(3)
             if growth:
                 entry["revenue_growth"] = growth
-            gm = [_coerce(row[8 + k] if 8 + k < len(row) else None, "percentage") for k in range(5)]
-            while gm and gm[-1] is None:
-                gm.pop()
+            gm = _vec(8)
             if gm:
                 entry["gross_margin"] = gm
+            opex = _vec(13)
+            if opex:
+                entry["opex_pct_revenue"] = opex
+            for col_idx, key in ((18, "source"), (19, "growth_basis"),
+                                 (20, "contractual_support")):
+                v = _coerce(row[col_idx] if col_idx < len(row) else None, "text")
+                if v is not None:
+                    entry[key] = v
             kept_seg.append(entry)
         # Only overlay when the analyst actually filled in segments — otherwise
         # we'd clobber any segments the LLM produced (which are preserved in the
-        # _meta baseline at parse start).
+        # _meta baseline at parse start). Merge on segment name so metadata the
+        # visible sheet doesn't carry (or that the analyst blanked) survives from
+        # the baseline.
         if kept_seg:
-            baseline.setdefault("projections", {})["segments"] = kept_seg
+            baseline_segs = ((baseline.get("projections") or {}).get("segments")
+                             if isinstance(baseline.get("projections"), dict) else None) or []
+            by_name = {
+                (s.get("name") or "").strip().lower(): s
+                for s in baseline_segs if isinstance(s, dict)
+            }
+
+            def _export_view(arr: Any) -> list[Any]:
+                """What the exporter wrote to the visible 5-column table for a
+                baseline array: first 5 entries, trailing Nones trimmed."""
+                out = list(arr[:5]) if isinstance(arr, list) else []
+                while out and out[-1] is None:
+                    out.pop()
+                return out
+
+            def _arrays_equal(a: list[Any], b: list[Any]) -> bool:
+                if len(a) != len(b):
+                    return False
+                for x, y in zip(a, b):
+                    if x is None or y is None:
+                        if x is not y:
+                            return False
+                    elif abs(float(x) - float(y)) > 1e-9:
+                        return False
+                return True
+
+            merged_segs = []
+            for entry in kept_seg:
+                base = by_name.get((entry.get("name") or "").strip().lower(), {})
+                # If a visible array is byte-for-byte what the exporter wrote,
+                # the analyst didn't edit it — keep the baseline's full-fidelity
+                # version (the visible table caps arrays at 5 columns, which
+                # truncates the 6-entry Y0-indexed arrays of start_year=0
+                # segments).
+                for key in ("revenue_growth", "gross_margin", "opex_pct_revenue"):
+                    if key in entry and isinstance(base.get(key), list):
+                        if _arrays_equal(entry[key], _export_view(base[key])):
+                            entry.pop(key)
+                merged_segs.append({**base, **entry})
+            baseline.setdefault("projections", {})["segments"] = merged_segs
 
     return baseline
 

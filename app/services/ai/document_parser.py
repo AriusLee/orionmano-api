@@ -256,54 +256,83 @@ def extract_text_from_pptx(file_path: str) -> str:
 _FIN_STATEMENT_ANCHORS = (
     "consolidated statements of operations",
     "consolidated statement of operations",
+    "consolidated statement of profit or loss",
     "consolidated statements of profit or loss",
     "consolidated statements of comprehensive income",
     "consolidated balance sheet",
     "consolidated balance sheets",
-    "consolidated statements of financial position",
     "consolidated statement of financial position",
+    "consolidated statements of financial position",
+    "consolidated statement of cash flows",
     "consolidated statements of cash flows",
+    "consolidated statements of changes in equity",
+    "statement of financial position",
+    "statement of profit or loss",
     "total current assets",
     "total assets",
+    "total equity",
+    "total liabilities",
+    "amount due from a related",
+    "amount due to a shareholder",
+    "six months ended",
 )
 
 
 def _focused_excerpt(
     text: str,
-    head_chars: int = 10_000,
-    window_chars: int = 80_000,
-    total_cap: int = 95_000,
+    head_chars: int = 8_000,
+    window_chars: int = 16_000,
+    total_cap: int = 130_000,
 ) -> str:
-    """Bound what gets sent to the extraction LLM while guaranteeing the audited
+    """Bound what gets sent to the extraction LLM while guaranteeing the FULL
     financial statements are included for long filings (prospectus / DRS).
 
     Short docs (<= total_cap) are returned whole. For long docs we keep the head
-    (cover page / company info → classification + company_info) and splice in the
-    region around the first real financial-statement anchor (→ income statement,
-    balance sheet, cash flows). This is the extraction-time companion to the
-    report-side F-page source hierarchy."""
+    (cover / company info → classification) and splice in windows around EVERY
+    dense cluster of financial-statement anchors. In a prospectus the income
+    statement, balance sheet and the unaudited interim statements sit in separate
+    sections (often 400k+ chars apart), so a single window misses most of them.
+    Windows are ranked by anchor density (the real statements have many anchors
+    clustered together; stray narrative mentions have one) and taken up to the
+    char budget, then re-ordered into document order."""
     if len(text) <= total_cap:
         return text
 
     low = text.lower()
-    fin_pos = None
-    for anchor in _FIN_STATEMENT_ANCHORS:
-        i = low.find(anchor)
-        if i != -1:
-            fin_pos = i if fin_pos is None else min(fin_pos, i)
-
-    # No financials located, or they already fall inside the head window — just
-    # send the head-capped slice.
-    if fin_pos is None or fin_pos < head_chars:
+    positions = sorted(
+        m.start()
+        for a in _FIN_STATEMENT_ANCHORS
+        for m in re.finditer(re.escape(a), low)
+    )
+    if not positions:
         return text[:total_cap]
 
-    start = max(fin_pos - 3_000, head_chars)
-    combined = (
-        text[:head_chars]
-        + "\n\n[... intervening narrative sections omitted for extraction ...]\n\n"
-        + text[start:start + window_chars]
-    )
-    return combined[:total_cap]
+    # Merge nearby anchor hits into windows, counting anchors per window (density).
+    windows: list[list[int]] = []  # [start, end, density]
+    for p in positions:
+        s = max(p - 1_500, head_chars)
+        e = s + window_chars
+        if windows and s <= windows[-1][1]:
+            windows[-1][1] = max(windows[-1][1], e)
+            windows[-1][2] += 1
+        else:
+            windows.append([s, e, 1])
+
+    # Take the densest windows first (the actual statement blocks), up to budget.
+    budget = total_cap - head_chars
+    chosen: list[tuple[int, int]] = []
+    for s, e, _ in sorted(windows, key=lambda w: w[2], reverse=True):
+        if budget <= 0:
+            break
+        e = min(e, len(text), s + budget)
+        chosen.append((s, e))
+        budget -= (e - s)
+    chosen.sort()
+
+    parts = [text[:head_chars]]
+    for s, e in chosen:
+        parts.append("\n\n[... section omitted for extraction ...]\n\n" + text[s:e])
+    return "".join(parts)
 
 
 async def extract_document(file_path: str, filename: str | None = None) -> dict:
@@ -429,24 +458,42 @@ Valid slugs for `document_type` and `categories`:
   },
   "financial_data": {
     "currency": "",
-    "periods": ["FY2023", "FY2024"],
+    "unit": "",
+    "periods": ["FY2024", "FY2025", "H1_2024", "H1_2025"],
     "income_statement": {
       "revenue": {},
-      "cost_of_revenue": {},
+      "cost_of_sales": {},
       "gross_profit": {},
-      "operating_expenses": {},
+      "other_income": {},
+      "administrative_expenses": {},
+      "profit_from_operation": {},
+      "depreciation_amortisation": {},
       "finance_costs": {},
       "profit_before_tax": {},
       "taxation": {},
       "net_income": {}
     },
     "balance_sheet": {
-      "total_assets": {},
-      "total_liabilities": {},
-      "total_equity": {},
+      "property_plant_equipment": {},
+      "right_of_use_assets": {},
+      "trade_receivables": {},
+      "amount_due_from_related": {},
+      "amount_due_from_shareholder": {},
+      "contract_assets": {},
+      "cash": {},
       "current_assets": {},
+      "total_assets": {},
+      "trade_payables": {},
+      "amount_due_to_related": {},
+      "amount_due_to_shareholder": {},
+      "bank_borrowings": {},
+      "lease_liabilities": {},
+      "income_tax_payable": {},
       "current_liabilities": {},
-      "cash": {}
+      "total_liabilities": {},
+      "share_capital": {},
+      "retained_earnings": {},
+      "total_equity": {}
     },
     "cash_flow": {
       "operating": {},
@@ -466,7 +513,14 @@ Valid slugs for `document_type` and `categories`:
 }
 
 Only include sections where you found relevant data. Keep values as numbers where possible.
-For financial data, use the period as key (e.g. {"FY2023": 7522, "FY2024": 15291}).
+For financial data, use the period as key (e.g. {"FY2024": 7522, "FY2025": 15291}).
+
+FINANCIAL STATEMENTS — capture COMPLETELY and VERBATIM:
+- If the document contains consolidated financial statements (especially a prospectus / DRS / F-1 / audit report), extract EVERY line item and EVERY period column shown on the FACE statements — including any unaudited INTERIM / half-year periods (e.g. the six months ended 30 September). Label interim periods distinctly (e.g. "H1_2024", "H1_2025").
+- ALWAYS capture related-party balances — "amount due from / to a related company / shareholder / director". These are critical for diligence and are easily missed; do not skip them.
+- Take figures from the consolidated FACE statements. Do NOT substitute partial figures from individual account leadsheets / audit working papers for a line the face statement already shows.
+- NEVER invent a period or a value. If a line item or period is not in the document, omit that key — do not fill it with a guess, a zero, a carried-forward value, or a currency-converted value mislabelled as the original.
+- Preserve the original currency and unit exactly as stated (do not assume MYR/HKD/USD — read it from the document).
 """
 
     # Focused excerpt instead of a blind first-30k slice: for long filings this

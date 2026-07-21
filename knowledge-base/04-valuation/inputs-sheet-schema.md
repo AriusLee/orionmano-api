@@ -96,6 +96,23 @@ Columns:
 
 **Pragmatic v1:** carry `_y1` through `_y5` only. Schema reserves `_y6`-`_y10` for longer projections.
 
+#### Section D.1 — Revenue segments (`projections.segments[]`, optional)
+
+If non-empty, per-segment series aggregate into total revenue & gross profit; top-level `revenue_growth` + `gross_margin` are ignored. Each segment:
+
+| id | Parameter | Type | Notes |
+|---|---|---|---|
+| `name` | Segment / revenue-stream name | string | Required |
+| `start_year` | First projection year the stream exists | integer | `0` = already running; `k` = launches at Yk |
+| `revenue_y0` | Y0 revenue | currency | Required when `start_year == 0` |
+| `initial_revenue` | Revenue at `start_year` | currency | Required when `start_year > 0` |
+| `revenue_growth` | Growth from `start_year` onward | percentage[] | |
+| `gross_margin` / `cogs_pct` | Per-year margin (either form) | percentage[] | `cogs_pct = 1 − gross_margin` |
+| `source` | Origin of the segment | enum | `core` / `additional_stream` (user-defined via settings panel) |
+| `opex_pct_revenue` | Related opex (S&M / distribution) % of stream revenue | percentage[] | When set, the stream carries its own related-opex line and is carved out of the top-level opex base |
+| `growth_basis` | One-line defence of the growth vector | string | e.g. `"Analyst override"` or `"Web research: EV charging CAGR ~24% (BNEF, retrieved 2026-07)"` |
+| `contractual_support` | Contracts / backlog / MOUs supporting the stream | string | Leave empty only if genuinely none — empty triggers the unproven-segment validation flag |
+
 ### Section E — Terminal value (Core)
 
 | id | Parameter | Type | Default | Notes |
@@ -104,6 +121,7 @@ Columns:
 | `terminal_growth_rate` | Terminal growth rate | percentage | `0.03` | Used if `gordon_growth` |
 | `terminal_exit_multiple_type` | Exit multiple metric | enum | — | `EV/EBITDA` / `EV/Sales` / `P/E` |
 | `terminal_exit_multiple_value` | Exit multiple value | number | — | Used if `exit_multiple` |
+| `nominal_gdp_growth` | Long-run nominal GDP growth of the operating jurisdiction | percentage | `0.04` | Reference ceiling: `terminal_growth_rate` at or above `nominal_gdp_growth − 0.005` is flagged and must be explicitly justified. Cite IMF WEO / World Bank with retrieval date in `sources` |
 
 ### Section F — WACC inputs (Core, scenario-sensitive)
 
@@ -331,7 +349,8 @@ Backend produces this object; export pipeline maps it onto Inputs sheet named ra
     "method": "gordon_growth",
     "growth_rate": 0.03,
     "exit_multiple_type": null,
-    "exit_multiple_value": null
+    "exit_multiple_value": null,
+    "nominal_gdp_growth": 0.04
   },
   "wacc": {
     "shared": {
