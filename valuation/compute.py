@@ -655,17 +655,19 @@ def compute_summary(inputs: dict) -> dict[str, Any]:
     cross = _cross_checks(dcf_pm["ev"], ff, coco_stats, inputs)
     flags = _validation_flags(inputs, proj, cross)
 
-    # Concluded range: DCF is the sole primary methodology. Band from the
-    # analyst-selected range when set, else DCF EV at WACC ± one sensitivity step.
+    # Concluded range: DCF is the sole primary methodology. Use the analyst-
+    # selected band only when it actually BRACKETS the computed EV (the LLM
+    # emits selected_low/high as a pre-computation guess, which can miss the
+    # actual DCF EV badly); otherwise fall back to DCF EV at WACC ± one
+    # sensitivity step.
+    ev_pm = dcf_pm["ev"]
     low = ff.get("selected_low")
     high = ff.get("selected_high")
-    if low is None or high is None:
+    if low is None or high is None or not (float(low) <= ev_pm <= float(high)):
         grid, br, bc = sens["grid"], sens["base_row"], sens["base_col"]
-        lo_cell = grid[br + 1][bc] if br + 1 < len(grid) else None  # higher WACC ⇒ lower EV
-        hi_cell = grid[br - 1][bc] if br - 1 >= 0 else None
-        low = low if low is not None else lo_cell
-        high = high if high is not None else hi_cell
-    concluded = {"basis": "dcf_per_management", "ev": dcf_pm["ev"],
+        low = grid[br + 1][bc] if br + 1 < len(grid) else None  # higher WACC ⇒ lower EV
+        high = grid[br - 1][bc] if br - 1 >= 0 else None
+    concluded = {"basis": "dcf_per_management", "ev": ev_pm,
                  "low": low, "high": high}
 
     eng = _g(inputs, "engagement", default={}) or {}
