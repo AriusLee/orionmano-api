@@ -961,6 +961,31 @@ class ProduceValuationInputsSkill(Skill):
             getattr(company_obj, "target_valuation_basis", None)
         )
 
+        # Deliverable presentation currency (client requirement 2026-07-23:
+        # source documents may be SGD/MYR/etc. but the workpaper and report
+        # must present in the chosen currency, typically USD). Empty/None =
+        # let the LLM infer from the documents (legacy behavior).
+        presentation_currency = (
+            str(getattr(company_obj, "presentation_currency", None) or "").strip().upper() or None
+        )
+        if presentation_currency:
+            company_context = (
+                f"PRESENTATION CURRENCY (AUTHORITATIVE): the workpaper and all "
+                f"deliverables MUST be presented in {presentation_currency}. Set "
+                f"`currency.primary` to \"{presentation_currency}\". If the source "
+                f"financial statements are denominated in a DIFFERENT currency, "
+                f"convert EVERY monetary value (projections, historical_fs, bridge, "
+                f"segment revenues) into {presentation_currency} at the exchange rate "
+                f"prevailing at the valuation date; set `currency.alt` to the source "
+                f"currency, `currency.fx_rate_alt` to the rate expressed as source-currency "
+                f"units per 1 {presentation_currency}, and record the "
+                f"rate's source and as-at date in `sources.currency` (e.g. \"1 SGD = "
+                f"0.74 USD as at 2026-07-23, per exchange-rate data\"). The client's "
+                f"target valuation and any user-defined revenue-stream base amounts "
+                f"are ALREADY in {presentation_currency} — do NOT convert those.\n\n"
+                + company_context
+            )
+
         # Eric 2026-05-17 — analyst-pinned overrides from Company record.
         # Filtered to known keys only; values coerced to float in _apply_pinned_overrides.
         pinned_overrides_raw = getattr(company_obj, "pinned_overrides", None) or {}
@@ -1212,6 +1237,29 @@ class ProduceValuationInputsSkill(Skill):
             if normalized_exchange is not None:
                 eng = payload.setdefault("engagement", {})
                 eng["exchange_platform"] = normalized_exchange
+
+            # Presentation-currency enforcement. Forcing the label without the
+            # LLM having converted the values would mislabel money, so a
+            # mismatch triggers a retry with explicit feedback instead of a
+            # silent overwrite; a final-attempt mismatch is surfaced in the
+            # result message for the analyst.
+            currency_mismatch = False
+            if presentation_currency:
+                got_primary = str((payload.get("currency") or {}).get("primary") or "").strip().upper()
+                if got_primary != presentation_currency:
+                    if attempt < MAX_ATTEMPTS:
+                        last_validation_error = (
+                            f"currency.primary is '{got_primary or 'missing'}' but the client "
+                            f"requires the deliverable presented in {presentation_currency}. "
+                            f"Re-emit the FULL JSON with currency.primary set to "
+                            f"\"{presentation_currency}\" and EVERY monetary value converted "
+                            f"into {presentation_currency} at the valuation-date exchange rate "
+                            f"(record the rate in currency.fx_rate_alt and its source in "
+                            f"sources.currency)."
+                        )
+                        last_convergence_feedback = None
+                        continue
+                    currency_mismatch = True
 
             # Authoritatively set engagement.target_valuation using the precedence
             # computed above (kwarg > company > leave LLM value).
@@ -1483,6 +1531,12 @@ class ProduceValuationInputsSkill(Skill):
                 f"validated on attempt {attempt}/{MAX_ATTEMPTS}; "
                 f"cache_read={usage_totals['cache_read_input_tokens']} tokens)"
             ]
+            if currency_mismatch:
+                message_parts.append(
+                    f"WARNING: model presented in "
+                    f"{(payload.get('currency') or {}).get('primary')} instead of the "
+                    f"required {presentation_currency} — review before delivery"
+                )
             if target_valuation_effective is not None and last_implied_ev is not None:
                 target = float(target_valuation_effective)
                 gap = abs(last_implied_ev - target) / target if target > 0 else 0.0

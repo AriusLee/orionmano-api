@@ -21,6 +21,7 @@ class CompanyCreate(BaseModel):
     fye_interim: str | None = None
     target_valuation: float | None = None
     target_valuation_basis: str | None = None
+    presentation_currency: str | None = None
     valuation_date: date | None = None
     pinned_overrides: dict[str, Any] | None = None
     pinned_cocos: dict[str, Any] | None = None
@@ -46,6 +47,7 @@ class CompanyUpdate(BaseModel):
     fye_interim: str | None = None
     target_valuation: float | None = None
     target_valuation_basis: str | None = None
+    presentation_currency: str | None = None
     valuation_date: date | None = None
     pinned_overrides: dict[str, Any] | None = None
     pinned_cocos: dict[str, Any] | None = None
@@ -75,6 +77,7 @@ class CompanyResponse(BaseModel):
     fye_interim: str | None = None
     target_valuation: float | None = None
     target_valuation_basis: str | None = None
+    presentation_currency: str | None = None
     valuation_date: date | None = None
     pinned_overrides: dict[str, Any] | None = None
     pinned_cocos: dict[str, Any] | None = None

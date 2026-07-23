@@ -476,7 +476,13 @@ def _load_workpaper_context_for_report(company_id: UUID) -> str:
     cu = inputs.get("currency") or {}
     if cu:
         parts.append("\n### Reporting currency & units")
-        parts.append(f"- Primary: {cu.get('primary')}, Unit: {cu.get('unit')}")
+        parts.append(f"- Primary (presentation currency): {cu.get('primary')}, Unit: {cu.get('unit')}")
+        if cu.get("alt") and cu.get("fx_rate_alt"):
+            parts.append(
+                f"- Source financials denominated in {cu.get('alt')}; conversion rate "
+                f"1 {cu.get('primary')} = {cu.get('fx_rate_alt')} {cu.get('alt')} "
+                f"(state this rate and its basis in the Purpose and Data Sources sections)"
+            )
 
     proj = inputs.get("projections") or {}
     if proj:
@@ -1945,7 +1951,7 @@ _VALUATION_PURPOSE_STATEMENT = (
 VALUATION_SECTION_INSTRUCTIONS = {
     "purpose_and_use": f"""Write the "Purpose and Use of this Report" box — a short, boxed opening statement (use a blockquote). It MUST state, in this order:
 1. The valuation date and the subject company.
-2. That the valuation is prepared on an IFRS 13 fair value basis.
+2. That the valuation is prepared on an IFRS 13 fair value basis, and the presentation currency of the report. Where the underlying financial statements are denominated in a different currency, state the exchange rate applied and its as-at date (from the workpaper context).
 3. Intended use — use this exact positioning: "{_VALUATION_PURPOSE_STATEMENT}"
 4. A concise 3-4 line disclaimer: this report is not an offer or solicitation to buy or sell securities; it contains forward-looking statements subject to risks and uncertainties and actual results may differ materially; any investment decision should rely on the formal registration statement and offering documents, not this report.
 Keep the whole section under half a page. No Key Takeaways block for this section — it IS the box.""",
