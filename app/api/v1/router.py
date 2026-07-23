@@ -8,7 +8,6 @@ from app.api.v1.decks import router as decks_router
 from app.api.v1.memory import router as memory_router
 from app.api.v1.articles import router as articles_router
 from app.api.v1.valuation import router as valuation_router
-from app.api.v1.migration import router as migration_router  # TEMP — remove after disk migration
 
 v1_router = APIRouter(prefix="/api/v1")
 v1_router.include_router(auth_router)
@@ -20,4 +19,3 @@ v1_router.include_router(decks_router)
 v1_router.include_router(memory_router)
 v1_router.include_router(articles_router)
 v1_router.include_router(valuation_router)
-v1_router.include_router(migration_router)  # TEMP — remove after disk migration
