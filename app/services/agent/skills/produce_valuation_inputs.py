@@ -57,21 +57,41 @@ def _unit_multiplier(unit: str | None) -> float:
     return _UNIT_MULTIPLIERS.get(unit.strip().lower(), 1.0)
 
 
-def _implied_dcf_ev_actual(payload: dict) -> float | None:
-    """Run compute_summary on the payload and return the per-management DCF EV
-    scaled to ACTUAL currency units (multiplied by the workpaper's unit factor).
+VALID_TARGET_BASES = ("enterprise_value", "equity_value")
+
+
+def _normalize_target_basis(raw: Any) -> str:
+    """Coerce a stored/user-supplied basis to a valid value; default EV."""
+    s = str(raw or "").strip().lower()
+    return s if s in VALID_TARGET_BASES else "enterprise_value"
+
+
+def _implied_target_metric_actual(payload: dict, basis: str = "enterprise_value") -> float | None:
+    """Run compute_summary on the payload and return the per-management metric
+    the goal-seek targets, scaled to ACTUAL currency units (multiplied by the
+    workpaper's unit factor):
+      - enterprise_value → DCF EV
+      - equity_value     → equity value after DLOM/DLOC (post EV-to-equity bridge)
     target_valuation is in actual currency too, so this is the comparable value
-    for the goal-seek convergence check. Returns None on any failure."""
+    for the convergence check. Returns None on any failure."""
     try:
         from compute import compute_summary  # type: ignore
         summary = compute_summary(payload)
-        ev = summary.get("dcf", {}).get("per_management", {}).get("ev")
-        if not isinstance(ev, (int, float)) or ev <= 0:
+        if basis == "equity_value":
+            v = summary.get("bridge", {}).get("per_management", {}).get("after_dloc")
+        else:
+            v = summary.get("dcf", {}).get("per_management", {}).get("ev")
+        if not isinstance(v, (int, float)) or v <= 0:
             return None
         unit = (payload.get("currency") or {}).get("unit")
-        return float(ev) * _unit_multiplier(unit)
+        return float(v) * _unit_multiplier(unit)
     except Exception:
         return None
+
+
+def _implied_dcf_ev_actual(payload: dict) -> float | None:
+    """Back-compat alias — enterprise-value metric."""
+    return _implied_target_metric_actual(payload, "enterprise_value")
 
 
 # ─── Pinned overrides (Eric 2026-05-17) ──────────────────────────────────────
@@ -300,7 +320,8 @@ def _ensure_revenue_growth_primary(payload: dict) -> None:
     proj["revenue_growth_primary"] = [_clamp(g) for g in growth]
 
 
-def _calibrate_to_target(payload: dict, target_actual: float, pinned_keys: list[str] | None = None) -> float | None:
+def _calibrate_to_target(payload: dict, target_actual: float, pinned_keys: list[str] | None = None,
+                         basis: str = "enterprise_value") -> float | None:
     """Deterministic safety net: when the LLM goal-seek loop fails to land DCF
     EV within tolerance of target, binary-search a uniform multiplier that
     scales BOTH revenue_growth AND gross_margin (capped at sane ceilings) so
@@ -382,7 +403,7 @@ def _calibrate_to_target(payload: dict, target_actual: float, pinned_keys: list[
         ]
         apply(multiplier)
         try:
-            return _implied_dcf_ev_actual(payload)
+            return _implied_target_metric_actual(payload, basis)
         finally:
             for s, (g_snap, m_snap) in zip(segs, seg_snap):
                 if isinstance(s, dict):
@@ -661,13 +682,22 @@ SYSTEM_INSTRUCTION = (
 )
 
 
-def _build_user_prompt(context: str, target_valuation: float | None = None) -> str:
+def _build_user_prompt(context: str, target_valuation: float | None = None,
+                       target_basis: str = "enterprise_value") -> str:
+    basis_label = (
+        "EQUITY VALUE (after the EV-to-equity bridge: net debt, surplus assets, minority interests, then DLOM and DLOC)"
+        if target_basis == "equity_value" else "ENTERPRISE VALUE"
+    )
+    basis_metric = (
+        "equity value after DLOM/DLOC (per-management scenario)"
+        if target_basis == "equity_value" else "DCF Enterprise Value (per-management scenario)"
+    )
     goal_seek_block = (
         f"""
 
 # Goal-seek mode (target valuation is the GOAL, not a reference)
 
-The client has provided a target valuation of **{target_valuation}** in **ACTUAL currency units** (literally that many dollars/ringgit/etc. — NOT scaled by the workpaper unit). The pipeline scales the DCF Enterprise Value (per-management scenario) — which is stored in workpaper-unit thousands — up to actual currency before comparing to this target. Your job is to produce an assumption set whose actual-currency DCF EV lands within ±10% of the target.
+The client has provided a target valuation of **{target_valuation}** in **ACTUAL currency units** (literally that many dollars/ringgit/etc. — NOT scaled by the workpaper unit). **The target is expressed as an {basis_label}.** The pipeline scales the computed {basis_metric} — which is stored in workpaper-unit thousands — up to actual currency before comparing to this target. Your job is to produce an assumption set whose actual-currency {basis_metric} lands within ±10% of the target. Set `engagement.target_valuation_basis` to "{target_basis}".
 
 This is NOT free-form reference — the client is paying for a workpaper that DEFENDS this valuation. Treat the target as a hard goal and back-solve the levers below within their defensible bands. The client has already done their own analysis and submitted a realistic figure; your job is to support it with rigorous numbers, not to second-guess it.
 
@@ -924,6 +954,13 @@ class ProduceValuationInputsSkill(Skill):
             else target_valuation_company
         )
 
+        # What the target represents: enterprise_value (default) or
+        # equity_value (after the EV-to-equity bridge + DLOM/DLOC). Saved on
+        # the Company record next to target_valuation.
+        target_basis = _normalize_target_basis(
+            getattr(company_obj, "target_valuation_basis", None)
+        )
+
         # Eric 2026-05-17 — analyst-pinned overrides from Company record.
         # Filtered to known keys only; values coerced to float in _apply_pinned_overrides.
         pinned_overrides_raw = getattr(company_obj, "pinned_overrides", None) or {}
@@ -1121,7 +1158,7 @@ class ProduceValuationInputsSkill(Skill):
 
         for attempt in range(1, MAX_ATTEMPTS + 1):
             attempts_made = attempt
-            user_prompt = _build_user_prompt(company_context, target_valuation_effective)
+            user_prompt = _build_user_prompt(company_context, target_valuation_effective, target_basis)
             if attempt > 1 and last_validation_error:
                 user_prompt += (
                     f"\n\n# VALIDATION ERRORS FROM PREVIOUS ATTEMPT (FIX THESE)\n\n"
@@ -1181,6 +1218,7 @@ class ProduceValuationInputsSkill(Skill):
             if target_valuation_effective is not None:
                 eng = payload.setdefault("engagement", {})
                 eng["target_valuation"] = target_valuation_effective
+                eng["target_valuation_basis"] = target_basis
 
             # Eric 2026-05-08 item 6: per-run valuation date override.
             if valuation_date_run is not None:
@@ -1359,7 +1397,7 @@ class ProduceValuationInputsSkill(Skill):
             # Both sides are in actual currency units (the helper scales the
             # workpaper-unit EV up by currency.unit multiplier before returning).
             if target_valuation_effective is not None:
-                implied_ev = _implied_dcf_ev_actual(payload)
+                implied_ev = _implied_target_metric_actual(payload, target_basis)
                 last_implied_ev = implied_ev
                 if implied_ev is not None and implied_ev > 0:
                     target = float(target_valuation_effective)
@@ -1381,7 +1419,7 @@ class ProduceValuationInputsSkill(Skill):
                         )
                         last_convergence_feedback = (
                             f"\n\n# GOAL-SEEK CONVERGENCE FEEDBACK (attempt {attempt}/{MAX_ATTEMPTS})\n\n"
-                            f"Your assumptions produced a DCF per-management EV of "
+                            f"Your assumptions produced a per-management {'equity value (after DLOM/DLOC)' if target_basis == 'equity_value' else 'DCF EV'} of "
                             f"**{implied_ev:.0f}**, but the target is **{target:.0f}** "
                             f"(off by {divergence*100:.1f}%, need to {direction} EV by "
                             f"{abs(implied_ev - target):.0f}).\n\n"
@@ -1414,6 +1452,7 @@ class ProduceValuationInputsSkill(Skill):
                 calibration_applied = _calibrate_to_target(
                     payload, float(target_valuation_effective),
                     pinned_keys=applied_pinned_keys,
+                    basis=target_basis,
                 )
                 if calibration_applied is not None:
                     # Defensive re-apply: calibration is supposed to skip
@@ -1425,7 +1464,7 @@ class ProduceValuationInputsSkill(Skill):
                     # top-level arrays the xlsx cascade reads.
                     _sync_top_level_to_segments(payload)
                     # Recompute implied EV with calibrated growth array
-                    last_implied_ev = _implied_dcf_ev_actual(payload)
+                    last_implied_ev = _implied_target_metric_actual(payload, target_basis)
                     # Note the calibration in sources so the audit trail is honest
                     sources = payload.setdefault("sources", {})
                     src = sources.get("target_valuation") or {}
@@ -1448,7 +1487,7 @@ class ProduceValuationInputsSkill(Skill):
                 target = float(target_valuation_effective)
                 gap = abs(last_implied_ev - target) / target if target > 0 else 0.0
                 message_parts.append(
-                    f"DCF EV {last_implied_ev:.0f} vs target {target:.0f} "
+                    f"{'Equity value' if target_basis == 'equity_value' else 'DCF EV'} {last_implied_ev:.0f} vs target {target:.0f} "
                     f"(gap {gap*100:.1f}%"
                     + (f"; calibrated {calibration_applied:.3f}x" if calibration_applied else "")
                     + ")"

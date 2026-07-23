@@ -514,7 +514,7 @@ def _load_workpaper_context_for_report(company_id: UUID) -> str:
             parts.append(f"  - Revenue: {[round(v) for v in (s.get('revenue') or [])[:6]]}")
             parts.append(f"  - COGS: {[round(v) for v in (s.get('cogs') or [])[:6]]}")
             alloc = " (allocation at top-level ratio)" if s.get("opex_is_allocation") else " (stream-specific ratio)"
-            parts.append(f"  - Related opex{alloc}: {[round(v) for v in (s.get('opex') or [])[:6]]}")
+            parts.append(f"  - Direct expenses{alloc}: {[round(v) for v in (s.get('opex') or [])[:6]]}")
 
     term = inputs.get("terminal") or {}
     if term:
@@ -1968,7 +1968,7 @@ Every growth or margin claim MUST be tied to an operating driver (contracts, cap
 
     "financial_projections": """Write the Financial Projections & Revenue Streams section:
 1. **Projection summary table** — revenue, gross profit, EBITDA, EBIT, FCFF for Y0-Y5 from the workpaper context.
-2. **Per-stream breakdown table** — for each revenue stream: base revenue, growth profile, the basis for that growth (market data/sources used, from the stream's growth basis), gross margin, and the related incremental costs (COGS and related opex such as sales & marketing/distribution) so the reader sees each stream's impact on free cash flow. Label rows per stream (e.g. "COGS — Stream A"). Explain HOW incremental costs were derived (cost ratios linked to stream revenue).
+2. **Per-stream breakdown table** — for each revenue stream: base revenue, growth profile, the basis for that growth (market data/sources used, from the stream's growth basis), gross margin, and the related incremental costs (COGS and related opex such as sales & marketing/distribution) so the reader sees each stream's impact on free cash flow. Label rows per stream (e.g. "Revenue — Stream A", "COGS — Stream A", "Direct expenses — Stream A"). Explain HOW incremental costs were derived (cost ratios linked to stream revenue).
 3. A chart fence for revenue by stream (stacked) and one for margin evolution.
 4. If a validation flag marks unproven new segments, disclose it here plainly.""",
 

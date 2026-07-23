@@ -34,6 +34,7 @@ class Engagement(_Permissive):
     company_industry_global: str | None = None
     valuation_date: str  # ISO date string; not parsed strictly
     target_valuation: float | None = None  # client's target valuation; same currency × unit as workpaper
+    target_valuation_basis: str | None = None  # enterprise_value | equity_value (equity = after EV-to-equity bridge + DLOM/DLOC)
     exchange_platform: str | None = None  # exchange comparable-company pool is drawn from (e.g. NASDAQ, NYSE)
     report_purpose: str | None = None
     accounting_standard: str | None = None

@@ -46,6 +46,7 @@ _COLUMN_UPGRADES: list[str] = [
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS industry_report_addendum TEXT",
     "ALTER TABLE reports ADD COLUMN IF NOT EXISTS citation_health JSONB",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS additional_revenue_streams JSONB DEFAULT '[]'::jsonb",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS target_valuation_basis VARCHAR(20) DEFAULT 'enterprise_value'",
 ]
 
 

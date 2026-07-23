@@ -203,6 +203,50 @@ async def latest_workpaper(
     return summary
 
 
+@router.post("/values-only")
+async def generate_values_only(
+    company_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Generate a values-only copy of the active workpaper for external
+    circulation: all formulas converted to hard-coded values, formatting and
+    layout preserved, and model internals (hidden inputs sheet, helper sheets,
+    named ranges) stripped so recipients see only static numbers.
+
+    Requires computed cell values — LibreOffice headless recalc when available,
+    else the workbook's cached values (present after an analyst opens+saves the
+    file in Excel and re-uploads it). 409 when neither source exists."""
+    summary = _latest_summary_for(company_id)
+    if summary is None:
+        raise HTTPException(status_code=404, detail="No valuation workpaper generated yet")
+    xlsx_name = summary.get("xlsx_filename")
+    if not xlsx_name:
+        raise HTTPException(status_code=404, detail="Active workpaper has no xlsx file")
+    src = _valuations_dir() / xlsx_name
+    if not src.exists():
+        raise HTTPException(status_code=404, detail=f"Workpaper file missing: {xlsx_name}")
+
+    dst = src.with_name(src.stem + "-values-only.xlsx")
+    # valuation module is importable via the path bootstrap in the workpaper
+    # skill; reuse it so this endpoint works in slim deploys too.
+    import sys as _sys
+    from app.services.agent.skills.generate_valuation_workpaper import _VAL_DIR
+    if str(_VAL_DIR) not in _sys.path:
+        _sys.path.insert(0, str(_VAL_DIR))
+    from export_workpaper import export_values_only  # type: ignore
+
+    ok, message = export_values_only(src, dst)
+    if not ok:
+        raise HTTPException(status_code=409, detail=message)
+    return {
+        "status": "success",
+        "message": message,
+        "xlsx_url": f"/uploads/valuations/{dst.name}",
+        "xlsx_filename": dst.name,
+    }
+
+
 @router.post("/regenerate-from-inputs")
 async def regenerate_from_inputs(
     company_id: UUID,

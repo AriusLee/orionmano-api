@@ -45,6 +45,8 @@ Columns:
 | `company_industry_us` | Industry (US classification) | enum | — | Damodaran industry code |
 | `company_industry_global` | Industry (Global classification) | enum | — | Damodaran industry code |
 | `valuation_date` | Valuation date | date | — | Drives partial-year discount |
+| `target_valuation` | Client target valuation | currency | — | ACTUAL currency units (not scaled by `unit`); null when no target set |
+| `target_valuation_basis` | What the target represents | enum | `enterprise_value` | `enterprise_value` / `equity_value` — equity means after the EV-to-equity bridge (net debt, surplus assets, minority interests) AND DLOM/DLOC; the goal-seek pipeline compares the corresponding computed per-management metric to the target |
 | `report_purpose` | Purpose | enum | — | `BEV review` / `IPO pricing` / `Fairness opinion` / `M&A` / `Fundraising` |
 | `accounting_standard` | Accounting standard | enum | `IFRS` | `IFRS` / `US GAAP` / `IFRS 9 + IFRS 13` |
 | `engagement_team_partner` | Audit/engagement partner | text | — | |

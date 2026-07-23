@@ -625,6 +625,68 @@ def _recalc_with_libreoffice(xlsx_path: Path, vr: ValidationResult | None = None
             return False
 
 
+def export_values_only(src_path: Path, dst_path: Path) -> tuple[bool, str]:
+    """Produce a values-only copy of a populated workpaper for external
+    circulation: every formula cell replaced by its computed value, formatting
+    and layout preserved, and all model internals stripped (hidden _meta inputs
+    sheet, _dropdowns helper sheet, defined names).
+
+    Requires computed cell values: runs a LibreOffice headless recalc first;
+    if LibreOffice is unavailable, falls back to whatever cached values the
+    file already carries (e.g. a workbook the analyst opened in Excel, saved,
+    and re-uploaded). Returns (ok, message)."""
+    import tempfile as _tmp
+
+    with _tmp.TemporaryDirectory(prefix="values-only-") as td:
+        work = Path(td) / src_path.name
+        shutil.copy(src_path, work)
+        recalced = _recalc_with_libreoffice(work)
+
+        wb_vals = load_workbook(work, data_only=True)
+        wb = load_workbook(work)
+
+        # Sentinel: the DCF EV cell always carries a formula in a populated
+        # workpaper. If it has no cached value, we have nothing to paste.
+        sentinel = None
+        if "DCF" in wb_vals.sheetnames:
+            sentinel = wb_vals["DCF"]["I27"].value
+        if sentinel is None:
+            return False, (
+                "No computed cell values available for the values-only export. "
+                + ("LibreOffice recalc failed on this workbook."
+                   if recalced else
+                   "LibreOffice is not installed on this server, and the workbook "
+                   "has no cached values. Open the workpaper in Excel, save it, "
+                   "re-upload it via 'Re-upload', then generate the values-only "
+                   "copy again.")
+            )
+
+        replaced = 0
+        for ws in wb.worksheets:
+            vs = wb_vals[ws.title]
+            for row in ws.iter_rows():
+                for cell in row:
+                    v = cell.value
+                    if isinstance(v, str) and v.startswith("="):
+                        cell.value = vs.cell(row=cell.row, column=cell.column).value
+                        replaced += 1
+
+        # Strip model internals — the external file must not expose the inputs
+        # JSON (goal-seek levers, rationales), helper enum sheets, or named
+        # ranges that reveal parameter identifiers.
+        for hidden in ("_meta", "_dropdowns"):
+            if hidden in wb.sheetnames:
+                del wb[hidden]
+        for name in list(wb.defined_names.keys()):
+            del wb.defined_names[name]
+
+        wb.save(dst_path)
+        return True, (
+            f"Values-only workbook written ({replaced} formula cells converted"
+            + ("; recalculated via LibreOffice)" if recalced else "; used cached values)")
+        )
+
+
 def export(json_path: Path, skeleton_path: Path, output_path: Path) -> ValidationResult:
     if not skeleton_path.exists():
         # Auto-build skeleton if missing

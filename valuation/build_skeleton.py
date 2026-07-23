@@ -714,7 +714,7 @@ def build_projections_formulas(ws):
     section(SEG_BLOCK_SECTION_ROW, "Revenue streams — per-segment breakdown")
     ws.cell(row=SEG_BLOCK_NOTE_ROW, column=1, value=(
         "Driven by the Inputs 'Revenue segments' table. Unused slots stay blank. "
-        "'Related opex' uses the stream's own Opex% when provided (carved out of "
+        "'Direct expenses' uses the stream's own Opex% when provided (carved out of "
         "the top-level opex base), otherwise an allocation at the top-level ratio."
     )).font = SMALL_FONT
     ws.merge_cells(start_row=SEG_BLOCK_NOTE_ROW, start_column=1,
@@ -746,8 +746,8 @@ def build_projections_formulas(ws):
         )).font = NORMAL_FONT
         ws.cell(row=r_opex, column=1, value=(
             f'=IF({unused},"",IF({has_ratio},'
-            f'"Related opex — "&{seg_ref(i, SEG_COL_NAME)},'
-            f'"Related opex (allocated) — "&{seg_ref(i, SEG_COL_NAME)}))'
+            f'"Direct expenses — "&{seg_ref(i, SEG_COL_NAME)},'
+            f'"Direct expenses (allocated) — "&{seg_ref(i, SEG_COL_NAME)}))'
         )).font = NORMAL_FONT
         # Y0 revenue: only start_year=0 segments exist at Y0
         ws[f"C{r_rev}"] = f"=IF({unused},0,IF({s_expr}=0,{init},0))"
@@ -781,7 +781,7 @@ def build_projections_formulas(ws):
     ws.cell(row=R_SEG_CARVED, column=1,
             value="Carved-out revenue (streams with own Opex%)").font = SMALL_FONT
     ws.cell(row=R_SEG_OWN_OPEX, column=1,
-            value="Related opex — carved-out streams subtotal").font = SMALL_FONT
+            value="Direct expenses — carved-out streams subtotal").font = SMALL_FONT
     for y in range(1, PROJECTION_YEARS + 1):
         cur = col_for_year(y)
         carved_terms = []

@@ -681,6 +681,7 @@ def compute_summary(inputs: dict) -> dict[str, Any]:
             "industry": eng.get("company_industry_us"),
             "report_purpose": eng.get("report_purpose"),
             "target_valuation": eng.get("target_valuation"),
+            "target_valuation_basis": eng.get("target_valuation_basis"),
             "exchange_platform": eng.get("exchange_platform"),
         },
         "currency": {
