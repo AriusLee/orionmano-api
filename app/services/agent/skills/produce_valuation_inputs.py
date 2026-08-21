@@ -134,6 +134,11 @@ PINNABLE_PARAMS: dict[str, tuple[str, str]] = {
     "dloc_pct":                   ("bridge.dloc_pct",                           "percent"),
     "shares_outstanding":         ("bridge.shares_outstanding",                 "number"),
     "shares_outstanding_diluted": ("bridge.shares_outstanding_diluted",         "number"),
+    # 2026-08-21 — net debt is a balance-sheet fact, but the producer re-derives
+    # it each run and has silently dropped it between runs on the same
+    # engagement (Remsea: -300 one run, blank the next). Pinnable so the
+    # analyst can fix it once.
+    "net_debt_override":          ("bridge.net_debt_override",                  "currency"),
 }
 
 
