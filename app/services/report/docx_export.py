@@ -18,7 +18,6 @@ import json
 import os
 import re
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 from uuid import UUID
@@ -102,11 +101,9 @@ def _assemble_markdown(
     rendered into asset_dir as a side-effect of section assembly. `preamble`
     is rendered as italicized text immediately after the title page and
     before the first section heading (used for the DRS legal disclosure)."""
-    date_str = datetime.now().strftime("%d %B %Y")
     parts: list[str] = [
         f"% {title}",
         f"% {company_name}",
-        f"% {date_str}",
         "",
     ]
     if preamble:

@@ -64,7 +64,6 @@ SECTIONS: list[Section] = [
         Param("company_country", "Country of incorporation", "enum"),
         Param("company_industry_us", "Industry (US classification)", "enum"),
         Param("company_industry_global", "Industry (Global classification)", "enum"),
-        Param("valuation_date", "Valuation date", "date"),
         Param("report_purpose", "Report purpose", "enum"),
         Param("accounting_standard", "Accounting standard", "enum"),
         Param("engagement_team_partner", "Engagement partner", "text"),
@@ -97,18 +96,18 @@ SECTIONS: list[Section] = [
         # Eric 2026-05-18 — audited Y0 absolutes for the Projections sheet's
         # Y0 column. opex_y0 stored negative to match the cascade sign convention.
         Param("gross_profit_y0", "Gross profit (Y0)", "currency",
-              notes="Audited Y0 gross profit; populates Projections!C16"),
+              notes="Audited Y0 gross profit; populates the Projections Y0 gross-profit cell"),
         Param("opex_y0", "Operating expenses (Y0)", "currency",
-              notes="Audited Y0 opex (negative); populates Projections!C18"),
+              notes="Audited Y0 opex (negative); populates the Projections Y0 opex cell"),
         Param("ebitda_y0", "EBITDA (Y0)", "currency",
-              notes="Audited Y0 EBITDA; populates Projections!C19"),
+              notes="Audited Y0 EBITDA; populates the Projections Y0 EBITDA cell"),
         Param("ebit_y0", "EBIT (Y0)", "currency",
-              notes="Audited Y0 EBIT; populates Projections!C22"),
+              notes="Audited Y0 EBIT; populates the Projections Y0 EBIT cell"),
         # Eric 2026-05-19 #1 — tax + net income Y0 absolutes
         Param("tax_y0", "Tax (Y0)", "currency",
-              notes="Audited Y0 tax expense (negative); populates Projections!C26"),
+              notes="Audited Y0 tax expense (negative); populates the Projections Y0 tax cell"),
         Param("net_income_y0", "Net income (Y0)", "currency",
-              notes="Audited Y0 net income; populates Projections!C27"),
+              notes="Audited Y0 net income; populates the Projections Y0 net-income cell"),
         *vec("revenue_growth", "Revenue growth (total)", "percentage"),
         # Eric 2026-05-19 — conservative primary growth track (~historical
         # CAGR ±2pp); the gap between total and primary becomes the BDP-
@@ -475,7 +474,13 @@ SEGMENT_HEADERS = [
     "Growth basis",        # one-line defence of the growth vector (incl. web-research citation)
     "Contractual support", # contracts/backlog/MOUs; empty may trigger the unproven-segment flag
 ]
-SEGMENT_ROWS = 5  # placeholder rows; raise if a target genuinely has more lines
+# Slots in the Inputs 'Revenue segments' table, and therefore the number of
+# itemised stream lines on Projections. Raised 5 -> 8 on 2026-08-21: the Remsea
+# engagement carried 6 streams and the 6th (ASTRA) was silently dropped by the
+# old [:5] truncation in export_workpaper.populate_tables, forcing the client to
+# hand-type it into the Projections tab. export_workpaper now reads this
+# constant and warns on overflow instead of truncating in silence.
+SEGMENT_ROWS = 8
 
 # Segments-table column indices (1-based) used by Projections formulas
 SEG_COL_NAME = 1
@@ -487,20 +492,111 @@ SEG_COL_GM_LAST = 13
 SEG_COL_OPEX0 = 13    # Opex% segment-local index j lives at column 14 + j (clamped at 18)
 SEG_COL_OPEX_FIRST = 14
 SEG_COL_OPEX_LAST = 18
-
-# Projections sheet — per-segment breakdown block (rows appended BELOW the FCFF
-# section so no existing cross-sheet reference shifts). Each of the 5 segment
-# slots gets Revenue / COGS / Related-opex rows; two helper rows feed the
-# top-level opex carve-out.
-SEG_BLOCK_SECTION_ROW = 42
-SEG_BLOCK_NOTE_ROW = 43
-SEG_SLOT_FIRST_ROW = 44   # slot i (1-based) revenue row = 44 + (i-1)*4
-SEG_SLOT_STRIDE = 4       # revenue, cogs, opex, spacer
-R_SEG_CARVED = 64         # per-year revenue of streams with their own Opex%
-R_SEG_OWN_OPEX = 65       # per-year related-opex subtotal of those streams
+SEG_COL_SOURCE = 19   # "core" | "additional_stream"
 
 
 PROJECTION_YEARS = 5  # explicit forecast horizon; matches sample_inputs.json
+
+
+# ---------------------------------------------------------------------------
+# Projections sheet row map
+# ---------------------------------------------------------------------------
+# Every row number is DERIVED from SEGMENT_ROWS so the layout grows with the
+# slot count, and every cross-sheet reference (DCF, Comps, Football Field,
+# Sensitivity) reads these constants instead of a hardcoded literal.
+#
+# Layout follows the client's 2026-08-17 revision of the Remsea model:
+#
+#   Revenue & growth
+#     Revenue - Primary                 conservative capped track
+#       Core business baseline carryover    prior-year primary revenue
+#       Capped baseline growth              the increment at the capped rate
+#     Revenue growth (primary) %
+#     Revenue - Others                  = Total Revenue - Primary
+#       Core business excess upside         core segments above the capped track
+#       <one line per additional stream>
+#       Unallocated model adjustment        residual plug; ~0 when segments tie
+#     Sum of Revenue - Others (tie-out)
+#     Other revenue growth %
+#     Total Revenue
+#     Revenue growth (total) %
+#
+#   Cost of goods sold                  total COGS allocated pro-rata by the
+#     COGS - Primary                    revenue share of each line above, so
+#       <mirrors the two primary lines> the block ties to Total Revenue - Gross
+#     COGS - Others                     profit by construction.
+#       <mirrors each Others line>
+#     Total COGS
+#
+#   Profitability / Tax / Capex & WC / FCFF   (unchanged content, new rows)
+#   Revenue streams — per-segment breakdown   (appendix; feeds the opex carve-out)
+
+P_SEC_REVENUE = 6
+P_PRI_REV = 8                                   # Revenue - Primary
+P_PRI_CARRY = 9                                 #   Core business baseline carryover
+P_PRI_GROWTH_AMT = 10                           #   Capped baseline growth
+P_PRI_RG = 11                                   # Revenue growth (primary) %
+P_OTH_REV = 12                                  # Revenue - Others
+P_OTH_CORE_EXCESS = 13                          #   Core business excess upside
+P_OTH_SLOT_FIRST = P_OTH_CORE_EXCESS + 1        #   first additional-stream line
+P_OTH_SLOT_LAST = P_OTH_SLOT_FIRST + SEGMENT_ROWS - 1
+P_OTH_UNALLOC = P_OTH_SLOT_LAST + 1             #   Unallocated model adjustment
+P_OTH_SUM = P_OTH_UNALLOC + 1                   # Sum of Revenue - Others (tie-out)
+P_OTH_RG = P_OTH_SUM + 1                        # Other revenue growth %
+P_REV = P_OTH_RG + 1                            # Total Revenue
+P_RG = P_REV + 1                                # Revenue growth (total) %
+
+P_SEC_COGS = P_RG + 2
+P_COGS_PRI_HDR = P_SEC_COGS + 2                 # "COGS - Primary"
+P_COGS_CARRY = P_COGS_PRI_HDR + 1
+P_COGS_GROWTH_AMT = P_COGS_PRI_HDR + 2
+P_COGS_OTH_HDR = P_COGS_PRI_HDR + 3             # "COGS - Others"
+P_COGS_CORE_EXCESS = P_COGS_OTH_HDR + 1
+P_COGS_SLOT_FIRST = P_COGS_OTH_HDR + 2
+P_COGS_SLOT_LAST = P_COGS_SLOT_FIRST + SEGMENT_ROWS - 1
+P_COGS_UNALLOC = P_COGS_SLOT_LAST + 1
+P_COGS_TOTAL = P_COGS_UNALLOC + 1
+
+P_SEC_PROFIT = P_COGS_TOTAL + 2
+P_GP = P_SEC_PROFIT + 1                         # Gross profit
+P_GM = P_GP + 1                                 # Gross margin %
+P_OPEX = P_GP + 2                               # Operating expenses
+P_EBITDA = P_GP + 3
+P_EBITDAM = P_GP + 4
+P_DEP = P_GP + 5
+P_EBIT = P_GP + 6
+P_EBITM = P_GP + 7
+
+P_SEC_TAX = P_EBITM + 2
+P_TAX = P_SEC_TAX + 1
+P_NI = P_SEC_TAX + 2
+
+P_SEC_CAPEX = P_NI + 2
+P_CAPEX = P_SEC_CAPEX + 1
+P_NWC = P_SEC_CAPEX + 2
+P_DNWC = P_SEC_CAPEX + 3
+
+P_SEC_FCFF = P_DNWC + 2
+P_F_EBIT = P_SEC_FCFF + 1
+P_F_TAX = P_SEC_FCFF + 2
+P_F_DEP = P_SEC_FCFF + 3
+P_F_CAPEX = P_SEC_FCFF + 4
+P_F_DWC = P_SEC_FCFF + 5
+P_FCFF = P_SEC_FCFF + 6
+
+# Per-segment breakdown appendix. Each slot gets Revenue / COGS / Direct-expense
+# rows plus a spacer; two helper rows below feed the top-level opex carve-out.
+SEG_BLOCK_SECTION_ROW = P_FCFF + 2
+SEG_BLOCK_NOTE_ROW = SEG_BLOCK_SECTION_ROW + 1
+SEG_SLOT_FIRST_ROW = SEG_BLOCK_NOTE_ROW + 1   # slot i revenue row = FIRST + (i-1)*STRIDE
+SEG_SLOT_STRIDE = 4                            # revenue, cogs, direct expenses, spacer
+R_SEG_CARVED = SEG_SLOT_FIRST_ROW + SEGMENT_ROWS * SEG_SLOT_STRIDE
+R_SEG_OWN_OPEX = R_SEG_CARVED + 1
+
+
+def seg_slot_rev_row(i: int) -> int:
+    """Appendix revenue row for 1-based segment slot i."""
+    return SEG_SLOT_FIRST_ROW + (i - 1) * SEG_SLOT_STRIDE
 
 
 def col_for_year(y: int) -> str:
@@ -547,27 +643,63 @@ def build_projections_formulas(ws):
         if unit:
             ws.cell(row=row, column=2, value=unit).font = SMALL_FONT
 
+    # Segments-table cell references reused by the revenue, COGS and appendix
+    # blocks. Defined here so the inline itemisation and the appendix agree.
+    def seg_ref(i: int, col: int) -> str:
+        return f"INDEX(segments_table,{i},{col})"
+
+    def seg_unused(i: int) -> str:
+        return f'{seg_ref(i, SEG_COL_NAME)}=""'
+
+    def seg_is_core(i: int) -> str:
+        return f'EXACT({seg_ref(i, SEG_COL_SOURCE)},"core")'
+
     # ----- Revenue & growth -----
     # Eric 2026-05-19 — split revenue into Primary (conservative, ~historical
-    # CAGR) and Additional (BDP-justified stretch). Total = Primary + Additional
-    # and drives every downstream calculation. Primary cascades at
+    # CAGR) and Others (BDP-justified stretch). Total = Primary + Others and
+    # drives every downstream calculation. Primary cascades at
     # revenue_growth_primary_y{n}; Total cascades at revenue_growth_y{n} (the
-    # calibration target). Additional is computed as Total − Primary, with its
-    # own derived Y/Y growth shown for the analyst.
-    section(6, "Revenue & growth")
-    R_PRI_REV, R_PRI_RG, R_ADD_REV, R_ADD_RG, R_REV, R_RG = 8, 9, 10, 11, 12, 13
+    # calibration target).
+    #
+    # Client revision 2026-08-17 — both halves are now itemised in place:
+    #   Primary splits into the prior-year carryover plus the capped increment;
+    #   Others itemises core excess upside, one line per additional stream, and
+    #   a residual plug. The plug is the diagnostic: it sits at ~0 whenever the
+    #   segment build genuinely reconciles to the calibrated total, and grows
+    #   visibly when it does not.
+    R_PRI_REV, R_PRI_RG = P_PRI_REV, P_PRI_RG
+    R_OTH_REV, R_OTH_RG = P_OTH_REV, P_OTH_RG
+    R_REV, R_RG = P_REV, P_RG
+
+    section(P_SEC_REVENUE, "Revenue & growth")
     lrow(R_PRI_REV, "Revenue - Primary", "(currency × unit)")
+    lrow(P_PRI_CARRY, "  Core business baseline carryover")
+    lrow(P_PRI_GROWTH_AMT, "  Capped baseline growth")
     lrow(R_PRI_RG, "Revenue growth (primary)", "%")
-    lrow(R_ADD_REV, "Revenue - Additional", "(currency × unit)")
-    lrow(R_ADD_RG, "Additional Revenue growth", "%")
+    lrow(R_OTH_REV, "Revenue - Others", "(currency × unit)")
+    lrow(P_OTH_CORE_EXCESS, "  Core business excess upside")
+    lrow(P_OTH_UNALLOC, "  Unallocated model adjustment")
+    lrow(P_OTH_SUM, "Sum of Revenue - Others (tie-out)")
+    lrow(R_OTH_RG, "Other revenue growth", "%")
     lrow(R_REV, "Total Revenue", "(currency × unit)")
     lrow(R_RG, "Revenue growth (total)", "%")
-    # Y0 base — Primary and Total both start at revenue_y0; Additional = 0
+
+    # One itemised line per segment slot. Core-sourced slots are represented by
+    # the excess-upside line above (their capped portion is already inside
+    # Primary), so both their label and their value collapse to blank.
+    for i in range(1, SEGMENT_ROWS + 1):
+        r = P_OTH_SLOT_FIRST + (i - 1)
+        ws.cell(row=r, column=1, value=(
+            f'=IF(OR({seg_unused(i)},{seg_is_core(i)}),"","  "&{seg_ref(i, SEG_COL_NAME)})'
+        )).font = NORMAL_FONT
+
+    # Y0 base — Primary and Total both start at revenue_y0; Others = 0
     ws.cell(row=R_PRI_REV, column=3, value="=revenue_y0").border = BORDER
     ws.cell(row=R_PRI_REV, column=2, value="(from Inputs)").font = SMALL_FONT
     ws.cell(row=R_REV, column=3, value="=revenue_y0").border = BORDER
     ws.cell(row=R_REV, column=2, value="(from Inputs)").font = SMALL_FONT
-    ws.cell(row=R_ADD_REV, column=3, value=0).font = NORMAL_FONT
+    ws.cell(row=R_OTH_REV, column=3, value=0).font = NORMAL_FONT
+
     for y in range(1, PROJECTION_YEARS + 1):
         prev = col_for_year(y - 1)
         cur = col_for_year(y)
@@ -583,18 +715,103 @@ def build_projections_formulas(ws):
             f'=IF(ISNUMBER(revenue_growth_primary_y{y}),'
             f'revenue_growth_primary_y{y},revenue_growth_y{y})'
         )
+        # Primary split: carryover is last year's primary level, the growth row
+        # is the increment earned at the capped rate. The two sum back to
+        # Primary exactly, which is what keeps the COGS allocation tying.
+        ws[f"{cur}{P_PRI_CARRY}"] = f"={prev}{R_PRI_REV}"
+        ws[f"{cur}{P_PRI_GROWTH_AMT}"] = f"={prev}{R_PRI_REV}*{cur}{R_PRI_RG}"
         # Total cascades at calibrated total rate.
         ws[f"{cur}{R_REV}"] = f"={prev}{R_REV}*(1+revenue_growth_y{y})"
         ws[f"{cur}{R_RG}"] = f"=revenue_growth_y{y}"
-        # Additional = Total − Primary (the stretch the BDP must explain).
-        ws[f"{cur}{R_ADD_REV}"] = f"={cur}{R_REV}-{cur}{R_PRI_REV}"
-        # Additional growth — Y/Y of Additional itself. Y1 blanks via IFERROR
-        # because prior Additional = 0 → division by zero.
-        ws[f"{cur}{R_ADD_RG}"] = f'=IFERROR({cur}{R_ADD_REV}/{prev}{R_ADD_REV}-1,"")'
+        # Others = Total − Primary (the stretch the BDP must explain).
+        ws[f"{cur}{R_OTH_REV}"] = f"={cur}{R_REV}-{cur}{R_PRI_REV}"
+        # Core excess upside = core segments' revenue above the capped Primary
+        # track. Left unfloored: a negative value is real information (the
+        # capped track is running ahead of the core build) and flooring it here
+        # would silently break the tie-out below.
+        #
+        # The outer guard matters. With no core segment in the table (an
+        # unsegmented engagement, or one whose streams are all
+        # additional_stream) the naive form collapses to 0 - Primary, which
+        # would print a large negative excess line and an equal-and-opposite
+        # plug — two fabricated lines in a block that should read all zeros.
+        core_present = "OR(" + ",".join(
+            f"AND(NOT({seg_unused(i)}),{seg_is_core(i)})"
+            for i in range(1, SEGMENT_ROWS + 1)
+        ) + ")"
+        core_terms = "+".join(
+            f"IF(AND(NOT({seg_unused(i)}),{seg_is_core(i)}),{cur}{seg_slot_rev_row(i)},0)"
+            for i in range(1, SEGMENT_ROWS + 1)
+        )
+        ws[f"{cur}{P_OTH_CORE_EXCESS}"] = (
+            f"=IF({core_present},{core_terms}-{cur}{R_PRI_REV},0)"
+        )
+        # Additional streams — read straight off the appendix block so the
+        # inline itemisation and the per-segment detail can never diverge.
+        # Suppressed slots (empty, or core — already inside Primary) render
+        # blank rather than 0 so the block reads as a clean list; SUM and the
+        # plug below both ignore text, so the tie-out is unaffected.
+        for i in range(1, SEGMENT_ROWS + 1):
+            r = P_OTH_SLOT_FIRST + (i - 1)
+            ws[f"{cur}{r}"] = (
+                f'=IF(OR({seg_unused(i)},{seg_is_core(i)}),"",{cur}{seg_slot_rev_row(i)})'
+            )
+        # Residual plug — forces the itemisation to tie to Revenue - Others.
+        ws[f"{cur}{P_OTH_UNALLOC}"] = (
+            f"={cur}{R_OTH_REV}-{cur}{P_OTH_CORE_EXCESS}"
+            f"-SUM({cur}{P_OTH_SLOT_FIRST}:{cur}{P_OTH_SLOT_LAST})"
+        )
+        ws[f"{cur}{P_OTH_SUM}"] = (
+            f"=SUM({cur}{P_OTH_CORE_EXCESS}:{cur}{P_OTH_UNALLOC})"
+        )
+        # Others growth — Y/Y of Others itself. Y1 blanks via IFERROR because
+        # prior Others = 0 → division by zero.
+        ws[f"{cur}{R_OTH_RG}"] = f'=IFERROR({cur}{R_OTH_REV}/{prev}{R_OTH_REV}-1,"")'
+
+    # ----- Cost of goods sold -----
+    # Total COGS (= Total Revenue − Gross profit) allocated pro-rata across every
+    # revenue line above. Chosen over per-segment GM% so the block ties to the
+    # Profitability section by construction and can never contradict it. Direct
+    # row references replace the client's VLOOKUP-by-label, whose relative
+    # lookup ranges drifted a row per line and would have mis-resolved as soon
+    # as a stream was inserted or renamed.
+    section(P_SEC_COGS, "Cost of goods sold")
+    ws.cell(row=P_COGS_PRI_HDR, column=1, value="COGS - Primary").font = SECTION_FONT
+    ws.cell(row=P_COGS_OTH_HDR, column=1, value="COGS - Others").font = SECTION_FONT
+    lrow(P_COGS_TOTAL, "Total COGS", "(currency × unit)")
+    ws.cell(row=P_COGS_TOTAL, column=1).font = Font(bold=True)
+
+    # COGS line -> the revenue line it is allocated from. Labels mirror the
+    # revenue side so the two blocks read as one statement.
+    cogs_pairs: list[tuple[int, int]] = [
+        (P_COGS_CARRY, P_PRI_CARRY),
+        (P_COGS_GROWTH_AMT, P_PRI_GROWTH_AMT),
+        (P_COGS_CORE_EXCESS, P_OTH_CORE_EXCESS),
+        *[(P_COGS_SLOT_FIRST + (i - 1), P_OTH_SLOT_FIRST + (i - 1))
+          for i in range(1, SEGMENT_ROWS + 1)],
+        (P_COGS_UNALLOC, P_OTH_UNALLOC),
+    ]
+    for r_cogs, r_rev in cogs_pairs:
+        ws.cell(row=r_cogs, column=1, value=f"=A{r_rev}").font = NORMAL_FONT
+        for y in range(1, PROJECTION_YEARS + 1):
+            cur = col_for_year(y)
+            # Blank revenue row (suppressed slot) -> blank COGS row, mirroring
+            # the revenue block. IFERROR also absorbs a zero Total Revenue.
+            ws[f"{cur}{r_cogs}"] = (
+                f'=IF({cur}{r_rev}="","",'
+                f"IFERROR(({cur}{R_REV}-{cur}{P_GP})*{cur}{r_rev}/{cur}{R_REV},0))"
+            )
+    for y in range(1, PROJECTION_YEARS + 1):
+        cur = col_for_year(y)
+        ws[f"{cur}{P_COGS_TOTAL}"] = (
+            f"=SUM({cur}{P_COGS_CARRY}:{cur}{P_COGS_UNALLOC})"
+        )
+        ws.cell(row=P_COGS_TOTAL, column=3 + y).font = Font(bold=True)
 
     # ----- Profitability -----
-    section(15, "Profitability")
-    R_GP, R_GM, R_OPEX, R_EBITDA, R_EBITDAM, R_DEP, R_EBIT, R_EBITM = 16, 17, 18, 19, 20, 21, 22, 23
+    section(P_SEC_PROFIT, "Profitability")
+    R_GP, R_GM, R_OPEX = P_GP, P_GM, P_OPEX
+    R_EBITDA, R_EBITDAM, R_DEP, R_EBIT, R_EBITM = P_EBITDA, P_EBITDAM, P_DEP, P_EBIT, P_EBITM
     lrow(R_GP, "Gross profit", "(currency × unit)")
     lrow(R_GM, "Gross margin", "%")
     lrow(R_OPEX, "Operating expenses", "(currency × unit)")
@@ -613,10 +830,9 @@ def build_projections_formulas(ws):
     ws[f"C{R_EBITDAM}"] = "=IFERROR(ebitda_y0/revenue_y0,\"\")"
     ws[f"C{R_EBIT}"] = "=IFERROR(ebit_y0,\"\")"
     ws[f"C{R_EBITM}"] = "=IFERROR(ebit_y0/revenue_y0,\"\")"
-    # Eric 2026-05-19 #1 — Y0 Tax + Net income on rows 26 / 27 (was 22/23
-    # pre-primary/additional split)
-    ws["C26"] = "=IFERROR(tax_y0,\"\")"
-    ws["C27"] = "=IFERROR(net_income_y0,\"\")"
+    # Eric 2026-05-19 #1 — Y0 Tax + Net income absolutes
+    ws[f"C{P_TAX}"] = "=IFERROR(tax_y0,\"\")"
+    ws[f"C{P_NI}"] = "=IFERROR(net_income_y0,\"\")"
     for y in range(1, PROJECTION_YEARS + 1):
         cur = col_for_year(y)
         ws[f"{cur}{R_GP}"] = f"={cur}{R_REV}*gross_margin_y{y}"
@@ -637,8 +853,8 @@ def build_projections_formulas(ws):
         ws[f"{cur}{R_EBITM}"] = f"=IFERROR({cur}{R_EBIT}/{cur}{R_REV},0)"
 
     # ----- Tax & net income -----
-    section(25, "Tax & net income")
-    R_TAX, R_NI = 26, 27
+    section(P_SEC_TAX, "Tax & net income")
+    R_TAX, R_NI = P_TAX, P_NI
     lrow(R_TAX, "Tax", "(currency × unit)")
     lrow(R_NI, "Net income", "(currency × unit)")
     for y in range(1, PROJECTION_YEARS + 1):
@@ -658,8 +874,8 @@ def build_projections_formulas(ws):
         ws[f"{cur}{R_NI}"] = f"={cur}{R_EBIT}+{cur}{R_TAX}"
 
     # ----- Capex & working capital -----
-    section(29, "Capex & working capital")
-    R_CAPEX, R_NWC, R_DNWC = 30, 31, 32
+    section(P_SEC_CAPEX, "Capex & working capital")
+    R_CAPEX, R_NWC, R_DNWC = P_CAPEX, P_NWC, P_DNWC
     lrow(R_CAPEX, "Capex", "(currency × unit)")
     lrow(R_NWC, "Net working capital", "(currency × unit)")
     lrow(R_DNWC, "Δ Working capital", "(currency × unit)")
@@ -674,8 +890,9 @@ def build_projections_formulas(ws):
         ws[f"{cur}{R_DNWC}"] = f"=-({cur}{R_NWC}-{prev}{R_NWC})"
 
     # ----- FCFF -----
-    section(34, "FCFF construction")
-    R_F_EBIT, R_F_TAX, R_F_DEP, R_F_CAPEX, R_F_DWC, R_FCFF = 35, 36, 37, 38, 39, 40
+    section(P_SEC_FCFF, "FCFF construction")
+    R_F_EBIT, R_F_TAX, R_F_DEP = P_F_EBIT, P_F_TAX, P_F_DEP
+    R_F_CAPEX, R_F_DWC, R_FCFF = P_F_CAPEX, P_F_DWC, P_FCFF
     lrow(R_F_EBIT, "EBIT", "(currency × unit)")
     lrow(R_F_TAX, "Less: Tax on EBIT", "(currency × unit)")
     lrow(R_F_DEP, "Add: Depreciation", "(currency × unit)")
@@ -695,11 +912,17 @@ def build_projections_formulas(ws):
     ws.cell(row=R_FCFF, column=1).font = Font(bold=True)
 
     # Format hints — apply percentage format to margin rows; integer to monetary
-    pct_rows = [R_PRI_RG, R_ADD_RG, R_RG, R_GM, R_EBITDAM, R_EBITM]
+    pct_rows = [R_PRI_RG, R_OTH_RG, R_RG, R_GM, R_EBITDAM, R_EBITM]
     for r in pct_rows:
         for y in range(1, PROJECTION_YEARS + 1):
             ws.cell(row=r, column=3 + y).number_format = "0.0%"
-    money_rows = [R_PRI_REV, R_ADD_REV, R_REV, R_GP, R_OPEX, R_EBITDA, R_DEP, R_EBIT, R_TAX, R_NI,
+    money_rows = [R_PRI_REV, P_PRI_CARRY, P_PRI_GROWTH_AMT, R_OTH_REV,
+                  P_OTH_CORE_EXCESS, P_OTH_UNALLOC, P_OTH_SUM,
+                  *range(P_OTH_SLOT_FIRST, P_OTH_SLOT_LAST + 1),
+                  P_COGS_CARRY, P_COGS_GROWTH_AMT, P_COGS_CORE_EXCESS,
+                  *range(P_COGS_SLOT_FIRST, P_COGS_SLOT_LAST + 1),
+                  P_COGS_UNALLOC, P_COGS_TOTAL,
+                  R_REV, R_GP, R_OPEX, R_EBITDA, R_DEP, R_EBIT, R_TAX, R_NI,
                   R_CAPEX, R_NWC, R_DNWC, R_F_EBIT, R_F_TAX, R_F_DEP, R_F_CAPEX, R_F_DWC, R_FCFF]
     for r in money_rows:
         for y in range(0, PROJECTION_YEARS + 1):
@@ -720,13 +943,10 @@ def build_projections_formulas(ws):
     ws.merge_cells(start_row=SEG_BLOCK_NOTE_ROW, start_column=1,
                    end_row=SEG_BLOCK_NOTE_ROW, end_column=8)
 
-    def seg_ref(i: int, col: int) -> str:
-        return f"INDEX(segments_table,{i},{col})"
-
     slot_rev_rows: list[int] = []
     slot_opex_rows: list[int] = []
     for i in range(1, SEGMENT_ROWS + 1):
-        base = SEG_SLOT_FIRST_ROW + (i - 1) * SEG_SLOT_STRIDE
+        base = seg_slot_rev_row(i)
         r_rev, r_cogs, r_opex = base, base + 1, base + 2
         slot_rev_rows.append(r_rev)
         slot_opex_rows.append(r_opex)
@@ -998,7 +1218,7 @@ def build_dcf_formulas(ws, scenario: str = "per_mgmt"):
     lrow(R_PV, "PV of FCFF", "(currency × unit)")
     for y in range(1, PROJECTION_YEARS + 1):
         col = get_column_letter(3 + y)
-        ws[f"{col}{R_FCFF}"] = f"=Projections!{col}40"  # Projections row 40 = FCFF
+        ws[f"{col}{R_FCFF}"] = f"=Projections!{col}{P_FCFF}"
         ws[f"{col}{R_PERIOD}"] = y
         ws[f"{col}{R_DF}"] = f"=1/(1+{wacc_ref})^{col}{R_PERIOD}"
         ws[f"{col}{R_PV}"] = f"={col}{R_FCFF}*{col}{R_DF}"
@@ -1020,7 +1240,7 @@ def build_dcf_formulas(ws, scenario: str = "per_mgmt"):
     TC = get_column_letter(3 + PROJECTION_YEARS + 1)  # I
     LAST_Y_COL = get_column_letter(3 + PROJECTION_YEARS)  # H
     ws[f"{TC}{R_TM}"] = "=terminal_method"
-    ws[f"{TC}{R_TFCFF}"] = f"=Projections!{LAST_Y_COL}40"
+    ws[f"{TC}{R_TFCFF}"] = f"=Projections!{LAST_Y_COL}{P_FCFF}"
     # Gordon: FCFF_y5 × (1+g) / (WACC - g)
     ws[f"{TC}{R_TGORDON}"] = (
         f"=IFERROR({TC}{R_TFCFF}*(1+terminal_growth_rate)/({wacc_ref}-terminal_growth_rate),0)"
@@ -1028,11 +1248,11 @@ def build_dcf_formulas(ws, scenario: str = "per_mgmt"):
     # Exit multiple — switches on type: EV/EBITDA -> Y5 EBITDA × mult, EV/Sales -> Y5 Total Revenue × mult, P/E -> Y5 NI × mult
     ws[f"{TC}{R_TEXIT}"] = (
         f'=IF(EXACT(terminal_exit_multiple_type,"EV/EBITDA"),'
-        f'Projections!{LAST_Y_COL}19*terminal_exit_multiple_value,'
+        f'Projections!{LAST_Y_COL}{P_EBITDA}*terminal_exit_multiple_value,'
         f'IF(EXACT(terminal_exit_multiple_type,"EV/Sales"),'
-        f'Projections!{LAST_Y_COL}12*terminal_exit_multiple_value,'
+        f'Projections!{LAST_Y_COL}{P_REV}*terminal_exit_multiple_value,'
         f'IF(EXACT(terminal_exit_multiple_type,"P/E"),'
-        f'Projections!{LAST_Y_COL}27*terminal_exit_multiple_value,0)))'
+        f'Projections!{LAST_Y_COL}{P_NI}*terminal_exit_multiple_value,0)))'
     )
     ws[f"{TC}{R_TSEL}"] = (
         f'=IF(EXACT(terminal_method,"exit_multiple"),{TC}{R_TEXIT},{TC}{R_TGORDON})'
@@ -1564,9 +1784,9 @@ def build_comps_formulas(ws):
     R_SALES, R_EBITDA, R_PE = 7, 8, 9
     multiple_rows = [
         # (label, target_cell_on_projections, multiples_col_on_CoCoMult, gives_eq)
-        (R_SALES, "EV/Sales NTM", "Projections!D12", _MULT_COL["ev_sales_ntm"], False),
-        (R_EBITDA, "EV/EBITDA NTM", "Projections!D19", _MULT_COL["ev_ebitda_ntm"], False),
-        (R_PE, "P/E NTM (gives Equity)", "Projections!D27", _MULT_COL["pe_ntm"], True),
+        (R_SALES, "EV/Sales NTM", f"Projections!D{P_REV}", _MULT_COL["ev_sales_ntm"], False),
+        (R_EBITDA, "EV/EBITDA NTM", f"Projections!D{P_EBITDA}", _MULT_COL["ev_ebitda_ntm"], False),
+        (R_PE, "P/E NTM (gives Equity)", f"Projections!D{P_NI}", _MULT_COL["pe_ntm"], True),
     ]
     for r, label, target_ref, mult_col, gives_eq in multiple_rows:
         ws.cell(row=r, column=1, value=label).font = NORMAL_FONT
@@ -1712,9 +1932,9 @@ def build_football_field_formulas(ws):
     PREC_FIRST = 158  # follows cocos_table at 127:156 + 1 banner row (157) + header (157) — actual computed at runtime
     # Use a dynamic reference via the named range to avoid hardcoding
     lrow(R_PREC, "Precedent transactions",
-         f"=IFERROR(MIN(IF(INDEX(precedents_table,0,1)=TRUE,INDEX(precedents_table,0,7)*Projections!D19,\"\")),0)",
-         f"=IFERROR(AVERAGEIFS(INDEX(precedents_table,0,7),INDEX(precedents_table,0,1),TRUE)*Projections!D19,0)",
-         f"=IFERROR(MAX(IF(INDEX(precedents_table,0,1)=TRUE,INDEX(precedents_table,0,7)*Projections!D19,\"\")),0)",
+         f"=IFERROR(MIN(IF(INDEX(precedents_table,0,1)=TRUE,INDEX(precedents_table,0,7)*Projections!D{P_EBITDA},\"\")),0)",
+         f"=IFERROR(AVERAGEIFS(INDEX(precedents_table,0,7),INDEX(precedents_table,0,1),TRUE)*Projections!D{P_EBITDA},0)",
+         f"=IFERROR(MAX(IF(INDEX(precedents_table,0,1)=TRUE,INDEX(precedents_table,0,7)*Projections!D{P_EBITDA},\"\")),0)",
          "=weight_precedent",
          "Mean EV/EBITDA × Y1 EBITDA across included precedents")
     ws.cell(row=R_PREC, column=1).font = Font(bold=True)
@@ -1820,7 +2040,7 @@ def build_sensitivity_formulas(ws):
         ws.column_dimensions[get_column_letter(c)].width = 13
 
     # Rows 7-13: WACC (Per-Mgmt base ± offset × sens_wacc_step)
-    BASE_FCFF_ROW = 40  # Projections row holding FCFF
+    BASE_FCFF_ROW = P_FCFF  # Projections row holding FCFF
     for i in range(GRID_W):
         row = HDR_ROW + 1 + i
         offset = i - BASE_IDX
@@ -2234,13 +2454,12 @@ def build_readme_sheet(ws):
     kv(6, "Country of incorporation", "=company_country")
     kv(7, "Industry (US)", "=company_industry_us")
     kv(8, "Industry (Global)", "=company_industry_global")
-    kv(9, "Valuation date", "=valuation_date")
-    kv(10, "Report purpose", "=report_purpose")
-    kv(11, "Accounting standard", "=accounting_standard")
-    kv(12, "Client (engaging party)", "=client_name")
-    kv(13, "Engagement partner", "=engagement_team_partner")
-    kv(14, "Engagement manager", "=engagement_team_manager")
-    kv(15, "Department", "=engagement_department")
+    kv(9, "Report purpose", "=report_purpose")
+    kv(10, "Accounting standard", "=accounting_standard")
+    kv(11, "Client (engaging party)", "=client_name")
+    kv(12, "Engagement partner", "=engagement_team_partner")
+    kv(13, "Engagement manager", "=engagement_team_manager")
+    kv(14, "Department", "=engagement_department")
 
     # ── Currency & units ───────────────────────────────────────────────
     section(17, "Currency & units")
@@ -2408,7 +2627,7 @@ def build_dashboard_sheet(ws):
     downstream sheets — live-updating as inputs change."""
     write_header_band(ws, 1, "Valuation Dashboard")
     # Sub-header pulls company + valuation date dynamically
-    sub = ws.cell(row=2, column=1, value='=company_name & " — Valuation as at " & TEXT(valuation_date,"yyyy-mm-dd") & " · " & report_purpose')
+    sub = ws.cell(row=2, column=1, value='=company_name & " · " & report_purpose')
     sub.font = SMALL_FONT
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=8)
 
@@ -2466,9 +2685,9 @@ def build_dashboard_sheet(ws):
         c.alignment = Alignment(horizontal="center", wrap_text=True)
         c.border = BORDER
     method_rows = [
-        ("DCF (across scenarios)",   "='Football Field'!C7",  "='Football Field'!D7",  "='Football Field'!E7",  "=weight_dcf",       "='Football Field'!F7",  "Per-Mgmt vs Independent WACC."),
-        ("Comparable Companies",     "='Football Field'!C11", "='Football Field'!D11", "='Football Field'!E11", "=weight_comps",     "='Football Field'!F11", "Cross-check vs DCF (±10% band)."),
-        ("Precedent Transactions",   "='Football Field'!C12", "='Football Field'!D12", "='Football Field'!E12", "=weight_precedent", "='Football Field'!F12", "Cross-check vs DCF (±10% band)."),
+        ("DCF (across scenarios)",   "='Football Field'!B7",  "='Football Field'!C7",  "='Football Field'!D7",  "=weight_dcf",       "='Football Field'!F7",  "Per-Mgmt vs Independent WACC."),
+        ("Comparable Companies",     "='Football Field'!B11", "='Football Field'!C11", "='Football Field'!D11", "=weight_comps",     "='Football Field'!F11", "Cross-check vs DCF (±10% band)."),
+        ("Precedent Transactions",   "='Football Field'!B12", "='Football Field'!C12", "='Football Field'!D12", "=weight_precedent", "='Football Field'!F12", "Cross-check vs DCF (±10% band)."),
     ]
     for i, row in enumerate(method_rows):
         r = 13 + i

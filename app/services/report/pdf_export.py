@@ -8,7 +8,6 @@ chrome via the cached translation service before rendering.
 import asyncio
 import os
 from uuid import UUID
-from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -255,7 +254,6 @@ async def generate_report_pdf(
     company_name = company.name if company else "Company"
     report_type_label_en = REPORT_TYPE_LABELS.get(report.report_type, report.report_type)
     icon = REPORT_ICONS.get(report.report_type, "&#128196;")
-    date_str = datetime.now().strftime("%d %B %Y")
     brand = brand_for(report.report_type)
     brand_logo = brand_logo_data_uri(brand)
     brand_logo_html = (
@@ -312,7 +310,7 @@ async def generate_report_pdf(
   {logo_html}
   <h1>{company_name}</h1>
   <div class="report-type">{report_type_label}</div>
-  <div class="date">{chrome["transaction_services"]} | {date_str}</div>
+  <div class="date">{chrome["transaction_services"]}</div>
   <div class="conf">{chrome["strictly_confidential"]}</div>
 </div>
 

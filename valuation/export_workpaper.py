@@ -25,9 +25,20 @@ from typing import Any
 from openpyxl import load_workbook
 from openpyxl.workbook.defined_name import DefinedName
 
+# build_skeleton lives beside this module and is imported as a top-level name
+# (valuation/ is a script directory, not a package). Ensure it is importable
+# regardless of how this module was entered.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from build_skeleton import SEGMENT_ROWS  # type: ignore  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SKELETON = REPO_ROOT / "materials" / "templates" / "orionmano-valuation-template-v1.xlsx"
-DEFAULT_OUTPUT = REPO_ROOT / "materials" / "templates" / "out" / "valuation.xlsx"
+# Anchor on BACKEND_ROOT, not REPO_ROOT: build_skeleton.py writes the skeleton
+# to backend/materials/templates and generate_valuation_workpaper.py reads it
+# from there. The old REPO_ROOT default pointed one level higher, so CLI runs
+# silently exported against a stale skeleton checked in at the repo root.
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_SKELETON = BACKEND_ROOT / "materials" / "templates" / "orionmano-valuation-template-v1.xlsx"
+DEFAULT_OUTPUT = BACKEND_ROOT / "materials" / "templates" / "out" / "valuation.xlsx"
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +52,6 @@ SCALAR_PATHS: dict[str, str] = {
     "company_country": "engagement.company_country",
     "company_industry_us": "engagement.company_industry_us",
     "company_industry_global": "engagement.company_industry_global",
-    "valuation_date": "engagement.valuation_date",
     "report_purpose": "engagement.report_purpose",
     "accounting_standard": "engagement.accounting_standard",
     "engagement_team_partner": "engagement.engagement_team.partner",
@@ -232,9 +242,70 @@ class ValidationResult:
         return not self.errors
 
 
+_Y0_ABSOLUTES = ("gross_profit_y0", "opex_y0", "ebitda_y0", "ebit_y0",
+                 "tax_y0", "net_income_y0")
+# Y0 lines that are costs and must reach the workpaper signed negative, because
+# the Projections cascade adds them (EBITDA = gross profit + opex).
+_Y0_NEGATIVE = ("opex_y0", "tax_y0")
+
+
+def normalize_payload(payload: dict, vr: ValidationResult) -> None:
+    """Repair two recurring LLM slips in the Y0 absolutes before they reach the
+    workbook. Both were live on the Remsea engagement (2026-08): the Y0 column
+    rendered a 54,167% gross margin.
+
+    1. Scale. `revenue_y0` and `nwc_y0` are emitted in the presentation unit
+       ('000 / 'mm) but the income-statement absolutes are sometimes emitted in
+       raw currency units, leaving them 1,000x out against revenue. Detected by
+       comparing gross_profit_y0 to revenue_y0 — a real gross margin cannot be
+       10x revenue — and corrected by dividing the whole Y0 block by the unit
+       multiplier so the block stays internally consistent.
+    2. Sign. Cost lines emitted positive.
+
+    Both repairs are reported as warnings so the analyst sees what moved.
+    """
+    proj = payload.get("projections")
+    if not isinstance(proj, dict):
+        return
+
+    rev = proj.get("revenue_y0")
+    gp = proj.get("gross_profit_y0")
+    unit = str(get_path(payload, "currency.unit") or "").strip().lower()
+    mult = {"'000": 1_000.0, "000": 1_000.0, "thousands": 1_000.0,
+            "'mm": 1_000_000.0, "mm": 1_000_000.0, "millions": 1_000_000.0,
+            "'bn": 1_000_000_000.0, "bn": 1_000_000_000.0}.get(unit)
+
+    if mult and rev and gp and abs(gp) > abs(rev) * 10:
+        # Only rescale when doing so lands gross profit inside a sane band
+        # relative to revenue; otherwise this is a data problem, not a unit one.
+        if abs(gp) / mult <= abs(rev):
+            for key in _Y0_ABSOLUTES:
+                v = proj.get(key)
+                if isinstance(v, (int, float)):
+                    proj[key] = v / mult
+            vr.warn(
+                f"Y0 absolutes were {mult:,.0f}x out of scale against "
+                f"revenue_y0={rev} (unit {unit}); rescaled "
+                f"{', '.join(_Y0_ABSOLUTES)} to the presentation unit."
+            )
+        else:
+            vr.err(
+                f"gross_profit_y0={gp} is implausible against revenue_y0={rev} "
+                f"and is not a clean unit-scale error; the Projections Y0 "
+                f"column will not reconcile."
+            )
+
+    for key in _Y0_NEGATIVE:
+        v = proj.get(key)
+        if isinstance(v, (int, float)) and v > 0:
+            proj[key] = -v
+            vr.warn(f"projections.{key} was positive ({v}); flipped to negative "
+                    f"to match the Projections sign convention.")
+
+
 def validate_payload(payload: dict, vr: ValidationResult) -> None:
     # Required engagement fields
-    for path in ("engagement.company_name", "engagement.valuation_date",
+    for path in ("engagement.company_name",
                  "currency.primary", "currency.unit"):
         if get_path(payload, path) in (None, ""):
             vr.err(f"required field missing: {path}")
@@ -525,7 +596,15 @@ def populate_tables(wb, payload: dict, vr: ValidationResult) -> int:
         start_addr, _ = range_part.split(":")
         start_addr = start_addr.replace("$", "")
         _, start_row = cell_addr_components(start_addr)
-        segs = ((payload.get("projections") or {}).get("segments") or [])[:5]
+        all_segs = (payload.get("projections") or {}).get("segments") or []
+        if len(all_segs) > SEGMENT_ROWS:
+            vr.err(
+                f"projections.segments has {len(all_segs)} streams but the workpaper "
+                f"has only {SEGMENT_ROWS} slots; the extra streams would be dropped "
+                f"silently and the Projections itemisation would not tie. Raise "
+                f"SEGMENT_ROWS in build_skeleton.py and regenerate the skeleton."
+            )
+        segs = all_segs[:SEGMENT_ROWS]
         for i, seg in enumerate(segs):
             r = start_row + i
             inputs_ws.cell(row=r, column=1, value=seg.get("name"))
@@ -699,6 +778,7 @@ def export(json_path: Path, skeleton_path: Path, output_path: Path) -> Validatio
         payload = json.load(f)
 
     vr = ValidationResult()
+    normalize_payload(payload, vr)
     validate_payload(payload, vr)
     validate_sources_completeness(payload, vr)
 
