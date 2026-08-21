@@ -354,6 +354,68 @@ def normalize_payload(payload: dict, vr: ValidationResult) -> None:
                     f"to match the Projections sign convention.")
 
 
+def validate_segment_reconciliation(payload: dict, vr: ValidationResult) -> None:
+    """The top-level revenue cascade and the segment aggregate must agree.
+
+    Projections derives `Revenue - Others` from the top-level cascade
+    (Total − Primary) but itemises it from the segments, so the difference lands
+    in `Unallocated model adjustment`. That plug is the design's honest signal:
+    ~0 when the two engines agree, large when they do not.
+
+    It only became load-bearing once analyst pins started surviving
+    _sync_top_level_to_segments. Pinning `revenue_growth` while also specifying
+    segments over-determines the model — Remsea 2026-08-21 pinned 10% Y1 total
+    growth while launching three streams worth 1,584 on a 1,584 base, and the
+    plug ran to −94% of revenue. Previously sync silently overwrote the pin;
+    now the pin wins, so the contradiction has to be refused here rather than
+    shipped as a workbook whose revenue split cannot tie.
+    """
+    proj = payload.get("projections") or {}
+    segs = proj.get("segments") or []
+    if not isinstance(segs, list) or not segs:
+        return
+    rev0 = proj.get("revenue_y0")
+    if not isinstance(rev0, (int, float)) or rev0 == 0:
+        return  # already reported by normalize_payload
+    n_years = int(proj.get("years") or 5)
+    growth = [float(g or 0) for g in (proj.get("revenue_growth") or [])][:n_years]
+    if len(growth) < n_years:
+        return
+
+    try:
+        from compute import _segment_series  # type: ignore
+    except Exception:
+        return
+
+    top = [float(rev0)]
+    for g in growth:
+        top.append(top[-1] * (1 + g))
+    seg_total = [0.0] * (n_years + 1)
+    for s in segs:
+        if not isinstance(s, dict):
+            continue
+        r, _gp = _segment_series(s, n_years)
+        for y in range(n_years + 1):
+            seg_total[y] += r[y]
+
+    worst = max(
+        range(1, n_years + 1),
+        key=lambda y: abs(top[y] - seg_total[y]) / abs(top[y]) if top[y] else 0.0,
+    )
+    denom = abs(top[worst]) or 1.0
+    gap_pct = (top[worst] - seg_total[worst]) / denom
+    if abs(gap_pct) > 0.02:
+        vr.err(
+            f"Revenue does not reconcile: the top-level cascade gives "
+            f"{top[worst]:,.1f} in Y{worst} but the segments sum to "
+            f"{seg_total[worst]:,.1f} — a gap of {gap_pct * 100:+.1f}%, which lands "
+            f"in 'Unallocated model adjustment' on Projections. The two are "
+            f"over-determined: revenue_growth is pinned or set independently of the "
+            f"segment build. Either unpin revenue_growth so it derives from the "
+            f"segments, or correct the segments to match the pinned growth."
+        )
+
+
 def validate_payload(payload: dict, vr: ValidationResult) -> None:
     # Required engagement fields
     for path in ("engagement.company_name",
@@ -831,6 +893,7 @@ def export(json_path: Path, skeleton_path: Path, output_path: Path) -> Validatio
     vr = ValidationResult()
     normalize_payload(payload, vr)
     validate_payload(payload, vr)
+    validate_segment_reconciliation(payload, vr)
     validate_sources_completeness(payload, vr)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
