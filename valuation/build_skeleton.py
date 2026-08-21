@@ -2408,10 +2408,18 @@ def build_historical_fs_formulas(ws):
     R_NWC, R_ND = 47, 48
     lrow(R_NWC, "Net working capital  (= current assets − current liabilities)")
     lrow(R_ND, "Net debt  (= short-term debt + long-term debt − cash)")
+    # ABS() on every term because the balance-sheet sign convention is NOT
+    # enforced anywhere: the schema declares no sign for these fields, and the
+    # producer has written liabilities negative (Remsea: short-term debt -40).
+    # The original formulas read the labels literally — `=C28-C39` and
+    # `=C37+C41-C24` — so a negative liability was subtracted a second time.
+    # On Remsea that reported NWC 680 (true 200) and net debt -300 (true -60),
+    # a 5x overstatement of net cash that then fed the analyst's bridge.
+    # Taking magnitudes makes both rows correct under either convention.
     for y in range(n_years):
         col = get_column_letter(3 + y)
-        ws[f"{col}{R_NWC}"] = f"={col}28-{col}39"
-        ws[f"{col}{R_ND}"] = f"={col}37+{col}41-{col}24"
+        ws[f"{col}{R_NWC}"] = f"=ABS({col}28)-ABS({col}39)"
+        ws[f"{col}{R_ND}"] = f"=ABS({col}37)+ABS({col}41)-ABS({col}24)"
         ws[f"{col}{R_NWC}"].number_format = "#,##0"
         ws[f"{col}{R_ND}"].number_format = "#,##0"
         ws[f"{col}{R_NWC}"].font = Font(bold=True)
