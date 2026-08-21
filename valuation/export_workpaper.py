@@ -286,6 +286,41 @@ def normalize_payload(payload: dict, vr: ValidationResult) -> None:
         )
         return
 
+    # Segment Y0 revenue must reconcile to the top-level base. This is a stated
+    # invariant of the producer schema, and it is the only reliable detector for
+    # a revenue_y0 that is internally consistent but expressed in the wrong
+    # unit: when the whole Y0 block is scaled together, the gross-margin check
+    # below cannot see the problem (858000/1584000 is still a valid 54% margin).
+    # Remsea 2026-08-21: revenue_y0 pinned in raw dollars (1,584,000) while the
+    # segments stayed in '000 (1,584), producing a mixed-scale model with a
+    # $56bn EV and $452/share.
+    segs = proj.get("segments") or []
+    if isinstance(segs, list) and segs:
+        base_segs = [
+            s for s in segs
+            if isinstance(s, dict) and int(s.get("start_year") or 0) == 0
+        ]
+        seg_base = sum(float(s.get("revenue_y0") or 0) for s in base_segs)
+        if base_segs and seg_base > 0 and abs(seg_base - rev) > 0.01 * abs(rev):
+            ratio = rev / seg_base
+            hint = ""
+            for factor, name in ((1_000, "'000"), (1_000_000, "'mm")):
+                if abs(ratio - factor) < 0.01 * factor:
+                    hint = (f" The ratio is ~{factor:,}x, so revenue_y0 looks like it is in "
+                            f"actual currency while the segments are in {name} — check for a "
+                            f"pinned revenue_y0 entered in the wrong unit.")
+                    break
+                if abs(ratio - 1 / factor) < 0.01 / factor:
+                    hint = (f" The ratio is ~1/{factor:,}, so the segments look like they are "
+                            f"in actual currency while revenue_y0 is in {name}.")
+                    break
+            vr.err(
+                f"projections.revenue_y0 ({rev:,.2f}) does not reconcile to the sum of "
+                f"start_year=0 segment revenue ({seg_base:,.2f}).{hint} The Projections "
+                f"revenue split and the COGS allocation cannot both tie in this state."
+            )
+            return
+
     unit = str(get_path(payload, "currency.unit") or "").strip().lower()
     mult = {"'000": 1_000.0, "000": 1_000.0, "thousands": 1_000.0,
             "'mm": 1_000_000.0, "mm": 1_000_000.0, "millions": 1_000_000.0,
