@@ -6,12 +6,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _slugify(name: str) -> str:
@@ -204,6 +207,23 @@ class GenerateValuationWorkpaperSkill(Skill):
                 build_skeleton()
             except Exception as e:
                 return SkillResult.failed(f"Failed to build skeleton: {e}")
+
+        # Normalise the IN-MEMORY payload before serialising. export() runs the
+        # same repair, but on the copy it loads from the temp file — so the
+        # workbook got scaled Y0 values while the summary, the dashboard and
+        # the pinned-parameter prefill all kept the raw ones. That divergence
+        # is how an analyst came to pin gross_profit_y0 = 858000 (raw dollars)
+        # when the workpaper unit was '000. Normalising here keeps every
+        # downstream consumer on the same numbers; export()'s own call is then
+        # idempotent.
+        try:
+            from export_workpaper import normalize_payload, ValidationResult  # type: ignore
+            _norm_vr = ValidationResult()
+            normalize_payload(payload, _norm_vr)
+            for _w in _norm_vr.warnings:
+                logger.warning("valuation payload normalised: %s", _w)
+        except Exception as e:  # normalisation is a repair, not a gate
+            logger.warning("payload normalisation skipped: %s: %s", type(e).__name__, e)
 
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False

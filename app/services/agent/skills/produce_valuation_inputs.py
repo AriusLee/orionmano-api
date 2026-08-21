@@ -569,6 +569,21 @@ def _build_streams_prompt_block(streams: list[dict], research: dict[str, str]) -
     return "\n".join(parts)
 
 
+# Dash-like characters an LLM freely substitutes for one another when echoing a
+# stream name back: hyphen-minus, non-breaking hyphen, figure/en/em dash, minus
+# sign, horizontal bar. Matching on the raw string makes "ORBIT — RegTech" and
+# "ORBIT - RegTech" two different streams, which silently duplicates the stream
+# and (via the core check) can zero out the whole model.
+_DASH_CHARS = "-‐‑‒–—―−"
+_DASH_TABLE = {ord(c): "-" for c in _DASH_CHARS}
+
+
+def _norm_stream_name(name: str) -> str:
+    """Canonical key for matching a user-defined stream to an LLM segment.
+    Folds dash variants, collapses whitespace, and lowercases."""
+    return " ".join(str(name or "").translate(_DASH_TABLE).split()).lower()
+
+
 def _apply_user_streams(payload: dict, streams: list[dict]) -> None:
     """Post-LLM enforcement: every user-defined stream must exist in
     projections.segments with the user's values verbatim. Injects a segment if
@@ -584,10 +599,21 @@ def _apply_user_streams(payload: dict, streams: list[dict]) -> None:
         segs = []
         proj["segments"] = segs
     n_years_core = int(proj.get("years") or 5)
-    stream_names = {s["name"].lower() for s in streams}
+    stream_names = {_norm_stream_name(s["name"]) for s in streams}
+    # A core segment is one the cascade can start from at Y0 — identified by
+    # source/start_year, NOT by "its name isn't a user stream". The old
+    # name-based test broke on the Remsea 2026-08-21 run: the LLM emitted
+    # "ORBIT - RegTech" (hyphen) while the user stream was "ORBIT — RegTech"
+    # (em dash), so the mismatched duplicate was read as evidence of a core.
+    # No core was injected, every remaining segment started at Y1+, and
+    # _sync_top_level_to_segments then set revenue_y0 = 0, zeroing the model.
     has_core = any(
         isinstance(s, dict)
-        and str(s.get("name") or "").strip().lower() not in stream_names
+        and (
+            str(s.get("source") or "").strip().lower() == "core"
+            or int(s.get("start_year") or 0) == 0
+        )
+        and _norm_stream_name(str(s.get("name") or "")) not in stream_names
         for s in segs
     )
     if not has_core:
@@ -607,12 +633,12 @@ def _apply_user_streams(payload: dict, streams: list[dict]) -> None:
         })
     unit_mult = _unit_multiplier((payload.get("currency") or {}).get("unit"))
     by_name = {
-        str(s.get("name") or "").strip().lower(): s
+        _norm_stream_name(str(s.get("name") or "")): s
         for s in segs if isinstance(s, dict)
     }
     n_years = int(proj.get("years") or 5)
     for stream in streams:
-        seg = by_name.get(stream["name"].lower())
+        seg = by_name.get(_norm_stream_name(stream["name"]))
         if seg is None:
             seg = {"name": stream["name"]}
             segs.append(seg)
@@ -647,14 +673,25 @@ def _apply_user_streams(payload: dict, streams: list[dict]) -> None:
         seg["user_locked"] = True
 
 
-def _sync_top_level_to_segments(payload: dict) -> None:
+def _sync_top_level_to_segments(payload: dict, pinned_keys: list[str] | None = None) -> None:
     """When segments exist they drive the Python cascade, but the xlsx Total
     Revenue cascade reads the TOP-LEVEL revenue_growth / gross_margin named
     ranges. Deterministically recompute those arrays from the segment
-    aggregates so the two engines cannot disagree."""
+    aggregates so the two engines cannot disagree.
+
+    `pinned_keys` are analyst pins already written by _apply_pinned_overrides.
+    They are preserved here: this function used to overwrite revenue_y0,
+    revenue_growth[] and gross_margin[] unconditionally, so on any engagement
+    with segments — i.e. every real one — pinning those 11 parameters silently
+    did nothing (Remsea 2026-08-21: a pinned revenue_y0 of 1,584,000 landed in
+    the workbook as 0). An analyst pin is an explicit override and outranks the
+    derived value; the segment detail may then disagree with the top-level
+    line, which is the analyst's stated intent rather than a defect.
+    """
     proj = payload.get("projections")
     if not isinstance(proj, dict) or not proj.get("segments"):
         return
+    pinned = pinned_keys or []
     try:
         from compute import _projections as _compute_projections  # type: ignore
         series = _compute_projections(payload)
@@ -668,9 +705,21 @@ def _sync_top_level_to_segments(payload: dict) -> None:
         for y in range(n):
             growth.append(rev[y + 1] / rev[y] - 1 if rev[y] else 0.0)
             margins.append(gp[y] / rev[y + 1] if rev[y + 1] else 0.0)
+        # Re-seat pinned entries over the derived vectors.
+        pinned_growth = _pinned_array_indices(pinned, "revenue_growth")
+        pinned_margin = _pinned_array_indices(pinned, "gross_margin")
+        prev_growth = proj.get("revenue_growth") or []
+        prev_margin = proj.get("gross_margin") or []
+        for i in pinned_growth:
+            if i < len(growth) and i < len(prev_growth) and prev_growth[i] is not None:
+                growth[i] = prev_growth[i]
+        for i in pinned_margin:
+            if i < len(margins) and i < len(prev_margin) and prev_margin[i] is not None:
+                margins[i] = prev_margin[i]
         proj["revenue_growth"] = growth
         proj["gross_margin"] = margins
-        proj["revenue_y0"] = rev[0]
+        if "revenue_y0" not in pinned:
+            proj["revenue_y0"] = rev[0]
     except Exception:
         # Sync is a consistency guarantee, not a correctness gate — leave the
         # LLM's top-level arrays in place on any failure.
@@ -1436,7 +1485,7 @@ class ProduceValuationInputsSkill(Skill):
             # Keep the xlsx-driving top-level arrays consistent with the
             # segment aggregates that drive the Python cascade (no-op when no
             # segments are present).
-            _sync_top_level_to_segments(payload)
+            _sync_top_level_to_segments(payload, applied_pinned_keys)
 
             last_payload = payload
 
@@ -1515,7 +1564,7 @@ class ProduceValuationInputsSkill(Skill):
                         _apply_pinned_overrides(payload, pinned_overrides)
                     # Calibration rescaled segment arrays — re-sync the
                     # top-level arrays the xlsx cascade reads.
-                    _sync_top_level_to_segments(payload)
+                    _sync_top_level_to_segments(payload, applied_pinned_keys)
                     # Recompute implied EV with calibrated growth array
                     last_implied_ev = _implied_target_metric_actual(payload, target_basis)
                     # Note the calibration in sources so the audit trail is honest

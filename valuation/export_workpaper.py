@@ -270,6 +270,22 @@ def normalize_payload(payload: dict, vr: ValidationResult) -> None:
 
     rev = proj.get("revenue_y0")
     gp = proj.get("gross_profit_y0")
+
+    # revenue_y0 is the cascade base: every projected line, the DCF, the comps
+    # and the whole bridge multiply through it. At zero the workbook exports
+    # cleanly and every value on it is 0 — which is exactly what shipped on the
+    # Remsea 2026-08-21 regenerate, with no error raised. Refuse instead.
+    # Common cause: no start_year=0 segment, so _sync_top_level_to_segments
+    # recomputes revenue_y0 as the sum of an empty set.
+    if not isinstance(rev, (int, float)) or rev == 0:
+        vr.err(
+            f"projections.revenue_y0 is {rev!r} — the Y0 revenue base is missing or "
+            f"zero, so every projected line, the DCF and the bridge all collapse to "
+            f"0. Usual cause: projections.segments has no start_year=0 (core) "
+            f"segment, so the top-level sync derives a zero base."
+        )
+        return
+
     unit = str(get_path(payload, "currency.unit") or "").strip().lower()
     mult = {"'000": 1_000.0, "000": 1_000.0, "thousands": 1_000.0,
             "'mm": 1_000_000.0, "mm": 1_000_000.0, "millions": 1_000_000.0,
