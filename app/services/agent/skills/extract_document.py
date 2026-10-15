@@ -51,10 +51,18 @@ class ExtractDocumentSkill(Skill):
             doc.extraction_status = "processing"
             await ctx.db.commit()
 
-            extracted = await extract_document(doc.file_path)
+            extracted = await extract_document(doc.file_path, doc.filename, target_period=doc.target_period)
             doc.extracted_data = extracted
             doc.extraction_status = "completed"
             await ctx.db.commit()
+
+            # Confirmed-figures store (Eric 2026-10): same rules as the upload path.
+            try:
+                from app.services.financials import store as fin_store
+                await fin_store.ensure_synced(ctx.db, doc.company_id)
+                await fin_store.sync_document(ctx.db, doc)
+            except Exception:
+                await ctx.db.rollback()
 
             # Auto-fill company profile
             if ctx.company_id:

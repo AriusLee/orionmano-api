@@ -282,6 +282,7 @@ class GenerateValuationWorkpaperSkill(Skill):
         # .summary.json we just wrote for its authoritative context. Wrapped in
         # try/except so a Report-creation failure doesn't fail the workpaper.
         report_id: str | None = None
+        _report_kickoff = None
         if (
             getattr(ctx, "db", None) is not None
             and getattr(ctx, "company_id", None) is not None
@@ -329,7 +330,7 @@ class GenerateValuationWorkpaperSkill(Skill):
                         # row's status will reflect the failure if the generator
                         # got far enough to set it.
                         pass
-                asyncio.create_task(_kickoff_report())
+                _report_kickoff = _kickoff_report
             except Exception:
                 # Reset the session state if the Report-row write failed mid-flight
                 try:
@@ -337,6 +338,49 @@ class GenerateValuationWorkpaperSkill(Skill):
                 except Exception:
                     pass
                 report_id = None
+
+        # Eric 2026-10 — record the run as the company's new active valuation
+        # version, and link the written report to it. Failure here must not
+        # lose the workpaper, so it's logged and the run still returns.
+        version_id: str | None = None
+        version_no: int | None = None
+        if (
+            summary_payload is not None
+            and getattr(ctx, "db", None) is not None
+            and getattr(ctx, "company_id", None) is not None
+        ):
+            try:
+                from app.services.valuation_model import versions as _versions
+                version = await _versions.record(
+                    ctx.db,
+                    company_id=ctx.company_id,
+                    run=summary_payload,
+                    trigger=str(kwargs.get("version_trigger") or ("regenerate_inputs" if inputs_override is not None else "generate")),
+                    note=kwargs.get("version_note"),
+                    qa_item_id=kwargs.get("qa_item_id"),
+                    created_by=getattr(ctx, "user_id", None),
+                )
+                version_id, version_no = str(version.id), version.version_no
+                if report_id is not None:
+                    from sqlalchemy import update as _update
+                    from app.models.report import Report as _Report
+                    await ctx.db.execute(
+                        _update(_Report).where(_Report.id == version.report_id).values(valuation_version_id=version.id)
+                    )
+                    await ctx.db.commit()
+                summary_payload["version_id"] = version_id
+                summary_payload["version_no"] = version_no
+                if summary_path is not None:
+                    summary_path.write_text(json.dumps(summary_payload, default=str))
+            except Exception as e:
+                logger.exception("recording valuation version failed: %s", e)
+                try:
+                    await ctx.db.rollback()
+                except Exception:
+                    pass
+
+        if _report_kickoff is not None:
+            asyncio.create_task(_report_kickoff())
 
         if vr.errors:
             return SkillResult(
@@ -349,6 +393,8 @@ class GenerateValuationWorkpaperSkill(Skill):
                     "inputs_json": payload,
                     "summary": summary,
                     "report_id": report_id,
+                    "version_id": version_id,
+                    "version_no": version_no,
                 },
                 message=(
                     f"Workpaper generated with {len(vr.errors)} validation errors "
@@ -366,6 +412,8 @@ class GenerateValuationWorkpaperSkill(Skill):
                 "inputs_json": payload,
                 "summary": summary,
                 "report_id": report_id,
+                "version_id": version_id,
+                "version_no": version_no,
             },
             message=(
                 f"Workpaper generated at {output_path.name} "

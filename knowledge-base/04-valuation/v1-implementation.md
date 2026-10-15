@@ -119,7 +119,7 @@ External reference exemplar list (SEC fairness opinions, Damodaran, Delaware Cha
 
 ### Build the skeleton
 ```bash
-cd /Users/ariuslee/Projects/orionmano
+cd /Users/ariuslee/AlOS-Workspace/code/1-active/orionmano
 python3 backend/valuation/build_skeleton.py
 # -> materials/templates/orionmano-valuation-template-v1.xlsx
 ```

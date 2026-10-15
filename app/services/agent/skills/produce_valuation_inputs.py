@@ -9,6 +9,7 @@ populated xlsx via export_workpaper.py.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sys
 from pathlib import Path
@@ -21,6 +22,8 @@ from app.services.agent.context import AgentContext
 from app.services.agent.skill import Skill, SkillResult
 from app.services.agent.skills.valuation_inputs_schema import validate as validate_inputs
 from app.services.ai.web_search import format_search_results, web_search
+
+logger = logging.getLogger(__name__)
 
 
 # Resolve from backend/ root (parents[4]) so the path holds in deploys that ship
@@ -245,7 +248,12 @@ def _find_previous_valuation_payload(company_id: Any, current_exchange: str | No
         return None
     candidates.sort(key=lambda x: x[0], reverse=True)
     latest = candidates[0][1]
-    inputs = latest.get("inputs") or {}
+    return _cocos_inputs_if_compatible(latest.get("inputs") or {}, current_exchange)
+
+
+def _cocos_inputs_if_compatible(inputs: dict, current_exchange: str | None) -> dict | None:
+    """The previous run's inputs, if its comp set may be reused: same target
+    exchange and a non-empty cocos list. None otherwise."""
     prev_exchange = (((inputs.get("engagement") or {}).get("exchange_platform")) or "").strip().upper()
     cur_exchange = (current_exchange or "").strip().upper()
     if not prev_exchange or not cur_exchange:
@@ -1040,6 +1048,22 @@ class ProduceValuationInputsSkill(Skill):
                 + company_context
             )
 
+        # Eric 2026-10 — confirmed (locked) historical figures. Tell the LLM
+        # which year each historical_fs slot is and what is locked; after the
+        # LLM, apply_plan writes the locked values in verbatim, so history the
+        # analyst confirmed never shifts between runs.
+        history_plan = None
+        history_notes: list[str] = []
+        try:
+            from app.services.financials import store as fin_store
+            if getattr(ctx, "company_id", None) is not None:
+                history_plan = await fin_store.history_plan(ctx.db, ctx.company_id)
+            if history_plan is not None:
+                company_context = fin_store.prompt_block(history_plan) + "\n\n" + company_context
+        except Exception as e:
+            logger.warning("confirmed historical figures unavailable: %s", e)
+            history_plan = None
+
         # Eric 2026-05-17 — analyst-pinned overrides from Company record.
         # Filtered to known keys only; values coerced to float in _apply_pinned_overrides.
         pinned_overrides_raw = getattr(company_obj, "pinned_overrides", None) or {}
@@ -1114,9 +1138,22 @@ class ProduceValuationInputsSkill(Skill):
         normalized_exchange = _normalize_exchange(
             getattr(company_obj, "target_exchange", None)
         )
-        previous_inputs_for_cocos = _find_previous_valuation_payload(
-            getattr(ctx, "company_id", None), normalized_exchange
-        )
+        # Eric 2026-10 — the previous run now comes from the valuation
+        # versions table; the summary-file scan stays as the fallback.
+        previous_inputs_for_cocos = None
+        try:
+            from app.services.valuation_model import versions as _versions
+            if getattr(ctx, "company_id", None) is not None:
+                _prev = await _versions.latest_version(ctx.db, ctx.company_id)
+                if _prev is not None:
+                    previous_inputs_for_cocos = _cocos_inputs_if_compatible(_prev.inputs or {}, normalized_exchange)
+                else:
+                    previous_inputs_for_cocos = _find_previous_valuation_payload(ctx.company_id, normalized_exchange)
+        except Exception as e:
+            logger.warning("previous valuation lookup failed: %s", e)
+            previous_inputs_for_cocos = _find_previous_valuation_payload(
+                getattr(ctx, "company_id", None), normalized_exchange
+            )
         if previous_inputs_for_cocos is not None:
             prev_cocos = previous_inputs_for_cocos.get("cocos") or []
             ticker_list = [str((c or {}).get("ticker") or "").strip() for c in prev_cocos if isinstance(c, dict)]
@@ -1467,6 +1504,11 @@ class ProduceValuationInputsSkill(Skill):
             # never scales them).
             _apply_user_streams(payload, user_streams)
 
+            # Locked historical figures win over whatever the LLM emitted.
+            if history_plan is not None:
+                from app.services.financials import store as fin_store
+                history_notes = fin_store.apply_plan(payload, history_plan)
+
             # Eric 2026-05-19 — guarantee revenue_growth_primary is populated
             # so the Projections sheet's Primary cascade has values to read.
             # If the LLM omitted or under-filled the field, fall back to
@@ -1585,6 +1627,13 @@ class ProduceValuationInputsSkill(Skill):
                 f"validated on attempt {attempt}/{MAX_ATTEMPTS}; "
                 f"cache_read={usage_totals['cache_read_input_tokens']} tokens)"
             ]
+            if history_plan is not None and history_plan.any_locked:
+                message_parts.append(
+                    "Confirmed historical figures applied for "
+                    + ", ".join(slot["label"] for _, slot in sorted(history_plan.locked_slots.items()))
+                )
+            for note in history_notes:
+                message_parts.append(f"WARNING: {note}")
             if currency_mismatch:
                 message_parts.append(
                     f"WARNING: model presented in "

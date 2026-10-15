@@ -142,7 +142,7 @@ def _reconcile_categories(
     return ["other"], "default"
 
 
-def extract_text_from_pdf(file_path: str, max_pages: int = 400) -> str:
+def extract_text_from_pdf(file_path: str, max_pages: int = 400, page_markers: bool = False) -> str:
     # Cap is high (not 50) because prospectus / DRS F-pages — the audited
     # financial statements — sit near the BACK of the document. A low cap meant
     # the financials were never read, so financial_data came back empty. fitz
@@ -153,7 +153,9 @@ def extract_text_from_pdf(file_path: str, max_pages: int = 400) -> str:
     for i, page in enumerate(doc):
         if i >= max_pages:
             break
-        text_parts.append(page.get_text())
+        # Page markers let extraction cite the page each statement sits on
+        # (Eric 2026-10: every historical figure carries a page reference).
+        text_parts.append(f"[Page {i + 1}]\n{page.get_text()}" if page_markers else page.get_text())
     doc.close()
     return "\n\n".join(text_parts)
 
@@ -335,7 +337,7 @@ def _focused_excerpt(
     return "".join(parts)
 
 
-async def extract_document(file_path: str, filename: str | None = None) -> dict:
+async def extract_document(file_path: str, filename: str | None = None, target_period: str | None = None) -> dict:
     lower = file_path.lower()
     fname = filename or os.path.basename(file_path)
 
@@ -363,7 +365,7 @@ async def extract_document(file_path: str, filename: str | None = None) -> dict:
             }
 
     if lower.endswith(".pdf"):
-        text = extract_text_from_pdf(file_path)
+        text = extract_text_from_pdf(file_path, page_markers=True)
     elif lower.endswith(".docx"):
         # .docx is a ZIP archive — must be parsed, not read as text. If parsing
         # fails for any reason, fall back to the raw read so the doc still gets
@@ -460,6 +462,7 @@ Valid slugs for `document_type` and `categories`:
     "currency": "",
     "unit": "",
     "periods": ["FY2024", "FY2025", "H1_2024", "H1_2025"],
+    "source_pages": {"income_statement": "12", "balance_sheet": "13", "cash_flow": "14"},
     "income_statement": {
       "revenue": {},
       "cost_of_sales": {},
@@ -521,6 +524,7 @@ FINANCIAL STATEMENTS — capture COMPLETELY and VERBATIM:
 - Take figures from the consolidated FACE statements. Do NOT substitute partial figures from individual account leadsheets / audit working papers for a line the face statement already shows.
 - NEVER invent a period or a value. If a line item or period is not in the document, omit that key — do not fill it with a guess, a zero, a carried-forward value, or a currency-converted value mislabelled as the original.
 - Preserve the original currency and unit exactly as stated (do not assume MYR/HKD/USD — read it from the document).
+- SOURCE PAGES: the text marks each PDF page as "[Page N]". In `financial_data.source_pages` give the page number on which each face statement appears ("income_statement", "balance_sheet", "cash_flow"). If one line item comes from a different page (e.g. depreciation from a note), add it as "income_statement.depreciation_amortisation": "<page>". For a spreadsheet give the sheet instead, e.g. "Sheet: P&L". Omit a key when you cannot tell — never guess a page.
 """
 
     # Focused excerpt instead of a blind first-30k slice: for long filings this
@@ -530,7 +534,15 @@ FINANCIAL STATEMENTS — capture COMPLETELY and VERBATIM:
     # silently drops financial_data).
     result = await generate_text(
         system_prompt=system_prompt,
-        user_prompt=f"Extract structured data from this document:\n\n{_focused_excerpt(text)}",
+        user_prompt=(
+            (
+                f"This document was uploaded as the financials FOR period {target_period}. "
+                f"Label that period exactly \"{target_period}\" in financial_data; label any "
+                f"comparative periods it also shows with their own labels.\n\n"
+                if target_period else ""
+            )
+            + f"Extract structured data from this document:\n\n{_focused_excerpt(text)}"
+        ),
         max_tokens=8192,
     )
 

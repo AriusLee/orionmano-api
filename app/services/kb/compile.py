@@ -331,6 +331,13 @@ async def recompile_company(company_id: uuid.UUID) -> dict[str, Any]:
         documents_block, contributing = _build_documents_block(docs)
         if not contributing:
             return {"company_id": str(company_id), "error": "no completed extractions"}
+        # Eric 2026-10 — the historical-fs page must reproduce locked periods
+        # verbatim instead of re-deriving them from the documents each upload.
+        try:
+            from app.services.financials.store import confirmed_context_block
+            confirmed_block = await confirmed_context_block(db, company_id)
+        except Exception:
+            confirmed_block = ""
 
     # LLM calls in parallel — bounded by N=len(PAGE_SLUGS) which is small (3)
     results = await asyncio.gather(*[
@@ -338,7 +345,10 @@ async def recompile_company(company_id: uuid.UUID) -> dict[str, Any]:
             slug=slug,
             company_id=company_id,
             company_name=company.name,
-            documents_block=documents_block,
+            documents_block=(
+                f"{confirmed_block}\n\n---\n\n{documents_block}"
+                if confirmed_block and slug == "historical-fs" else documents_block
+            ),
             contributing_doc_ids=contributing,
         )
         for slug in PAGE_SLUGS

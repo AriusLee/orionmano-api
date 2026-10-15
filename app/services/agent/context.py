@@ -132,6 +132,19 @@ class AgentContext:
         should call THIS rather than the two underlying methods directly so
         the cold-start path is handled transparently."""
         kb = await self.get_kb_context_str(slugs=slugs)
+        # Eric 2026-10 — locked historical figures lead every context, so no
+        # skill re-derives a period the analyst has confirmed.
+        confirmed = ""
+        if self.company_id is not None:
+            try:
+                from app.services.financials.store import confirmed_context_block
+                confirmed = await confirmed_context_block(self.db, self.company_id)
+            except Exception:
+                confirmed = ""
+        if confirmed:
+            kb = f"{confirmed}\n\n{kb}" if kb else ""
+            if not kb:
+                return f"{confirmed}\n\n{self.get_company_context_str()}"
         if kb:
             # Always pair the compiled pages with the company header (name,
             # country, etc.) — the kb pages don't repeat that.

@@ -20,6 +20,7 @@ from app.models.user import User
 from app.services.agent.context import AgentContext
 from app.services.agent.registry import registry
 from app.services.agent.skill import SkillStatus
+from app.services.valuation_model import versions
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,23 @@ def _set_summary_status(path: Path, status: str) -> None:
         pass
 
 
+async def _suspend_active(db: AsyncSession, company_id: UUID) -> tuple[Path | None, UUID | None]:
+    """Hide the current workpaper while a new run is in flight (both the
+    version row and its summary file), so the page can't offer stale data."""
+    path = _active_summary_path_for(company_id)
+    if path is not None:
+        _set_summary_status(path, "superseded")
+    version_id = await versions.suspend_active(db, company_id)
+    return path, version_id
+
+
+async def _reinstate(db: AsyncSession, company_id: UUID, path: Path | None, version_id: UUID | None) -> None:
+    """A run failed: give the analyst the last good workpaper back."""
+    if path is not None:
+        _set_summary_status(path, "active")
+    await versions.reinstate(db, company_id, version_id)
+
+
 class GenerateWorkpaperRequest(BaseModel):
     """Per-valuation run-config knobs supplied by the user at Generate/Regenerate time."""
     target_valuation: float | None = None  # Eric 2026-05-08 item 1; actual currency units
@@ -150,24 +168,21 @@ async def generate_workpaper(
     # Download button pointing at the old xlsx. If the skill fails, we
     # restore the previous summary to active so the user retains access to
     # the last good run.
-    prev_active_path = _active_summary_path_for(company_id)
-    if prev_active_path is not None:
-        _set_summary_status(prev_active_path, "superseded")
+    prev_active_path, prev_version_id = await _suspend_active(db, company_id)
 
     try:
         result = await skill.execute(
             ctx,
             target_valuation=target_valuation,
             valuation_date=valuation_date,
+            version_trigger="generate",
         )
     except Exception:
-        if prev_active_path is not None:
-            _set_summary_status(prev_active_path, "active")
+        await _reinstate(db, company_id, prev_active_path, prev_version_id)
         raise
 
     if result.status == SkillStatus.FAILED:
-        if prev_active_path is not None:
-            _set_summary_status(prev_active_path, "active")
+        await _reinstate(db, company_id, prev_active_path, prev_version_id)
         logger.error(
             "generate-workpaper FAILED for company=%s target_valuation=%s valuation_date=%s: %s | artifacts=%s",
             company_id, target_valuation, valuation_date, result.message,
@@ -183,6 +198,9 @@ async def generate_workpaper(
         "warnings": payload.get("warnings", []),
         "errors": payload.get("errors", []),
         "summary": payload.get("summary"),
+        "report_id": payload.get("report_id"),
+        "version_id": payload.get("version_id"),
+        "version_no": payload.get("version_no"),
     }
 
 
@@ -197,10 +215,103 @@ async def latest_workpaper(
     Reads the .summary.json file written alongside each xlsx in
     {UPLOAD_DIR}/valuations/. Returns 404 if no workpaper has been generated.
     """
+    version = await versions.active_version(db, company_id)
+    if version is not None:
+        return versions.to_payload(version)
     summary = _latest_summary_for(company_id)
     if summary is None:
         raise HTTPException(status_code=404, detail="No valuation workpaper generated yet")
     return summary
+
+
+@router.get("/versions")
+async def list_versions(
+    company_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Every valuation run for the company, newest first (Eric 2026-10)."""
+    return [versions.to_list_item(v) for v in await versions.list_versions(db, company_id)]
+
+
+@router.get("/versions/{version_id}")
+async def get_version(
+    company_id: UUID,
+    version_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """One version in full: inputs, summary and its metadata."""
+    v = await versions.get_version(db, company_id, version_id)
+    if v is None:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return {**versions.to_payload(v), **versions.to_list_item(v)}
+
+
+@router.get("/versions/{version_id}/changes")
+async def version_changes(
+    company_id: UUID,
+    version_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """What moved between this version and the one it came from: every
+    changeable parameter and every historical figure that differs, plus EV."""
+    from app.services.valuation_model import model_io
+    from app.services.agent.skills.produce_valuation_inputs import PINNABLE_PARAMS
+
+    v = await versions.get_version(db, company_id, version_id)
+    if v is None:
+        raise HTTPException(status_code=404, detail="Version not found")
+    prev = await versions.get_version(db, company_id, v.parent_id) if v.parent_id else None
+    if prev is None:
+        all_v = await versions.list_versions(db, company_id)
+        prev = next((x for x in all_v if x.version_no < v.version_no), None)
+    if prev is None:
+        return {"against": None, "params": [], "historical": [], "ev": None}
+    params = []
+    for key in PINNABLE_PARAMS:
+        a, b = model_io.param_value(prev.inputs, key), model_io.param_value(v.inputs, key)
+        if a is None and b is None:
+            continue
+        if a is not None and b is not None and abs(a - b) <= 1e-9 * max(1.0, abs(a)):
+            continue
+        params.append({
+            "key": key,
+            "label": model_io.PARAM_LABELS.get(key, key),
+            "from": model_io.format_param(key, a, prev.currency, prev.unit),
+            "to": model_io.format_param(key, b, v.currency, v.unit),
+        })
+    hist = []
+    ha, hb = (prev.inputs or {}).get("historical_fs") or {}, (v.inputs or {}).get("historical_fs") or {}
+    for key in sorted(set(ha) | set(hb)):
+        sa, sb = ha.get(key) or [], hb.get(key) or []
+        for i in range(max(len(sa), len(sb))):
+            x = sa[i] if i < len(sa) else None
+            y = sb[i] if i < len(sb) else None
+            if x == y or (isinstance(x, (int, float)) and isinstance(y, (int, float)) and abs(x - y) < 0.5):
+                continue
+            hist.append({"series": key, "slot": f"FY-{5 - i}", "from": x, "to": y})
+    return {
+        "against": {"id": str(prev.id), "version_no": prev.version_no},
+        "params": params,
+        "historical": hist[:60],
+        "ev": {"from": prev.ev, "to": v.ev, "equity_from": prev.equity_value, "equity_to": v.equity_value},
+    }
+
+
+@router.post("/versions/{version_id}/restore")
+async def restore_version(
+    company_id: UUID,
+    version_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Make an earlier version current again, as a new version (no re-run)."""
+    v = await versions.restore(db, company_id, version_id, user.id)
+    if v is None:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return versions.to_list_item(v)
 
 
 @router.post("/values-only")
@@ -285,20 +396,16 @@ async def regenerate_from_inputs(
 
     ctx = AgentContext(db=db, company_id=company_id, user_id=user.id)
 
-    prev_active_path = _active_summary_path_for(company_id)
-    if prev_active_path is not None:
-        _set_summary_status(prev_active_path, "superseded")
+    prev_active_path, prev_version_id = await _suspend_active(db, company_id)
 
     try:
-        result = await skill.execute(ctx, inputs=payload)
+        result = await skill.execute(ctx, inputs=payload, version_trigger="regenerate_inputs")
     except Exception:
-        if prev_active_path is not None:
-            _set_summary_status(prev_active_path, "active")
+        await _reinstate(db, company_id, prev_active_path, prev_version_id)
         raise
 
     if result.status == SkillStatus.FAILED:
-        if prev_active_path is not None:
-            _set_summary_status(prev_active_path, "active")
+        await _reinstate(db, company_id, prev_active_path, prev_version_id)
         logger.error(
             "regenerate-from-inputs FAILED for company=%s: %s",
             company_id, result.message,
@@ -313,6 +420,9 @@ async def regenerate_from_inputs(
         "warnings": out.get("warnings", []),
         "errors": out.get("errors", []),
         "summary": out.get("summary"),
+        "report_id": out.get("report_id"),
+        "version_id": out.get("version_id"),
+        "version_no": out.get("version_no"),
     }
 
 
@@ -387,20 +497,16 @@ async def regenerate_from_xlsx(
 
     ctx = AgentContext(db=db, company_id=company_id, user_id=user.id)
 
-    prev_active_path = _active_summary_path_for(company_id)
-    if prev_active_path is not None:
-        _set_summary_status(prev_active_path, "superseded")
+    prev_active_path, prev_version_id = await _suspend_active(db, company_id)
 
     try:
-        result = await skill.execute(ctx, inputs=payload)
+        result = await skill.execute(ctx, inputs=payload, version_trigger="regenerate_xlsx")
     except Exception:
-        if prev_active_path is not None:
-            _set_summary_status(prev_active_path, "active")
+        await _reinstate(db, company_id, prev_active_path, prev_version_id)
         raise
 
     if result.status == SkillStatus.FAILED:
-        if prev_active_path is not None:
-            _set_summary_status(prev_active_path, "active")
+        await _reinstate(db, company_id, prev_active_path, prev_version_id)
         logger.error(
             "regenerate-from-xlsx FAILED for company=%s: %s",
             company_id, result.message,
@@ -415,6 +521,9 @@ async def regenerate_from_xlsx(
         "warnings": out.get("warnings", []),
         "errors": out.get("errors", []),
         "summary": out.get("summary"),
+        "report_id": out.get("report_id"),
+        "version_id": out.get("version_id"),
+        "version_no": out.get("version_no"),
         "parsed_inputs": payload,
     }
 

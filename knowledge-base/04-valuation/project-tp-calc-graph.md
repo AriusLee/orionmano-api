@@ -225,7 +225,7 @@ The 985 `#REF!` errors fall into these recoverable patterns:
 
 ## 10. References
 
-- Source workpaper: `/Users/ariuslee/Projects/orionmano/materials/260318 Project TP - Valuation Model.xlsx`
+- Source workpaper: `/Users/ariuslee/AlOS-Workspace/code/1-active/orionmano/materials/260318 Project TP - Valuation Model.xlsx`
 - Structural map (sheet inventory): see Section 2 above
 - Reference benchmarks: `materials/references/damodaran-amazon-sept2018.xlsx`, `damodaran-aramco-ipo.xlsx`
 - Adjacent docs: `valuation-framework.md`, `valuation-model-reference.md`, `../05-report-templates/05-valuation-report.md`

@@ -38,6 +38,8 @@ class ReportResponse(BaseModel):
     error_message: str | None = None
     lint_findings: list[dict] | None = None
     citation_health: dict | None = None
+    valuation_version_id: UUID | None = None
+    variant: str | None = None
     # Eric 2026-05-24 — only populated for industry_drs reports; the .docx
     # export also renders this same string as the chapter preamble.
     disclosure_preamble: str | None = None
@@ -58,6 +60,8 @@ class ReportListResponse(BaseModel):
     language: str
     version: int
     progress_message: str | None = None
+    valuation_version_id: UUID | None = None
+    variant: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

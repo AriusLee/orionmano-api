@@ -29,6 +29,11 @@ class Report(Base):
     # status, error}], all_ok, article_ids, checked_at}. Surfaces 404-bound
     # citations to the analyst before delivering the report to a client.
     citation_health: Mapped[dict | None] = mapped_column(JSONB)
+    # Valuation reports only: the valuation version this report explains, and
+    # which flavour it is — "standard", or "market_supported" (assumptions
+    # checked against live market data, with sources). Eric 2026-10.
+    valuation_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    variant: Mapped[str | None] = mapped_column(String(30), default="standard")
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())

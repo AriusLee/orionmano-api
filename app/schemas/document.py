@@ -13,6 +13,7 @@ class DocumentResponse(BaseModel):
     categories: list[str] | None = None
     extraction_status: str
     extracted_data: dict | None = None
+    target_period: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

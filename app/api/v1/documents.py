@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -37,11 +38,18 @@ def _get_extract_sem() -> asyncio.Semaphore:
     return _extract_sem
 
 
+def _normalized_period(raw: str | None) -> str | None:
+    from app.services.financials.catalogue import normalize_period
+    raw = (raw or "").strip()
+    return normalize_period(raw)[0] if raw else None
+
+
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(
     company_id: UUID,
     file: UploadFile = File(...),
     category: str = Form(default="other"),
+    target_period: str = Form(default=""),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -64,6 +72,9 @@ async def upload_document(
         category=category,
         extraction_status="pending",
         uploaded_by=user.id,
+        # Eric 2026-10 — the period this upload is for; extraction then only
+        # updates that period (see services/financials/store.py).
+        target_period=_normalized_period(target_period),
     )
     db.add(doc)
     await db.commit()
@@ -99,12 +110,13 @@ async def _extract_bg(
             if not doc:
                 return None
             fname = filename or doc.filename
+            target_period = doc.target_period
             doc.extraction_status = "processing"
             await session.commit()
 
         # 2) Slow LLM extraction — no DB connection held here.
         try:
-            extracted = await extract_document(file_path, fname)
+            extracted = await extract_document(file_path, fname, target_period=target_period)
         except Exception as e:
             async with async_session() as session:
                 doc = (await session.execute(select(Document).where(Document.id == doc_id))).scalar_one_or_none()
@@ -137,6 +149,16 @@ async def _extract_bg(
             await session.commit()
             await auto_fill_company(session, doc.company_id)
             company_id_for_recompile = doc.company_id
+            # Eric 2026-10 — fold the figures into the confirmed-figures store
+            # (never over a locked period; differences become discrepancies).
+            try:
+                from app.services.financials import store as fin_store
+                await fin_store.ensure_synced(session, doc.company_id)
+                await fin_store.sync_document(session, doc)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("financial figures sync failed for document %s", doc_id)
+                await session.rollback()
 
     # Recompile the company's KB pages outside the semaphore/session. Bulk
     # callers skip this and recompile once after all docs finish.
@@ -181,6 +203,36 @@ async def get_document(
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+    return doc
+
+
+class TargetPeriodBody(BaseModel):
+    target_period: str | None = None
+
+
+@router.patch("/{document_id}/target-period", response_model=DocumentResponse)
+async def set_target_period(
+    company_id: UUID,
+    document_id: UUID,
+    body: TargetPeriodBody,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Tag (or untag) an uploaded document to the period it is for, then
+    re-apply its extracted figures under the new tag. No re-extraction."""
+    doc = (await db.execute(
+        select(Document).where(Document.id == document_id, Document.company_id == company_id)
+    )).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    doc.target_period = _normalized_period(body.target_period)
+    await db.commit()
+    await db.refresh(doc)
+    if doc.extraction_status == "completed":
+        from app.services.financials import store as fin_store
+        await fin_store.ensure_synced(db, company_id)
+        await fin_store.sync_document(db, doc)
+        await db.refresh(doc)
     return doc
 
 

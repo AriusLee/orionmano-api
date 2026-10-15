@@ -48,6 +48,10 @@ _COLUMN_UPGRADES: list[str] = [
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS additional_revenue_streams JSONB DEFAULT '[]'::jsonb",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS target_valuation_basis VARCHAR(20) DEFAULT 'enterprise_value'",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS presentation_currency VARCHAR(8) DEFAULT 'USD'",
+    # Eric 2026-10 — valuation versions, period-tagged uploads, report variants.
+    "ALTER TABLE reports ADD COLUMN IF NOT EXISTS valuation_version_id UUID",
+    "ALTER TABLE reports ADD COLUMN IF NOT EXISTS variant VARCHAR(30) DEFAULT 'standard'",
+    "ALTER TABLE documents ADD COLUMN IF NOT EXISTS target_period VARCHAR(50)",
 ]
 
 
@@ -69,6 +73,23 @@ async def lifespan(app: FastAPI):
             "error_message = 'Generation was interrupted by a server restart — please regenerate.', "
             "progress_message = NULL "
             "WHERE status IN ('pending', 'generating')"
+        ))
+        # Same for the Eric 2026-10 background jobs: a Q&A change being
+        # applied, answers being drafted, market searches in flight.
+        await conn.execute(text(
+            "UPDATE qa_items SET status = 'change_proposed', "
+            "error = 'Applying was interrupted by a server restart — apply again.' "
+            "WHERE status = 'applying'"
+        ))
+        await conn.execute(text(
+            "UPDATE qa_batches SET status = 'answered', "
+            "progress_message = 'Drafting was interrupted by a server restart — draft the remaining questions again.' "
+            "WHERE status = 'answering'"
+        ))
+        await conn.execute(text(
+            "UPDATE market_evidence SET assessment = 'failed', "
+            "error = 'Interrupted by a server restart — re-check.' "
+            "WHERE assessment = 'pending'"
         ))
     # Create upload dir
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

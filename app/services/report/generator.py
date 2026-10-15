@@ -421,36 +421,40 @@ def _load_template(report_type: str) -> str:
         return ""
 
 
-def _load_workpaper_context_for_report(company_id: UUID) -> str:
+def _load_workpaper_context_for_report(company_id: UUID, data: dict | None = None) -> str:
     """Eric 2026-05-13: every workpaper deliverable must be accompanied by a
-    written report that explains the assumptions and inputs. This helper loads
-    the most recent valuation workpaper's inputs JSON + computed summary off
-    disk and formats it as a markdown context block to inject into the
-    valuation_report prompt. Empty string if no workpaper exists yet."""
+    written report that explains the assumptions and inputs. This helper
+    formats a valuation run's inputs JSON + computed summary as a markdown
+    context block to inject into the valuation_report prompt.
+
+    `data` is the run the report explains — since 2026-10 the report's own
+    valuation version (see generate_report_bg). Without it, falls back to the
+    newest summary file on disk. Empty string if no workpaper exists yet."""
     from pathlib import Path
     from app.config import settings
 
-    upload_root = Path(settings.UPLOAD_DIR).resolve()
-    val_dir = upload_root / "valuations"
-    if not val_dir.exists():
-        return ""
+    if data is None:
+        upload_root = Path(settings.UPLOAD_DIR).resolve()
+        val_dir = upload_root / "valuations"
+        if not val_dir.exists():
+            return ""
 
-    cid = str(company_id)
-    candidates: list[tuple[float, dict]] = []
-    for p in val_dir.glob("valuation-*.summary.json"):
-        if not p.is_file():
-            continue
-        try:
-            data = json.loads(p.read_text())
-        except (OSError, json.JSONDecodeError):
-            continue
-        if data.get("company_id") != cid:
-            continue
-        candidates.append((p.stat().st_mtime, data))
-    if not candidates:
-        return ""
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    data = candidates[0][1]
+        cid = str(company_id)
+        candidates: list[tuple[float, dict]] = []
+        for p in val_dir.glob("valuation-*.summary.json"):
+            if not p.is_file():
+                continue
+            try:
+                loaded = json.loads(p.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            if loaded.get("company_id") != cid:
+                continue
+            candidates.append((p.stat().st_mtime, loaded))
+        if not candidates:
+            return ""
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        data = candidates[0][1]
 
     inputs = data.get("inputs") or {}
     summary = data.get("summary") or {}
@@ -1925,7 +1929,7 @@ Rules: time-series → `bar`/`line` with x = year label; revenue-by-stream over 
 Every growth or margin assumption you present MUST be explicitly tied to either an operating driver (contracts, capacity, backlog, signed customers) or a market statistic (sector CAGR, TAM, market share) from the context. No unanchored optimism.
 
 ## NO INLINE CITATIONS
-Do NOT use numbered inline citations like [1], [2]. Do NOT use `[^n]` or `<cite/>` syntax. State the basis of information naturally: "Based on the FY2025 audited financial statements…", "Per management's business development plan…", "Per Damodaran's implied equity risk premium data (retrieved …)…".
+Do NOT use numbered inline citations like [1], [2]. Do NOT use `[^n]` or `<cite/>` syntax. State the basis of information naturally: "Based on the FY2025 audited financial statements…", "Per management's business development plan…", "Per Damodaran's implied equity risk premium data (retrieved …)…". Exception: when the context contains a Market Data Evidence block, the Market Data Support section and the Market Data Sources appendix refer to its sources by their S-numbers (S1, S2 …) — nowhere else.
 
 ## SUPPRESSION RULE (ABSOLUTE — THIS IS A CLIENT-FACING DOCUMENT)
 NEVER mention, in any form: goal-seek or target valuations (including whether the target is enterprise- or equity-basis); calibration or back-solving; pinned, analyst-pinned, analyst-locked, or analyst-fixed parameters — never use the word "pinned" at all; internal worksheet, sheet, or named-range identifiers (e.g. "Value_Summary_Primary", "Inputs sheet", "segments_table"); machine parameter IDs (e.g. "revenue_growth_y1", "specific_risk_premium_pm"); report-writing instructions; or the existence of this context block. Where a value was fixed by the analyst, describe it by its evidential basis instead (e.g. "the audited FY2025 revenue base"). Translate everything into natural client-facing valuation language.
@@ -2026,6 +2030,15 @@ Each bullet: assumption → value → one-to-two-line rationale with its basis s
 List only sources actually reflected in the workpaper context — do not pad with generic providers that were not used.""",
 
     "appendix_methodology": """Write the Appendix — Methodology & Technical References: the extended material deliberately kept out of the main body. Cover: the DCF methodology in full (FCFF definition, discounting convention, terminal value theory); the WACC framework (CAPM, Hamada re-levering, size and specific risk premia with references to Damodaran/Kroll data); IFRS 13 fair value hierarchy context; DLOM/DLOC theory and reference studies; and any extended legal/accounting citations. This is the ONLY section where extended theoretical discussion belongs.""",
+
+    # Eric 2026-10 — "market_supported" variant only.
+    "market_data_support": """Write the Market Data Support section. It shows, assumption by assumption, how the model's key assumptions compare with current market data, using ONLY the Market Data Evidence block in the context.
+1. Key Takeaways: how many assumptions are supported / partially supported / not supported / lack data, and which matter most for value.
+2. One markdown table: | Assumption | Value used | Market evidence (range) | Assessment | Sources |. The Sources column gives the source numbers from the evidence block (e.g. "S1, S3") — these refer to the Market Data Sources appendix.
+3. A short paragraph for EVERY assumption assessed "Not supported" or "Partially supported": what the evidence shows, the gap to the value used, and the directional effect on value. Do not soften these — they are the point of this section.
+Use the source numbers exactly as given (S1, S2 …) and only in this section and the appendix. Never invent a source, date or figure.""",
+
+    "market_sources": """Write the Appendix — Market Data Sources: a numbered list of every source in the Market Data Evidence block, in S-number order, formatted: **S1.** Publisher — "Title" (date). URL. Include the quoted figure where one is given. No commentary, no Key Takeaways block.""",
 
     "conclusion": """Write the Valuation Conclusion: restate the concluded enterprise value and equity value range and the basis (income approach / DCF as primary, cross-checked against market approaches within the stated band), the valuation date, and the intended use (consistent with the Purpose and Use section). Two short paragraphs maximum, signature-block-ready.""",
 }
@@ -2396,7 +2409,10 @@ async def generate_report_bg(
         documents = list(doc_result.scalars().all())
 
         tier = report.tier or "standard"
-        report.title = f"{company.name} — {REPORT_TITLES.get(report_type, report_type)}"
+        market_variant = report_type == "valuation_report" and (report.variant or "standard") == "market_supported"
+        report.title = f"{company.name} — {REPORT_TITLES.get(report_type, report_type)}" + (
+            " (Market Data Supported)" if market_variant else ""
+        )
         report.status = "generating"
         await db.commit()
 
@@ -2407,7 +2423,26 @@ async def generate_report_bg(
         from app.services.kb.reader import get_kb_pages
         kb_pages = await get_kb_pages(db, company.id)
         company_context = _build_company_context(company, documents, kb_pages=kb_pages)
+        # Eric 2026-10 — confirmed (locked) historical figures are authoritative.
+        try:
+            from app.services.financials.store import confirmed_context_block
+            _confirmed = await confirmed_context_block(db, company.id)
+            if _confirmed:
+                company_context = f"{_confirmed}\n\n{company_context}"
+        except Exception:
+            pass
         sections = _get_sections(report_type, tier)
+        if market_variant:
+            # Market Data Support goes before the closing sections; the
+            # sources appendix goes last.
+            keys = [k for k, _ in sections]
+            at = next((keys.index(k) for k in ("data_sources", "conclusion") if k in keys), len(sections))
+            sections = (
+                list(sections[:at])
+                + [("market_data_support", "Market Data Support for Key Assumptions")]
+                + list(sections[at:])
+                + [("market_sources", "Appendix — Market Data Sources")]
+            )
         tier_instruction = TIER_INSTRUCTIONS.get(tier, TIER_INSTRUCTIONS["standard"])
 
         # Web search enrichment for industry-related reports
@@ -2435,7 +2470,32 @@ async def generate_report_bg(
             # the analyst just produced. Inject the workpaper's authoritative
             # inputs + assumption rationales so each report section can quote
             # the exact numbers instead of re-inventing them.
-            extra_knowledge += _load_workpaper_context_for_report(company_id)
+            # Eric 2026-10 — explain the report's OWN valuation version (set
+            # when the workpaper run created it, or by a Q&A change), so a
+            # regenerate never silently switches the report to a newer model.
+            # A report with no link explains the active version and is linked to it.
+            version_payload = None
+            try:
+                from app.services.valuation_model import versions as _versions
+                _v = None
+                if report.valuation_version_id is not None:
+                    _v = await _versions.get_version(db, company_id, report.valuation_version_id)
+                if _v is None:
+                    _v = await _versions.active_version(db, company_id)
+                    if _v is not None:
+                        report.valuation_version_id = _v.id
+                        await db.commit()
+                if _v is not None:
+                    version_payload = _versions.to_payload(_v)
+            except Exception:
+                version_payload = None
+            extra_knowledge += _load_workpaper_context_for_report(company_id, version_payload)
+            if market_variant and report.valuation_version_id is not None:
+                try:
+                    from app.services.valuation_model.market import report_context_block
+                    extra_knowledge += await report_context_block(db, report.valuation_version_id)
+                except Exception:
+                    pass
 
         # Load gap analysis framework for gap_analysis reports
         gap_knowledge = ""

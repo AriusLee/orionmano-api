@@ -10,6 +10,10 @@ from app.models.usage_log import UsageLog
 from app.models.web_search_cache import WebSearchCache
 from app.models.client_kb_page import ClientKbPage, ClientKbPageHistory
 from app.models.deck import Deck, DeckVersion
+from app.models.valuation_version import ValuationVersion
+from app.models.financials import FinancialPeriod, FinancialFigure, FinancialFigureAmendment, FinancialDiscrepancy
+from app.models.qa import QaBatch, QaItem, QaModelChange
+from app.models.market_evidence import MarketEvidence
 
 __all__ = [
     "User",
@@ -28,4 +32,13 @@ __all__ = [
     "ClientKbPageHistory",
     "Deck",
     "DeckVersion",
+    "ValuationVersion",
+    "FinancialPeriod",
+    "FinancialFigure",
+    "FinancialFigureAmendment",
+    "FinancialDiscrepancy",
+    "QaBatch",
+    "QaItem",
+    "QaModelChange",
+    "MarketEvidence",
 ]
