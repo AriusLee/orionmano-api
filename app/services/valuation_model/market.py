@@ -83,6 +83,24 @@ def _series(path: tuple[str, ...]) -> Callable[[dict], tuple[float | None, str]]
     return get
 
 
+def _wacc(inputs: dict) -> tuple[float | None, str]:
+    """WACC is computed, not an input: start() passes the version's summary in
+    as `_summary`. The display carries the build-up for the search."""
+    pm = ((inputs.get("_summary") or {}).get("wacc") or {}).get("per_management") or {}
+    w = pm.get("wacc")
+    if not isinstance(w, (int, float)):
+        return None, "—"
+    parts = [f"{w * 100:.2f}%"]
+    if isinstance(pm.get("cost_of_equity"), (int, float)):
+        parts.append(f"cost of equity {pm['cost_of_equity'] * 100:.2f}%")
+    if isinstance(pm.get("aftertax_cost_of_debt"), (int, float)):
+        parts.append(f"after-tax cost of debt {pm['aftertax_cost_of_debt'] * 100:.2f}%")
+    dw = (pm.get("components") or {}).get("debt_weight")
+    if isinstance(dw, (int, float)):
+        parts.append(f"debt weight {dw * 100:.0f}%")
+    return w, " · ".join(parts)
+
+
 ASSUMPTIONS: tuple[Assumption, ...] = (
     Assumption("revenue_growth", "Revenue growth (Y1–Y5)", ("revenue_growth_y1", "revenue_growth"),
                "Industry and market growth forecasts (CAGR) for the company's sector and geography from research houses, "
@@ -91,6 +109,15 @@ ASSUMPTIONS: tuple[Assumption, ...] = (
     Assumption("gross_margin", "Gross margin (Y1–Y5)", ("gross_margin_y1", "gross_margin"),
                "Gross margins of listed peers and the sector (latest annual reports, sector averages).",
                _series(("projections", "gross_margin"))),
+    Assumption("opex_pct_revenue", "Operating expenses (% of revenue, Y1–Y5)", ("opex_pct_revenue",),
+               "Listed peers' operating expense ratios (SG&A / opex as % of revenue) and sector EBITDA / operating margins.",
+               _series(("projections", "opex_pct_revenue"))),
+    Assumption("capex_pct_revenue", "Capital expenditure (% of revenue, Y1–Y5)", ("capex_pct_revenue",),
+               "Listed peers' capex as % of revenue (cash flow statements) and sector capital-intensity benchmarks.",
+               _series(("projections", "capex_pct_revenue"))),
+    Assumption("nwc_pct_sales", "Net working capital (% of revenue, Y1–Y5)", ("nwc_pct_sales", "nwc_y0"),
+               "Listed peers' net working capital as % of revenue, and sector receivable / inventory / payable days.",
+               _series(("projections", "nwc_pct_sales"))),
     Assumption("terminal_growth_rate", "Terminal growth rate", ("terminal_growth_rate",),
                "Long-run nominal GDP growth and inflation expectations for the operating jurisdiction (IMF WEO, central bank, consensus).",
                _param("terminal_growth_rate")),
@@ -115,6 +142,10 @@ ASSUMPTIONS: tuple[Assumption, ...] = (
     Assumption("pretax_cost_of_debt_pm", "Pre-tax cost of debt", ("pretax_cost_of_debt_pm", "pretax_cost_of_debt"),
                "Bank lending rates / corporate bond yields for similar credit quality in the borrowing currency at the valuation date.",
                _param("pretax_cost_of_debt_pm")),
+    Assumption("wacc", "WACC", ("wacc",),
+               "Damodaran cost of capital by industry (US / Global / Emerging markets), and WACCs used for listed peers "
+               "in broker reports or fairness opinions; check the build-up shown (cost of equity, cost of debt, weights).",
+               _wacc),
     Assumption("dlom_pct", "Discount for lack of marketability", ("dlom_pct",),
                "DLOM studies — restricted-stock and pre-IPO studies, option-based models — and the ranges they report.",
                _param("dlom_pct")),
@@ -280,7 +311,7 @@ async def start(db: AsyncSession, company_id: uuid.UUID, version_id: uuid.UUID |
         MarketEvidence.assumption_key.in_([a.key for a in wanted]),
     ))
     for a in wanted:
-        value, display = a.value(version.inputs or {})
+        value, display = a.value({**(version.inputs or {}), "_summary": version.summary or {}})
         if value is None and display == "—":
             continue
         db.add(MarketEvidence(
@@ -359,11 +390,18 @@ async def report_context_block(db: AsyncSession, version_id: uuid.UUID) -> str:
     rows = [r for r in await evidence_for(db, version_id) if r.assessment not in ("pending", "failed")]
     if not rows:
         return ""
+    version = await db.get(ValuationVersion, version_id)
+    inputs = (version.inputs if version else None) or {}
     parts = ["\n\n## Market Data Evidence (AUTHORITATIVE for the Market Data Support section — gathered by live web search)"]
     n = 0
     for r in rows:
+        a = BY_KEY.get(r.assumption_key)
+        basis = _stated_basis(inputs, a) if a else "not stated"
+        if r.assumption_key == "wacc" and basis == "not stated":
+            basis = f"computed in the model from its inputs: {r.value_display}"
         parts.append(
             f"\n### {r.label}\n- Value used in the model: {r.value_display}\n"
+            f"- How the model arrived at it: {basis}\n"
             f"- Assessment: {ASSESSMENT_LABELS.get(r.assessment, r.assessment)}\n"
             f"- Market range: {r.market_range or 'n/a'}\n- Finding: {r.finding or ''}"
         )
