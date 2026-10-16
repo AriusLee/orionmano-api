@@ -1952,6 +1952,11 @@ _VALUATION_PURPOSE_STATEMENT = (
     "statement or free-writing prospectus, and it does not constitute a fairness opinion."
 )
 
+# Sections that cover many items need more room than the per-tier budget
+# (DeepSeek's output cap is ~8k tokens).
+_SECTION_MAX_TOKENS: dict[str, int] = {"market_data_support": 4000, "market_data_detail": 8000}
+
+
 VALUATION_SECTION_INSTRUCTIONS = {
     "purpose_and_use": f"""Write the "Purpose and Use of this Report" box — a short, boxed opening statement (use a blockquote). It MUST state, in this order:
 1. The valuation date and the subject company.
@@ -2032,12 +2037,15 @@ List only sources actually reflected in the workpaper context — do not pad wit
     "appendix_methodology": """Write the Appendix — Methodology & Technical References: the extended material deliberately kept out of the main body. Cover: the DCF methodology in full (FCFF definition, discounting convention, terminal value theory); the WACC framework (CAPM, Hamada re-levering, size and specific risk premia with references to Damodaran/Kroll data); IFRS 13 fair value hierarchy context; DLOM/DLOC theory and reference studies; and any extended legal/accounting citations. This is the ONLY section where extended theoretical discussion belongs.""",
 
     # Eric 2026-10 — "market_supported" variant only.
-    "market_data_support": """Write the Market Data Support section. It shows, assumption by assumption, how the model's key assumptions compare with current market data, using ONLY the Market Data Evidence block in the context.
+    "market_data_support": """Write the Market Data Support section: the overview of how the model's key assumptions compare with current market data, using ONLY the Market Data Evidence block in the context. The assumption-by-assumption detail follows in the next section — do not repeat it here.
 1. Key Takeaways: how many assumptions are supported / partially supported / not supported / lack data, and which matter most for value.
 2. One markdown table: | Assumption | Value used | Market evidence (range) | Assessment | Sources |. The Sources column gives the source numbers from the evidence block (e.g. "S1, S3") — these refer to the Market Data Sources appendix.
-3. Then one short sub-section per assumption (### heading = the assumption), in the table's order, stating: the market data used (the figure, its source number and the date of the data); how the model's figure was arrived at (from "How the model arrived at it" in the evidence block — if that says "not stated", say the model gives no stated basis); and how the two compare.
-4. For every assumption assessed "Not supported" or "Partially supported", start its sub-section with **Flag:** and state the gap to the value used and the directional effect on value. Do not soften these — they are the point of this section.
-Use the source numbers exactly as given (S1, S2 …) and only in this section and the appendix. Never invent a source, date or figure.""",
+3. If any assumptions have a suggested alternative, a short table: | Assumption | Value used | Suggested | EV impact | Equity impact |, with the figures exactly as in the evidence block ("not computed" where it says so). Then one sentence: each row is that change on its own, they are not additive, and the model has not been changed — any change needs the analyst's approval.
+Use the source numbers exactly as given (S1, S2 …). Never invent a source, date or figure.""",
+
+    "market_data_detail": """Write the assumption-by-assumption market evidence, using ONLY the Market Data Evidence block in the context. One sub-section per assumption in the block, in its order (### heading = the assumption). Each sub-section is 60-140 words and states: the market data used (the figure, its source number S… and the date of the data); how the model's figure was arrived at (from "How the model arrived at it" — if that says "not stated", say the model gives no stated basis); and how the two compare.
+For every assumption assessed "Not supported" or "Partially supported", start its sub-section with **Flag:**, state the gap to the value used and the directional effect on value, and — where the block gives a suggested alternative — the suggested value, its basis and its valuation impact exactly as given (EV, equity and range). Say the model has not been changed. Do not soften these.
+No Key Takeaways block, no summary table (the previous section has them). Use the source numbers exactly as given. Never invent a source, date or figure.""",
 
     "market_sources": """Write the Appendix — Market Data Sources: a numbered list of every source in the Market Data Evidence block, in S-number order, formatted: **S1.** Publisher — "Title" (date). URL. Include the quoted figure where one is given. No commentary, no Key Takeaways block.""",
 
@@ -2440,7 +2448,8 @@ async def generate_report_bg(
             at = next((keys.index(k) for k in ("data_sources", "conclusion") if k in keys), len(sections))
             sections = (
                 list(sections[:at])
-                + [("market_data_support", "Market Data Support for Key Assumptions")]
+                + [("market_data_support", "Market Data Support for Key Assumptions"),
+                   ("market_data_detail", "Market Evidence by Assumption")]
                 + list(sections[at:])
                 + [("market_sources", "Appendix — Market Data Sources")]
             )
@@ -2747,18 +2756,22 @@ Tier: {tier.upper()} — {tier_instruction}
                 # regenerate the single section.
                 _section_timeout = 300 if use_reasoner else 200
                 try:
-                    content = await asyncio.wait_for(
-                        generate_text(
-                            system_prompt=system_prompt,
-                            user_prompt=base_user_prompt,
-                            max_tokens=max_tokens_per_section,
-                            use_reasoner=use_reasoner,
-                            skill=f"generate_report:{report_type}",
-                            company_id=report.company_id,
-                            report_id=report.id,
-                        ),
-                        timeout=_section_timeout,
-                    )
+                    if section_key == "market_sources" and report.valuation_version_id:
+                        from app.services.valuation_model.market import sources_appendix
+                        content = await sources_appendix(db, report.valuation_version_id)
+                    else:
+                        content = await asyncio.wait_for(
+                            generate_text(
+                                system_prompt=system_prompt,
+                                user_prompt=base_user_prompt,
+                                max_tokens=_SECTION_MAX_TOKENS.get(section_key, max_tokens_per_section),
+                                use_reasoner=use_reasoner,
+                                skill=f"generate_report:{report_type}",
+                                company_id=report.company_id,
+                                report_id=report.id,
+                            ),
+                            timeout=_section_timeout,
+                        )
                 except Exception as e:  # incl. asyncio.TimeoutError (a TimeoutError subclass)
                     content = (
                         f"_This section could not be generated automatically "

@@ -461,6 +461,7 @@ Valid slugs for `document_type` and `categories`:
   "financial_data": {
     "currency": "",
     "unit": "",
+    "statement_basis": "audited | reviewed | management | unknown",
     "periods": ["FY2024", "FY2025", "H1_2024", "H1_2025"],
     "source_pages": {"income_statement": "12", "balance_sheet": "13", "cash_flow": "14"},
     "income_statement": {
@@ -469,6 +470,13 @@ Valid slugs for `document_type` and `categories`:
       "gross_profit": {},
       "other_income": {},
       "administrative_expenses": {},
+      "selling_and_distribution_expenses": {},
+      "staff_costs": {},
+      "rent_and_occupancy": {},
+      "professional_fees": {},
+      "research_and_development": {},
+      "other_operating_expenses": {},
+      "ebitda": {},
       "profit_from_operation": {},
       "depreciation_amortisation": {},
       "finance_costs": {},
@@ -480,6 +488,7 @@ Valid slugs for `document_type` and `categories`:
       "property_plant_equipment": {},
       "right_of_use_assets": {},
       "trade_receivables": {},
+      "inventories": {},
       "amount_due_from_related": {},
       "amount_due_from_shareholder": {},
       "contract_assets": {},
@@ -490,6 +499,8 @@ Valid slugs for `document_type` and `categories`:
       "amount_due_to_related": {},
       "amount_due_to_shareholder": {},
       "bank_borrowings": {},
+      "short_term_borrowings": {},
+      "long_term_borrowings": {},
       "lease_liabilities": {},
       "income_tax_payable": {},
       "current_liabilities": {},
@@ -501,9 +512,11 @@ Valid slugs for `document_type` and `categories`:
     "cash_flow": {
       "operating": {},
       "investing": {},
+      "capital_expenditure": {},
       "financing": {},
       "net_change": {}
-    }
+    },
+    "needs_review": [{"statement": "income_statement", "line_item": "gross_profit", "period": "FY2024", "reason": ""}]
   },
   "shareholders": [
     {"name": "", "shares": 0, "percentage": 0}
@@ -524,6 +537,10 @@ FINANCIAL STATEMENTS — capture COMPLETELY and VERBATIM:
 - Take figures from the consolidated FACE statements. Do NOT substitute partial figures from individual account leadsheets / audit working papers for a line the face statement already shows.
 - NEVER invent a period or a value. If a line item or period is not in the document, omit that key — do not fill it with a guess, a zero, a carried-forward value, or a currency-converted value mislabelled as the original.
 - Preserve the original currency and unit exactly as stated (do not assume MYR/HKD/USD — read it from the document).
+- OPERATING EXPENSES: give the total under "administrative_expenses" as the statement shows it, and, where the statement or its notes break expenses down, each category under its own key (selling_and_distribution_expenses, staff_costs, rent_and_occupancy, professional_fees, research_and_development, other_operating_expenses). Only categories the document actually shows.
+- CAPEX: "capital_expenditure" is the purchase of property, plant and equipment (and intangibles, if shown on the same line) from the cash flow statement, with its reported sign.
+- STATEMENT BASIS: set "statement_basis" to "audited" (an auditor's report or opinion covers the statements), "reviewed" (a review report, e.g. on interim figures), "management" (management accounts, unaudited) or "unknown". Say what the document says — never infer audited from the layout alone.
+- NEEDS REVIEW: list in "needs_review" every figure that is unclear (illegible, ambiguous column, unit unclear), missing where a subtotal implies it, or inconsistent (e.g. a subtotal that does not add up, a balance sheet that does not balance), with a one-sentence reason. Still report the figure as printed — do not correct or guess it. Leave the list empty when nothing needs review.
 - SOURCE PAGES: the text marks each PDF page as "[Page N]". In `financial_data.source_pages` give the page number on which each face statement appears ("income_statement", "balance_sheet", "cash_flow"). If one line item comes from a different page (e.g. depreciation from a note), add it as "income_statement.depreciation_amortisation": "<page>". For a spreadsheet give the sheet instead, e.g. "Sheet: P&L". Omit a key when you cannot tell — never guess a page.
 """
 

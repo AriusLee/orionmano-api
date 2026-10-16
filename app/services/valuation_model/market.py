@@ -16,6 +16,7 @@ current, citable evidence.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import uuid
 from dataclasses import dataclass
@@ -66,6 +67,13 @@ class Assumption:
     source_keys: tuple[str, ...]  # keys in inputs.sources holding the model's stated basis
     guidance: str
     value: Callable[[dict], tuple[float | None, str]]
+    # How a suggested alternative is written: "percent" (a fraction), "series"
+    # (five fractions, Y1–Y5), "number" (beta) or "ratio" (D/E).
+    kind: str = "percent"
+    # inputs + suggested value -> patched inputs, so the suggestion's valuation
+    # impact can be computed. None for figures the model derives (WACC,
+    # relevered beta): those change through their inputs.
+    apply: Callable[[dict, Any], dict | None] | None = None
 
 
 def _param(key: str) -> Callable[[dict], tuple[float | None, str]]:
@@ -73,6 +81,82 @@ def _param(key: str) -> Callable[[dict], tuple[float | None, str]]:
         v = model_io.param_value(inputs, key)
         return v, model_io.format_param(key, v)
     return get
+
+
+def _set_param(key: str) -> Callable[[dict, Any], dict | None]:
+    def apply(inputs: dict, v: Any) -> dict | None:
+        return model_io.patched(inputs, {key: float(v)}) if isinstance(v, (int, float)) else None
+    return apply
+
+
+def _set_series(arr: str) -> Callable[[dict, Any], dict | None]:
+    """A list replaces Y1–Y5 position by position; a single number replaces every year."""
+    def apply(inputs: dict, v: Any) -> dict | None:
+        cur = list(((inputs.get("projections") or {}).get(arr)) or [])
+        if not cur:
+            return None
+        if isinstance(v, (int, float)):
+            new = [float(v)] * len(cur)
+        elif isinstance(v, list) and v and all(isinstance(x, (int, float)) for x in v):
+            new = [float(v[i]) if i < len(v) else cur[i] for i in range(len(cur))]
+        else:
+            return None
+        out = copy.deepcopy(inputs)
+        out.setdefault("projections", {})[arr] = new
+        return out
+    return apply
+
+
+def _set_capital_structure(inputs: dict, v: Any) -> dict | None:
+    """Target D/E, with the debt and equity weights that follow from it."""
+    if not isinstance(v, (int, float)) or v < 0:
+        return None
+    out = copy.deepcopy(inputs)
+    pm = out.setdefault("wacc", {}).setdefault("per_management", {})
+    pm["target_debt_to_equity"] = float(v)
+    pm["target_debt_weight"] = float(v) / (1 + float(v))
+    pm["target_equity_weight"] = 1 / (1 + float(v))
+    return out
+
+
+def _capital_structure(inputs: dict) -> tuple[float | None, str]:
+    pm = (inputs.get("wacc") or {}).get("per_management") or {}
+    de = pm.get("target_debt_to_equity")
+    if not isinstance(de, (int, float)):
+        return None, "—"
+    dw = pm.get("target_debt_weight")
+    tail = f" (debt {dw * 100:.0f}% / equity {(1 - dw) * 100:.0f}%)" if isinstance(dw, (int, float)) else ""
+    return float(de), f"D/E {de:.2f}{tail}"
+
+
+def _levered_beta(inputs: dict) -> tuple[float | None, str]:
+    pm = ((inputs.get("_summary") or {}).get("wacc") or {}).get("per_management") or {}
+    b = pm.get("levered_beta")
+    if not isinstance(b, (int, float)):
+        return None, "—"
+    c = pm.get("components") or {}
+    bits = []
+    if isinstance(c.get("unlevered_beta"), (int, float)):
+        bits.append(f"unlevered {c['unlevered_beta']:.3f}")
+    if isinstance(c.get("target_d_to_e"), (int, float)):
+        bits.append(f"D/E {c['target_d_to_e']:.2f}")
+    if isinstance(pm.get("effective_tax_rate"), (int, float)):
+        bits.append(f"tax {pm['effective_tax_rate'] * 100:.1f}%")
+    return float(b), f"{b:.3f}" + (f" ({', '.join(bits)})" if bits else "")
+
+
+def format_suggestion(kind: str, v: Any) -> str | None:
+    if kind == "series" and isinstance(v, list):
+        return _series_display(v)
+    if not isinstance(v, (int, float)):
+        return None
+    if kind == "series":
+        return f"{v * 100:.1f}% each year"
+    if kind == "number":
+        return f"{v:.3f}"
+    if kind == "ratio":
+        return f"D/E {v:.2f}"
+    return f"{v * 100:.2f}%"
 
 
 def _series(path: tuple[str, ...]) -> Callable[[dict], tuple[float | None, str]]:
@@ -105,53 +189,64 @@ ASSUMPTIONS: tuple[Assumption, ...] = (
     Assumption("revenue_growth", "Revenue growth (Y1–Y5)", ("revenue_growth_y1", "revenue_growth"),
                "Industry and market growth forecasts (CAGR) for the company's sector and geography from research houses, "
                "industry bodies or listed peers' guidance; and peers' recent revenue growth.",
-               _series(("projections", "revenue_growth"))),
+               _series(("projections", "revenue_growth")), "series", _set_series("revenue_growth")),
     Assumption("gross_margin", "Gross margin (Y1–Y5)", ("gross_margin_y1", "gross_margin"),
                "Gross margins of listed peers and the sector (latest annual reports, sector averages).",
-               _series(("projections", "gross_margin"))),
+               _series(("projections", "gross_margin")), "series", _set_series("gross_margin")),
     Assumption("opex_pct_revenue", "Operating expenses (% of revenue, Y1–Y5)", ("opex_pct_revenue",),
                "Listed peers' operating expense ratios (SG&A / opex as % of revenue) and sector EBITDA / operating margins.",
-               _series(("projections", "opex_pct_revenue"))),
+               _series(("projections", "opex_pct_revenue")), "series", _set_series("opex_pct_revenue")),
     Assumption("capex_pct_revenue", "Capital expenditure (% of revenue, Y1–Y5)", ("capex_pct_revenue",),
                "Listed peers' capex as % of revenue (cash flow statements) and sector capital-intensity benchmarks.",
-               _series(("projections", "capex_pct_revenue"))),
+               _series(("projections", "capex_pct_revenue")), "series", _set_series("capex_pct_revenue")),
     Assumption("nwc_pct_sales", "Net working capital (% of revenue, Y1–Y5)", ("nwc_pct_sales", "nwc_y0"),
                "Listed peers' net working capital as % of revenue, and sector receivable / inventory / payable days.",
-               _series(("projections", "nwc_pct_sales"))),
+               _series(("projections", "nwc_pct_sales")), "series", _set_series("nwc_pct_sales")),
     Assumption("terminal_growth_rate", "Terminal growth rate", ("terminal_growth_rate",),
                "Long-run nominal GDP growth and inflation expectations for the operating jurisdiction (IMF WEO, central bank, consensus).",
-               _param("terminal_growth_rate")),
+               _param("terminal_growth_rate"), apply=_set_param("terminal_growth_rate")),
     Assumption("risk_free_rate", "Risk-free rate", ("risk_free_rate",),
                "Government bond yield matching the currency and horizon at the valuation date (e.g. US 10-year Treasury for USD).",
-               _param("risk_free_rate")),
+               _param("risk_free_rate"), apply=_set_param("risk_free_rate")),
     Assumption("equity_risk_premium", "Equity risk premium", ("equity_risk_premium",),
                "Damodaran implied ERP, Kroll recommended ERP, or other published ERP surveys near the valuation date.",
-               _param("equity_risk_premium")),
+               _param("equity_risk_premium"), apply=_set_param("equity_risk_premium")),
     Assumption("country_risk_premium", "Country risk premium", ("country_risk_premium",),
                "Damodaran country risk premium for the operating country, or sovereign default spreads.",
-               _param("country_risk_premium")),
+               _param("country_risk_premium"), apply=_set_param("country_risk_premium")),
     Assumption("unlevered_beta_pm", "Unlevered beta", ("unlevered_beta_per_mgmt", "unlevered_beta_pm"),
                "Damodaran industry unlevered betas for the sector (US / Global / Asia) and listed peers' betas.",
-               _param("unlevered_beta_pm")),
+               _param("unlevered_beta_pm"), "number", apply=_set_param("unlevered_beta_pm")),
+    Assumption("levered_beta", "Relevered beta", ("levered_beta",),
+               "Listed peers' levered (raw / adjusted) betas against a broad market index, and Damodaran levered betas by industry; "
+               "check the relevering shown (unlevered beta, D/E, tax rate).",
+               _levered_beta, "number"),
     Assumption("size_premium_pm", "Size premium", ("size_premium_per_mgmt", "size_premium_pm"),
                "Kroll (Duff & Phelps) CRSP size premia by decile for a company of this market capitalisation.",
-               _param("size_premium_pm")),
+               _param("size_premium_pm"), apply=_set_param("size_premium_pm")),
     Assumption("specific_risk_premium_pm", "Company-specific risk premium", ("specific_risk_premium_per_mgmt", "specific_risk_premium_pm"),
                "Published practitioner ranges for company-specific risk premia in private-company / pre-IPO valuations.",
-               _param("specific_risk_premium_pm")),
+               _param("specific_risk_premium_pm"), apply=_set_param("specific_risk_premium_pm")),
     Assumption("pretax_cost_of_debt_pm", "Pre-tax cost of debt", ("pretax_cost_of_debt_pm", "pretax_cost_of_debt"),
                "Bank lending rates / corporate bond yields for similar credit quality in the borrowing currency at the valuation date.",
-               _param("pretax_cost_of_debt_pm")),
+               _param("pretax_cost_of_debt_pm"), apply=_set_param("pretax_cost_of_debt_pm")),
+    Assumption("effective_tax_rate", "Tax rate", ("tax_rate_high", "effective_tax_rate", "tax_rate"),
+               "Statutory corporate income tax rates for the operating jurisdiction(s) at the valuation date "
+               "(tax authority, KPMG / PwC worldwide tax summaries), including any two-tier or concessionary regime.",
+               _param("effective_tax_rate"), apply=_set_param("effective_tax_rate")),
+    Assumption("target_debt_to_equity", "Target capital structure (D/E)", ("target_debt_to_equity", "target_d_to_e"),
+               "Damodaran debt-to-equity / debt-to-capital ratios by industry and listed peers' market-value leverage.",
+               _capital_structure, "ratio", _set_capital_structure),
     Assumption("wacc", "WACC", ("wacc",),
                "Damodaran cost of capital by industry (US / Global / Emerging markets), and WACCs used for listed peers "
                "in broker reports or fairness opinions; check the build-up shown (cost of equity, cost of debt, weights).",
                _wacc),
     Assumption("dlom_pct", "Discount for lack of marketability", ("dlom_pct",),
                "DLOM studies — restricted-stock and pre-IPO studies, option-based models — and the ranges they report.",
-               _param("dlom_pct")),
+               _param("dlom_pct"), apply=_set_param("dlom_pct")),
     Assumption("dloc_pct", "Discount for lack of control", ("dloc_pct",),
                "Control premium studies (e.g. FactSet Mergerstat) and the implied minority discounts.",
-               _param("dloc_pct")),
+               _param("dloc_pct"), apply=_set_param("dloc_pct")),
 )
 BY_KEY = {a.key: a for a in ASSUMPTIONS}
 
@@ -165,13 +260,25 @@ Then judge the value the model uses:
 - "not_supported": outside what the evidence supports
 - "insufficient_data": you could not find adequate evidence
 
+If the assessment is "not_supported" or "partially_supported", suggest the value the evidence supports in "suggested_value" (in the format given under "Suggested value format") and say in one sentence in "suggested_basis" which evidence it comes from. Otherwise leave both null. This is a suggestion for the analyst; the model is not changed.
+
 Return ONLY a JSON object, no prose before or after:
 {
   "assessment": "supported | partially_supported | not_supported | insufficient_data",
   "market_range": "the range or point the evidence indicates, e.g. 4.2%–4.6%",
   "finding": "2-4 sentences: what the evidence shows and how the model's value compares",
+  "suggested_value": null,
+  "suggested_basis": null,
   "sources": [{"url": "...", "title": "...", "publisher": "...", "published_date": "YYYY-MM-DD or as precise as known", "quote": "the figure or sentence relied on, under 30 words"}]
 }"""
+
+
+_FORMATS = {
+    "percent": "a number as a fraction, e.g. 0.0458 for 4.58%",
+    "series": "a list of five fractions for Y1–Y5, e.g. [0.30, 0.25, 0.20, 0.15, 0.10]",
+    "number": "a plain number, e.g. 0.95",
+    "ratio": "a debt-to-equity ratio, e.g. 0.30",
+}
 
 
 def _stated_basis(inputs: dict, a: Assumption) -> str:
@@ -213,7 +320,8 @@ async def _research(evidence_id: uuid.UUID, context: str, inputs: dict) -> None:
         value_display = ev.value_display
     user = (
         f"{context}\n\n# Assumption to check\n{a.label}: {value_display}\n"
-        f"The model's stated basis: {_stated_basis(inputs, a)}\n\n# Where to look\n{a.guidance}"
+        f"The model's stated basis: {_stated_basis(inputs, a)}\n\n# Where to look\n{a.guidance}\n\n"
+        f"# Suggested value format\n{_FORMATS[a.kind]}"
     )
     try:
         parsed, response = await model_io.ask_claude_json(
@@ -248,6 +356,17 @@ async def _research(evidence_id: uuid.UUID, context: str, inputs: dict) -> None:
             ev.market_range = str(parsed.get("market_range") or "")[:200] or None
             ev.finding = str(parsed.get("finding") or "").strip() or None
             ev.sources = sources[:8]
+            ev.suggested_value, ev.suggested_display, ev.suggested_basis, ev.suggested_impact = None, None, None, None
+            if assessment in ("not_supported", "partially_supported"):
+                sv = parsed.get("suggested_value")
+                shown = format_suggestion(a.kind, sv)
+                if shown:
+                    ev.suggested_value = sv
+                    ev.suggested_display = shown[:200]
+                    ev.suggested_basis = str(parsed.get("suggested_basis") or "").strip() or None
+                    new_inputs = a.apply(inputs, sv) if a.apply else None
+                    if new_inputs is not None:
+                        ev.suggested_impact = model_io.impact_between(inputs, new_inputs)
             ev.error = None
             ev.searched_at = datetime.now(timezone.utc)
             await db.commit()
@@ -369,6 +488,10 @@ def evidence_dict(r: MarketEvidence) -> dict[str, Any]:
         "assessment": r.assessment,
         "market_range": r.market_range,
         "finding": r.finding,
+        "suggested_value": r.suggested_value,
+        "suggested_display": r.suggested_display,
+        "suggested_basis": r.suggested_basis,
+        "suggested_impact": r.suggested_impact,
         "sources": r.sources or [],
         "searched_at": r.searched_at.isoformat() if r.searched_at else None,
         "error": r.error,
@@ -383,6 +506,26 @@ ASSESSMENT_LABELS = {
     "pending": "Pending",
     "failed": "Search failed",
 }
+
+
+def _impact_text(imp: dict | None) -> str:
+    if not imp or imp.get("ev_after") is None:
+        return "not computed — this figure is derived in the model, so it changes through its inputs"
+    cu = " ".join(x for x in (imp.get("currency"), imp.get("unit")) if x)
+
+    def money(v: Any) -> str:
+        return f"{v:,.0f}" if isinstance(v, (int, float)) else "—"
+
+    def chg(v: Any) -> str:
+        return f"{v * 100:+.1f}%" if isinstance(v, (int, float)) else "n/a"
+
+    rb, ra = imp.get("range_before") or [None, None], imp.get("range_after") or [None, None]
+    db_, da = imp.get("dcf_range_before") or [None, None], imp.get("dcf_range_after") or [None, None]
+    concluded = (f"concluded range {money(rb[0])}–{money(rb[1])} unchanged (the selected band still brackets the EV)"
+                 if rb == ra else f"concluded range {money(rb[0])}–{money(rb[1])} → {money(ra[0])}–{money(ra[1])}")
+    return (f"EV {money(imp['ev_before'])} → {money(imp['ev_after'])} {cu} ({chg(imp.get('ev_change_pct'))}); "
+            f"equity {money(imp.get('equity_before'))} → {money(imp.get('equity_after'))} ({chg(imp.get('equity_change_pct'))}); "
+            f"DCF range {money(db_[0])}–{money(db_[1])} → {money(da[0])}–{money(da[1])}; {concluded}")
 
 
 async def report_context_block(db: AsyncSession, version_id: uuid.UUID) -> str:
@@ -405,6 +548,10 @@ async def report_context_block(db: AsyncSession, version_id: uuid.UUID) -> str:
             f"- Assessment: {ASSESSMENT_LABELS.get(r.assessment, r.assessment)}\n"
             f"- Market range: {r.market_range or 'n/a'}\n- Finding: {r.finding or ''}"
         )
+        if r.suggested_display:
+            parts.append(f"- Suggested alternative (not applied to the model): {r.suggested_display}"
+                         + (f" — {r.suggested_basis}" if r.suggested_basis else ""))
+            parts.append(f"- Valuation impact of the alternative: {_impact_text(r.suggested_impact)}")
         for s in r.sources or []:
             n += 1
             parts.append(
@@ -413,3 +560,23 @@ async def report_context_block(db: AsyncSession, version_id: uuid.UUID) -> str:
                 + (f" — \"{s.get('quote')}\"" if s.get("quote") else "")
             )
     return "\n".join(parts)
+
+
+async def sources_appendix(db: AsyncSession, version_id: uuid.UUID) -> str:
+    """The Market Data Sources appendix, numbered exactly as report_context_block
+    numbers them (S1, S2 …). Built from the stored sources, not written by the
+    LLM, so it is complete and nothing in it can be invented."""
+    rows = [r for r in await evidence_for(db, version_id) if r.assessment not in ("pending", "failed")]
+    lines: list[str] = []
+    n = 0
+    for r in rows:
+        for s in r.sources or []:
+            n += 1
+            publisher = s.get("publisher") or ""
+            title = s.get("title") or ""
+            head = " — ".join(x for x in (publisher, f'"{title}"' if title else "") if x) or s.get("url")
+            line = f"**S{n}.** {head} ({s.get('published_date') or 'date n/a'}). {s.get('url')}"
+            if s.get("quote"):
+                line += f' — "{s["quote"]}"'
+            lines.append(line + f" _[{r.label}]_")
+    return "\n\n".join(lines) if lines else "_No market data sources were recorded for this version._"

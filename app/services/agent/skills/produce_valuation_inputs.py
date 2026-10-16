@@ -133,6 +133,7 @@ PINNABLE_PARAMS: dict[str, tuple[str, str]] = {
     "size_premium_pm":            ("wacc.per_management.size_premium",          "percent"),
     "specific_risk_premium_pm":   ("wacc.per_management.specific_risk_premium", "percent"),
     "pretax_cost_of_debt_pm":     ("wacc.per_management.pretax_cost_of_debt",   "percent"),
+    "effective_tax_rate":         ("tax.effective_rate_override",               "percent"),
     "dlom_pct":                   ("bridge.dlom_pct",                           "percent"),
     "dloc_pct":                   ("bridge.dloc_pct",                           "percent"),
     "shares_outstanding":         ("bridge.shares_outstanding",                 "number"),

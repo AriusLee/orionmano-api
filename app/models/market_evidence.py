@@ -9,6 +9,7 @@ the analyst can also read them on the valuation page.
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import String, Float, Text, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -33,6 +34,14 @@ class MarketEvidence(Base):
     # Market range or point the evidence points to, in words ("2.0%–2.5%").
     market_range: Mapped[str | None] = mapped_column(String(200))
     finding: Mapped[str | None] = mapped_column(Text)
+    # Only when not / partially supported: the value the evidence supports
+    # (raw — a fraction, a Y1–Y5 list, a beta or a D/E), its basis, and its
+    # effect on EV / equity / range computed by the deterministic model. A
+    # suggestion only; the model is not changed.
+    suggested_value: Mapped[Any] = mapped_column(JSONB)
+    suggested_display: Mapped[str | None] = mapped_column(String(200))
+    suggested_basis: Mapped[str | None] = mapped_column(Text)
+    suggested_impact: Mapped[dict | None] = mapped_column(JSONB)
     # [{url, title, publisher, published_date, quote}]
     sources: Mapped[list | None] = mapped_column(JSONB)
     searched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

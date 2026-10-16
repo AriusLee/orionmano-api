@@ -44,6 +44,12 @@ says which feed `historical_fs` (sign: costs/liabilities negative).
   `financial_figure_amendments`.
 - Locked figures also lead the agent/report/KB contexts
   (`confirmed_context_block`).
+- Extraction also returns opex by category (`opex_*`, shown, not in the
+  model), capex from the cash flow, `statement_basis` (audited / reviewed /
+  management) and `needs_review` [{line_item, period, reason}]. After a sync,
+  `store._flag_reviews` sets `financial_figures.review_note` from those flags
+  plus deterministic subtotal checks (GP = revenue − COGS, NI = PBT − tax,
+  EBITDA = EBIT + D&A, assets = liabilities + equity). An analyst edit clears it.
 
 ## 3. Counterparty Q&A — `qa_batches` / `qa_items` / `qa_model_changes`
 
@@ -54,14 +60,22 @@ impact from `compute_summary` (deterministic, no LLM). Approve → apply:
 changes are applied on top of the CURRENT active version through the
 regenerate-from-inputs path → new version (`trigger=qa_change`,
 `qa_item_id`) + its report, and the values are pinned on the company so a
-later full Generate keeps them. Export to Excel / Word.
+later full Generate keeps them. Export to Excel / Word. Answers draw on the
+model, the version's valuation report and the documents, and say where each
+figure comes from in words; no change → "Model impact: No change required";
+a proposal is "PENDING USER APPROVAL" until approved. Impact
+(`model_io.impact_between`) = EV, equity, the DCF range and the concluded range.
 
 ## 4. Market Data Supported report — `market_evidence`
 
-For a version, each key assumption (growth, margins, terminal growth, Rf,
-ERP, CRP, beta, size/specific premia, Kd, DLOM, DLOC) is checked with
-Claude's `web_search_20250305` tool: assessment, market range, finding,
-sources with URL + date. Then a `valuation_report` with
+For a version, each key assumption (growth, gross margin, opex, capex, NWC,
+terminal growth, Rf, ERP, CRP, unlevered and relevered beta, size/specific
+premia, Kd, tax rate, D/E, WACC, DLOM, DLOC — 19) is checked with Claude's
+`web_search_20250305` tool: assessment, market range, finding, sources with
+URL + date. When not / partially supported it also suggests a value; for
+inputs (`Assumption.apply`) the deterministic model gives that value's
+EV / equity / range impact. Derived figures (WACC, relevered beta) get a
+suggestion without impact. Suggestions never change the model. Then a `valuation_report` with
 `variant = "market_supported"` is generated: it adds "Market Data Support
 for Key Assumptions" (table + detail on anything not supported) and an
 "Appendix — Market Data Sources" (S-numbered). The DuckDuckGo cached search

@@ -30,6 +30,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import async_session
 from app.models.company import Company
 from app.models.qa import QaBatch, QaItem, QaModelChange
+from app.models.report import Report, ReportSection
+from app.models.valuation_version import ValuationVersion
 from app.services.agent.skills.produce_valuation_inputs import PINNABLE_PARAMS
 from app.services.valuation_model import model_io, versions
 
@@ -165,13 +167,13 @@ async def create_batch(
 
 _SYSTEM = """You are a senior valuation partner at Orionmano Assurance Services. A counterparty (investor, underwriter or acquirer) has sent questions about the valuation model below. Draft the firm's response to ONE question.
 
-Answer from the model and the company data only. Never invent a figure; if the model or data cannot answer something, say what is missing. Be direct and professional — this goes to the counterparty after the analyst reviews it.
+Answer only from the valuation model, the valuation report and the company's documents below. Never invent a figure; if they cannot answer something, say so and say what information is needed. Keep a professional, factual tone — this goes to the counterparty after the analyst reviews it. Do not concede that an assumption is wrong unless the evidence supports it; where judgement is involved, explain the rationale.
 
 Write two answers:
-- "simplified_answer": 2-4 sentences for a non-specialist.
-- "detailed_answer": the full response in markdown — the reasoning, the relevant figures from the model, the basis of each assumption touched, and (if a change is proposed) what changes and why. No inline citation numbers.
+- "simplified_answer": 2-3 sentences in plain language, suitable for sending directly.
+- "detailed_answer": the full response in markdown — the reasoning, the relevant figures, the basis of each assumption touched, and (if a change is proposed) what changes and why. Say where each figure or basis comes from in words, e.g. "(model: WACC build-up)", "(report: Discounted Cash Flow Analysis)", "(source: TL audit report 2024.pdf, p. 12)" — use the model's headings, the report's section titles and the document names exactly as given. No numbered citations.
 
-Decide whether the question exposes something the model SHOULD change (an assumption that is unsupported, inconsistent with the data, or that the counterparty has a fair point on). Only then propose changes, and only to the parameters listed as changeable, using their exact keys. Values are raw: percentages as fractions (0.025 = 2.5%), money in the model's currency and unit, exactly like the [raw …] values shown. If the model is defensible as it stands, propose no change and explain why in the answer.
+Decide whether the question exposes something the model SHOULD change (an assumption that is unsupported, inconsistent with the data, or that the counterparty has a fair point on). Only then propose changes, and only to the parameters listed as changeable, using their exact keys. Values are raw: percentages as fractions (0.025 = 2.5%), money in the model's currency and unit, exactly like the [raw …] values shown. If the model is defensible as it stands, propose no change, end the detailed answer with "Model impact: No change required." and explain why. If you do propose a change, do not write a "Model impact" line — the system adds the change and its computed impact. In both answers write figures as a reader would (4.58%, USD 3,713 thousand), never parameter keys or raw fractions. You never apply a change: the analyst approves it, then the system re-runs the model as a new version linked to this question.
 
 Return ONLY a JSON object:
 {
@@ -190,14 +192,36 @@ async def _company_context(db: AsyncSession, company_id: uuid.UUID) -> str:
     return text[:40_000]
 
 
-async def _draft_one(item_id: uuid.UUID, model_text: str, company_text: str, base_inputs: dict) -> None:
+async def _report_context(db: AsyncSession, version: ValuationVersion) -> str:
+    """The valuation report for this version (or the company's latest completed
+    one), section by section, so answers can point at report sections."""
+    report = None
+    if version.report_id:
+        report = (await db.execute(select(Report).where(Report.id == version.report_id))).scalar_one_or_none()
+    if report is None:
+        report = (await db.execute(
+            select(Report).where(Report.company_id == version.company_id, Report.report_type == "valuation_report",
+                                 Report.status.notin_(("pending", "generating", "failed")))
+            .order_by(Report.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
+    if report is None:
+        return "No valuation report has been written for this model."
+    rows = (await db.execute(
+        select(ReportSection.section_title, ReportSection.content)
+        .where(ReportSection.report_id == report.id).order_by(ReportSection.sort_order)
+    )).all()
+    text = "\n\n".join(f"## {t}\n{(c or '').strip()}" for t, c in rows if c)
+    return f"{report.title}\n\n{text}"[:30_000]
+
+
+async def _draft_one(item_id: uuid.UUID, model_text: str, company_text: str, base_inputs: dict, report_text: str = "") -> None:
     async with async_session() as db:
         item = (await db.execute(select(QaItem).where(QaItem.id == item_id))).scalar_one_or_none()
         if item is None:
             return
         question = item.question
     user = (
-        f"# Valuation model\n{model_text}\n\n# Company data\n{company_text}\n\n"
+        f"# Valuation model\n{model_text}\n\n# Valuation report\n{report_text}\n\n# Company data and documents\n{company_text}\n\n"
         f"# Question\n{question}"
     )
     try:
@@ -275,6 +299,7 @@ async def answer_batch_bg(batch_id: uuid.UUID, item_ids: list[uuid.UUID] | None 
         await db.commit()
         model_text = model_io.describe_model(base.inputs, base.summary)
         company_text = await _company_context(db, batch.company_id)
+        report_text = await _report_context(db, base)
         base_inputs = base.inputs
         ids = [i.id for i in targets]
 
@@ -282,7 +307,7 @@ async def answer_batch_bg(batch_id: uuid.UUID, item_ids: list[uuid.UUID] | None 
 
     async def run(iid: uuid.UUID) -> None:
         async with sem:
-            await _draft_one(iid, model_text, company_text, base_inputs)
+            await _draft_one(iid, model_text, company_text, base_inputs, report_text)
 
     await asyncio.gather(*(run(i) for i in ids))
 
@@ -536,8 +561,25 @@ async def batch_dict(db: AsyncSession, batch: QaBatch, *, with_items: bool = Tru
 
 def _impact_text(c: dict) -> str:
     imp = c.get("impact") or {}
-    pct = imp.get("ev_change_pct")
-    return f"EV {pct * 100:+.1f}%" if isinstance(pct, (int, float)) else ""
+
+    def chg(k: str) -> str | None:
+        v = imp.get(k)
+        return f"{v * 100:+.1f}%" if isinstance(v, (int, float)) else None
+
+    def span(r: Any) -> str | None:
+        if isinstance(r, list) and len(r) == 2 and all(isinstance(x, (int, float)) for x in r):
+            return f"{r[0]:,.0f}–{r[1]:,.0f}"
+        return None
+
+    parts = [f"EV {chg('ev_change_pct')}" if chg("ev_change_pct") else None,
+             f"equity {chg('equity_change_pct')}" if chg("equity_change_pct") else None]
+    before, after = span(imp.get("dcf_range_before")), span(imp.get("dcf_range_after"))
+    if before and after:
+        parts.append(f"DCF range {before} → {after}")
+    return ", ".join(p for p in parts if p)
+
+
+_CHANGE_STATUS = {"proposed": "PENDING USER APPROVAL", "approved": "approved", "rejected": "rejected"}
 
 
 def export_xlsx(batch: dict) -> bytes:
@@ -547,7 +589,7 @@ def export_xlsx(batch: dict) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "Q&A"
-    headers = ["No.", "Topic", "Question", "Simplified answer", "Detailed answer", "Model change", "Impact", "Status", "Resulting version"]
+    headers = ["No.", "Topic", "Question", "Simplified answer", "Detailed answer", "Model impact", "Valuation effect", "Status", "Resulting version"]
     ws.append(headers)
     for cell in ws[1]:
         cell.font = Font(bold=True, color="FFFFFF")
@@ -561,12 +603,13 @@ def export_xlsx(batch: dict) -> bytes:
             it["question"],
             it.get("simplified_answer") or "",
             it.get("detailed_answer") or "",
-            "\n".join(f"{c['label']}: {c['old_display']} → {c['new_display']} ({c['status']})" for c in changes) or "No change",
+            "\n".join(f"{c['label']}: {c['old_display']} → {c['new_display']} ({_CHANGE_STATUS.get(c['status'], c['status'])})"
+                      + (f" — {c['rationale']}" if c.get("rationale") else "") for c in changes) or "No change required",
             "\n".join(_impact_text(c) for c in changes if _impact_text(c)),
             it["status"].replace("_", " "),
             f"v{it['resulting_version_no']}" if it.get("resulting_version_no") else "",
         ])
-    widths = [6, 18, 50, 50, 80, 45, 14, 14, 12]
+    widths = [6, 18, 50, 50, 80, 55, 34, 14, 12]
     for i, w in enumerate(widths):
         ws.column_dimensions[chr(65 + i)].width = w
     for row in ws.iter_rows(min_row=2):
@@ -600,11 +643,16 @@ def export_docx(batch: dict, company_name: str) -> bytes:
                     doc.add_heading(txt.lstrip("# ").strip(), level=3)
                 else:
                     doc.add_paragraph(re.sub(r"\*\*(.+?)\*\*", r"\1", txt))
-        applied = [c for c in it["changes"] if c["status"] == "approved"]
-        if applied:
-            p = doc.add_paragraph()
-            p.add_run("Model change: ").bold = True
-            p.add_run("; ".join(f"{c['label']} {c['old_display']} → {c['new_display']}" for c in applied))
+        live = [c for c in it["changes"] if c["status"] != "rejected"]
+        if not live and "Model impact:" in (it.get("detailed_answer") or ""):
+            continue
+        p = doc.add_paragraph()
+        p.add_run("Model impact: ").bold = True
+        p.add_run("; ".join(
+            f"{c['label']} {c['old_display']} → {c['new_display']} ({_CHANGE_STATUS.get(c['status'], c['status'])}"
+            + (f"; {_impact_text(c)}" if _impact_text(c) else "") + ")"
+            for c in live
+        ) or "No change required")
     for style in ("Normal",):
         doc.styles[style].font.size = Pt(10.5)
     buf = io.BytesIO()

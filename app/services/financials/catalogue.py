@@ -35,6 +35,14 @@ LINE_ITEMS: tuple[LineItem, ...] = (
     LineItem("gross_profit", "Gross profit", "income_statement", "gross_profit", "as_is", ("gross_profit",)),
     LineItem("other_income", "Other income", "income_statement", "other_income_expense", "as_is", ("other_income", "other_income_expense", "other_gains")),
     LineItem("opex_total", "Operating / administrative expenses", "income_statement", "opex_total", "cost", ("administrative_expenses", "operating_expenses", "opex", "opex_total", "selling_general_administrative")),
+    # Operating expenses by category, where the document breaks them down.
+    # Shown and lockable; the model takes the total above.
+    LineItem("opex_selling", "  Selling & distribution expenses", "income_statement", None, "cost", ("selling_and_distribution_expenses", "selling_and_distribution_costs", "selling_expenses", "distribution_costs", "selling_and_marketing_expenses")),
+    LineItem("opex_staff", "  Staff costs", "income_statement", None, "cost", ("staff_costs", "employee_benefit_expenses", "employee_benefits_expense", "salaries_and_wages")),
+    LineItem("opex_rent", "  Rent & occupancy", "income_statement", None, "cost", ("rent_and_occupancy", "rental_expenses", "rent", "occupancy_costs")),
+    LineItem("opex_professional", "  Professional fees", "income_statement", None, "cost", ("professional_fees", "legal_and_professional_fees")),
+    LineItem("opex_rnd", "  Research & development", "income_statement", None, "cost", ("research_and_development", "research_and_development_expenses", "rnd")),
+    LineItem("opex_other", "  Other operating expenses", "income_statement", None, "cost", ("other_operating_expenses", "other_expenses")),
     LineItem("ebitda", "EBITDA", "income_statement", "ebitda", "as_is", ("ebitda",)),
     LineItem("da", "Depreciation & amortisation", "income_statement", "da", "cost", ("depreciation_amortisation", "depreciation_and_amortisation", "depreciation_amortization", "depreciation", "da")),
     LineItem("ebit", "Operating profit (EBIT)", "income_statement", "ebit", "as_is", ("profit_from_operation", "profit_from_operations", "operating_profit", "ebit")),
@@ -70,6 +78,7 @@ LINE_ITEMS: tuple[LineItem, ...] = (
     LineItem("operating_cash_flow", "Net cash from operating activities", "cash_flow", None, "as_is", ("operating", "operating_cash_flow", "net_cash_from_operating_activities")),
     LineItem("investing_cash_flow", "Net cash used in investing activities", "cash_flow", None, "as_is", ("investing", "investing_cash_flow")),
     LineItem("financing_cash_flow", "Net cash from financing activities", "cash_flow", None, "as_is", ("financing", "financing_cash_flow")),
+    LineItem("capex", "Capital expenditure", "cash_flow", None, "as_is", ("capital_expenditure", "capex", "purchase_of_ppe", "purchase_of_property_plant_and_equipment", "purchases_of_property_plant_and_equipment")),
     LineItem("net_change_in_cash", "Net change in cash", "cash_flow", None, "as_is", ("net_change", "net_change_in_cash")),
 )
 

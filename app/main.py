@@ -52,6 +52,11 @@ _COLUMN_UPGRADES: list[str] = [
     "ALTER TABLE reports ADD COLUMN IF NOT EXISTS valuation_version_id UUID",
     "ALTER TABLE reports ADD COLUMN IF NOT EXISTS variant VARCHAR(30) DEFAULT 'standard'",
     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS target_period VARCHAR(50)",
+    "ALTER TABLE financial_figures ADD COLUMN IF NOT EXISTS review_note TEXT",
+    "ALTER TABLE market_evidence ADD COLUMN IF NOT EXISTS suggested_value JSONB",
+    "ALTER TABLE market_evidence ADD COLUMN IF NOT EXISTS suggested_display VARCHAR(200)",
+    "ALTER TABLE market_evidence ADD COLUMN IF NOT EXISTS suggested_basis TEXT",
+    "ALTER TABLE market_evidence ADD COLUMN IF NOT EXISTS suggested_impact JSONB",
 ]
 
 

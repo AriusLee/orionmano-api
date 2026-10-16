@@ -44,6 +44,7 @@ PARAM_LABELS: dict[str, str] = {
     "size_premium_pm": "Size premium",
     "specific_risk_premium_pm": "Company-specific risk premium",
     "pretax_cost_of_debt_pm": "Pre-tax cost of debt",
+    "effective_tax_rate": "Effective tax rate",
     "dlom_pct": "Discount for lack of marketability (DLOM)",
     "dloc_pct": "Discount for lack of control (DLOC)",
     "shares_outstanding": "Shares outstanding (basic)",
@@ -93,35 +94,61 @@ def patched(inputs: dict, changes: dict[str, float]) -> dict:
     return out
 
 
-def compute_headline(inputs: dict) -> tuple[float | None, float | None]:
-    """(EV, equity after DLOM/DLOC) from the deterministic model — cheap, so
-    every proposed change can show its impact before anything is applied."""
+def compute_values(inputs: dict) -> dict[str, float | None]:
+    """EV, equity (after DLOM/DLOC) and the concluded EV range from the
+    deterministic model — cheap, so every proposed change can show its impact
+    before anything is applied."""
     try:
         from compute import compute_summary  # type: ignore  (backend/valuation on sys.path)
-        return headline(compute_summary(inputs))
+        summary = compute_summary(inputs)
     except Exception as e:
         logger.warning("compute_summary failed: %s: %s", type(e).__name__, e)
-        return None, None
+        return {"ev": None, "equity": None, "low": None, "high": None, "dcf_low": None, "dcf_high": None}
+    ev, equity = headline(summary)
+    concluded = summary.get("concluded") or {}
+    dcf_ff = (summary.get("football_field") or {}).get("dcf") or {}
+
+    def num(v: Any) -> float | None:
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+    # The concluded range keeps the analyst-selected band while it still
+    # brackets the EV, so it often does not move; the DCF range (per
+    # management vs independent) always does, so both are reported.
+    return {"ev": ev, "equity": equity, "low": num(concluded.get("low")), "high": num(concluded.get("high")),
+            "dcf_low": num(dcf_ff.get("low")), "dcf_high": num(dcf_ff.get("high"))}
 
 
-def impact(inputs: dict, changes: dict[str, float]) -> dict[str, Any]:
-    ev0, eq0 = compute_headline(inputs)
-    ev1, eq1 = compute_headline(patched(inputs, changes))
+def compute_headline(inputs: dict) -> tuple[float | None, float | None]:
+    v = compute_values(inputs)
+    return v["ev"], v["equity"]
+
+
+def impact_between(inputs: dict, new_inputs: dict) -> dict[str, Any]:
+    """Effect on EV, equity and the valuation range of replacing `inputs` with `new_inputs`."""
+    a, b = compute_values(inputs), compute_values(new_inputs)
     cu = inputs.get("currency") or {}
 
-    def pct(a: float | None, b: float | None) -> float | None:
-        return (b - a) / a if a not in (None, 0) and b is not None else None
+    def pct(x: float | None, y: float | None) -> float | None:
+        return (y - x) / x if x not in (None, 0) and y is not None else None
 
     return {
-        "ev_before": ev0,
-        "ev_after": ev1,
-        "equity_before": eq0,
-        "equity_after": eq1,
-        "ev_change_pct": pct(ev0, ev1),
-        "equity_change_pct": pct(eq0, eq1),
+        "ev_before": a["ev"],
+        "ev_after": b["ev"],
+        "equity_before": a["equity"],
+        "equity_after": b["equity"],
+        "ev_change_pct": pct(a["ev"], b["ev"]),
+        "equity_change_pct": pct(a["equity"], b["equity"]),
+        "range_before": [a["low"], a["high"]],
+        "range_after": [b["low"], b["high"]],
+        "dcf_range_before": [a["dcf_low"], a["dcf_high"]],
+        "dcf_range_after": [b["dcf_low"], b["dcf_high"]],
         "currency": cu.get("primary"),
         "unit": cu.get("unit"),
     }
+
+
+def impact(inputs: dict, changes: dict[str, float]) -> dict[str, Any]:
+    return impact_between(inputs, patched(inputs, changes))
 
 
 def describe_model(inputs: dict, summary: dict | None) -> str:

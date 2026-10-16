@@ -65,6 +65,9 @@ class FinancialFigure(Base):
     source_document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"))
     # "12" for PDF page 12, "Sheet: P&L" for a spreadsheet; free text when entered by hand.
     source_page: Mapped[str | None] = mapped_column(String(80))
+    # Set when the extraction flagged the figure or a subtotal check failed:
+    # why it needs the analyst's review. Cleared when a clean source replaces it.
+    review_note: Mapped[str | None] = mapped_column(Text)
     # extraction | manual
     origin: Mapped[str] = mapped_column(String(20), nullable=False, default="extraction")
     updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))

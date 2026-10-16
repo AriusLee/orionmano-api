@@ -243,8 +243,107 @@ async def sync_document(db: AsyncSession, doc: Document) -> dict[str, int]:
         else:
             stats["unchanged"] += 1
 
+    stats["needs_review"] = _flag_reviews(doc, periods)
     await db.commit()
     return stats
+
+
+# ─── Needs review ────────────────────────────────────────────────────────────
+
+def _llm_review_flags(extracted: dict | None) -> dict[tuple[str, str], str]:
+    """(line item key, period label) -> reason, from the extraction's own
+    `financial_data.needs_review` list."""
+    fd = (extracted or {}).get("financial_data") if isinstance(extracted, dict) else None
+    out: dict[tuple[str, str], str] = {}
+    for f in (fd or {}).get("needs_review") or []:
+        if not isinstance(f, dict) or not f.get("line_item") or not f.get("period"):
+            continue
+        reason = str(f.get("reason") or "").strip()
+        if not reason:
+            continue
+        item = cat.resolve(str(f.get("statement") or "income_statement"), str(f["line_item"]))
+        label = cat.normalize_period(str(f["period"]))[0]
+        out[(item.key, label)] = reason
+    return out
+
+
+def _fmt(v: float) -> str:
+    return f"{v:,.0f}" if abs(v) >= 100 else f"{v:,.2f}"
+
+
+def _subtotal_checks(by_key: dict[str, FinancialFigure]) -> dict[str, str]:
+    """Subtotals that don't add up, as {line item of the subtotal: why}.
+    Compared in the figures' own unit; only when all parts share it."""
+    out: dict[str, str] = {}
+
+    def val(k: str) -> float | None:
+        f = by_key.get(k)
+        return f.value if f is not None and f.value is not None else None
+
+    def comparable(*keys: str) -> bool:
+        figs = [by_key[k] for k in keys]
+        return len({(f.currency, f.unit_multiplier) for f in figs}) == 1
+
+    def off(expected: float, shown: float) -> bool:
+        return abs(expected - shown) > max(1.0, 0.005 * abs(expected))
+
+    rev, cogs, gp = val("revenue"), val("cogs"), val("gross_profit")
+    if None not in (rev, cogs, gp) and comparable("revenue", "cogs", "gross_profit"):
+        exp = rev - abs(cogs)
+        if off(exp, gp):
+            out["gross_profit"] = (f"Doesn't add up: revenue {_fmt(rev)} − cost of sales {_fmt(abs(cogs))} = {_fmt(exp)}, "
+                                   f"but the document shows {_fmt(gp)} (difference {_fmt(gp - exp)}).")
+    pbt, tax, ni = val("profit_before_tax"), val("tax_expense"), val("net_income")
+    if None not in (pbt, tax, ni) and comparable("profit_before_tax", "tax_expense", "net_income"):
+        # A tax credit raises profit; accept either direction.
+        if off(pbt - abs(tax), ni) and off(pbt + abs(tax), ni):
+            out["net_income"] = (f"Doesn't add up: profit before tax {_fmt(pbt)} less tax {_fmt(abs(tax))} = {_fmt(pbt - abs(tax))}, "
+                                 f"but the document shows net profit {_fmt(ni)}.")
+    ebit, da, ebitda = val("ebit"), val("da"), val("ebitda")
+    if None not in (ebit, da, ebitda) and comparable("ebit", "da", "ebitda"):
+        exp = ebit + abs(da)
+        if off(exp, ebitda):
+            out["ebitda"] = (f"Doesn't add up: EBIT {_fmt(ebit)} + D&A {_fmt(abs(da))} = {_fmt(exp)}, "
+                             f"but the document shows EBITDA {_fmt(ebitda)}.")
+    ta, tl, te = val("total_assets"), val("total_liabilities"), val("total_equity")
+    if None not in (ta, tl, te) and comparable("total_assets", "total_liabilities", "total_equity"):
+        exp = abs(tl) + te
+        if off(exp, ta):
+            out["total_assets"] = (f"Balance sheet doesn't balance: liabilities {_fmt(abs(tl))} + equity {_fmt(te)} = {_fmt(exp)}, "
+                                   f"but total assets are {_fmt(ta)}.")
+    return out
+
+
+def _flag_reviews(doc: Document, periods: dict[str, FinancialPeriod]) -> int:
+    """Re-mark this document's figures: the extraction's own flags, then the
+    subtotal checks. Figures from other documents are left as they are."""
+    llm = _llm_review_flags(doc.extracted_data)
+    flagged = 0
+    for period in periods.values():
+        mine = [f for f in period.figures if f.source_document_id == doc.id and f.origin != "manual"]
+        if not mine:
+            continue
+        checks = _subtotal_checks({f.line_item: f for f in period.figures})
+        for f in mine:
+            notes = [n for n in (llm.get((f.line_item, period.label)), checks.get(f.line_item)) if n]
+            f.review_note = " ".join(notes) or None
+            flagged += bool(notes)
+    return flagged
+
+
+def statement_basis(doc_category: str | None, extracted_basis: str | None) -> str | None:
+    """audited / reviewed / management accounts, as the document says; else
+    what its classification implies; else unknown (None)."""
+    b = (extracted_basis or "").strip().lower()
+    if b in ("audited", "reviewed"):
+        return b
+    if b in ("management", "management accounts", "unaudited"):
+        return "management accounts"
+    if doc_category == "audit_report":
+        return "audited"
+    if doc_category == "management_accounts":
+        return "management accounts"
+    return None
 
 
 def _differs(existing: FinancialFigure, f: ExtractedFigure) -> bool:
@@ -287,7 +386,7 @@ async def sync_company(db: AsyncSession, company_id: uuid.UUID) -> dict[str, int
         if any(stats.values()):
             total["documents"] += 1
         for k, v in stats.items():
-            total[k] += v
+            total[k] = total.get(k, 0) + v
     return total
 
 
@@ -400,6 +499,8 @@ async def edit_figure(
             existing.source_page = source_page
         existing.origin = "manual"
         existing.updated_by = user_id
+        # The analyst has looked at it and set the value.
+        existing.review_note = None
     db.add(FinancialFigureAmendment(
         company_id=company_id,
         period_label=period.label,
@@ -476,11 +577,13 @@ async def table(db: AsyncSession, company_id: uuid.UUID) -> dict[str, Any]:
         key=_period_sort_key,
     )
     docs = (await db.execute(
-        select(Document.id, Document.filename, Document.target_period, Document.extraction_status, Document.created_at)
+        select(Document.id, Document.filename, Document.target_period, Document.extraction_status, Document.created_at,
+               Document.category, Document.extracted_data["financial_data"]["statement_basis"].astext.label("basis"))
         .where(Document.company_id == company_id)
         .order_by(Document.created_at.desc())
     )).all()
     doc_names = {d.id: d.filename for d in docs}
+    doc_basis = {d.id: statement_basis(d.category, d.basis) for d in docs}
 
     rows: dict[str, dict[str, Any]] = {}
     for li in cat.LINE_ITEMS:
@@ -499,6 +602,8 @@ async def table(db: AsyncSession, company_id: uuid.UUID) -> dict[str, Any]:
                 "source_document_id": str(f.source_document_id) if f.source_document_id else None,
                 "source_document_name": doc_names.get(f.source_document_id),
                 "source_page": f.source_page,
+                "source_basis": doc_basis.get(f.source_document_id),
+                "review_note": f.review_note,
                 "origin": f.origin,
                 "updated_at": (f.updated_at or f.created_at).isoformat() if (f.updated_at or f.created_at) else None,
             }
